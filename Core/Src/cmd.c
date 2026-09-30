@@ -45,6 +45,37 @@ static bool StrToU8(const char* str, uint8_t* dst) {
   return true;
 }
 
+static bool StrToFloat(const char* str, float* dst) {
+  if (!str || !*str) return false;
+  float sign = 1.0f;
+  if (*str == '-') {
+    sign = -1.0f;
+    str++;
+  } else if (*str == '+') {
+    str++;
+  }
+  float val = 0.0f;
+  bool has_digits = false;
+  while (*str >= '0' && *str <= '9') {
+    val = val * 10.0f + (float)(*str - '0');
+    str++;
+    has_digits = true;
+  }
+  if (*str == '.') {
+    str++;
+    float div = 10.0f;
+    while (*str >= '0' && *str <= '9') {
+      val += (float)(*str - '0') / div;
+      div *= 10.0f;
+      str++;
+      has_digits = true;
+    }
+  }
+  if (!has_digits || *str != '\0') return false;
+  *dst = sign * val;
+  return true;
+}
+
 static void InvalidUsage(const char* usage) {
   WriteString("error: invalid usage: ");
   WriteString(usage);
@@ -123,11 +154,35 @@ static void Cmd_spr(const Command_t* self) {
   ReportU16("spr", GetConfig()->spr);
 }
 
+static void Cmd_kp(const Command_t* self) {
+  if (argc == 1) {
+    ReportKp();
+    return;
+  }
+  if (argc != 2) return InvalidUsage(self->usage);
+  float value;
+  if (!StrToFloat(argv[1], &value)) return InvalidValue("float", argv[1]);
+  SetKp(value);
+}
+
+static void Cmd_kff(const Command_t* self) {
+  if (argc == 1) {
+    ReportKff();
+    return;
+  }
+  if (argc != 2) return InvalidUsage(self->usage);
+  float value;
+  if (!StrToFloat(argv[1], &value)) return InvalidValue("float", argv[1]);
+  SetKff(value);
+}
+
 static void Cmd_r(const Command_t* self) {
   if (argc != 1) return InvalidUsage(self->usage);
   ReportU16("odr", GetConfig()->odr);
   ReportU16("epr", GetConfig()->epr);
   ReportU16("spr", GetConfig()->spr);
+  ReportKp();
+  ReportKff();
   ReportLimit1();
   ReportLimit2();
   ReportOverrideTarget();
@@ -151,6 +206,8 @@ static const Command_t commands[] = {
     {"odr", "odr <uint16>", Cmd_odr},
     {"epr", "epr <uint16>", Cmd_epr},
     {"spr", "spr <uint16>", Cmd_spr},
+    {"kp", "kp [float]", Cmd_kp},
+    {"kff", "kff [float]", Cmd_kff},
     {"r", "r", Cmd_r},
     {"help", "help", Cmd_help},
 };

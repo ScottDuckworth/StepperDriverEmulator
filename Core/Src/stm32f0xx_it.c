@@ -193,4 +193,31 @@ void USB_IRQHandler(void)
 
 /* USER CODE BEGIN 1 */
 
+/**
+  * @brief This function handles DMA1 Channel 2 and Channel 3 interrupts.
+  */
+void DMA1_Channel2_3_IRQHandler(void)
+{
+  uint32_t isr = DMA1->ISR;
+  if (isr & DMA_ISR_HTIF3) {
+    DMA1->IFCR = DMA_IFCR_CHTIF3;
+    DMA_HalfTransfer_Handler();
+  }
+  if (isr & DMA_ISR_TCIF3) {
+    DMA1->IFCR = DMA_IFCR_CTCIF3;
+    DMA_TransferComplete_Handler();
+  }
+}
+
+/**
+  * @brief This function handles TIM2 global interrupt (step wakeup).
+  */
+void TIM2_IRQHandler(void)
+{
+  if (TIM2->SR & TIM_SR_CC1IF) {
+    TIM2->SR = ~TIM_SR_CC1IF;
+    Motion_Wakeup_Handler();
+  }
+}
+
 /* USER CODE END 1 */

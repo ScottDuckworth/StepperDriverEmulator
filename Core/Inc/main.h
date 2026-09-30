@@ -75,12 +75,24 @@ void MX_TIM1_Init(void);
 void MX_TIM16_Init(void);
 void MX_TIM17_Init(void);
 
-/* USER CODE BEGIN EFP */
-
 void InitSystemClock(void);
 void UpdateStepDirection(void);
 void UpdateStepEnabled(void);
 void UpdateTick(void);
+
+void Motion_Init(void);
+void Motion_Start(void);
+void Motion_Wakeup_Handler(void);
+void DMA_HalfTransfer_Handler(void);
+void DMA_TransferComplete_Handler(void);
+
+float GetKp(void);
+void SetKp(float kp);
+float GetKff(void);
+void SetKff(float kff);
+void ReportKp(void);
+void ReportKff(void);
+void ReportFloat(const char* var, float value);
 
 RunConfig_t* GetConfig();
 

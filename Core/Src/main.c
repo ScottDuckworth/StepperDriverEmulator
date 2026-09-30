@@ -69,7 +69,6 @@ typedef struct {
   int32_t encoder_pos;
   uint16_t step_cnt_prev;
   uint16_t step_dcnt;
-  uint16_t encoder_cnt_prev;
   bool step_reverse;
 } PositionCounters_t;
 
@@ -82,11 +81,31 @@ static volatile int32_t override_start_pos;
 static volatile uint32_t override_start_time;
 static volatile OverrideState_t override_state;
 
+#define CHUNK_SIZE 8
+#define TOTAL_BUFFER_SIZE (2 * CHUNK_SIZE)
+
+static uint32_t quad_buffer[TOTAL_BUFFER_SIZE];
+static uint8_t current_quad_state = 0;
+static int8_t half_0_delta = 0;
+static int8_t half_1_delta = 0;
+static volatile bool motion_active = false;
+static volatile int32_t planned_encoder_pos = 0;
+
+static float control_kp = 0.1f;
+static float control_kff = 1.0f;
+
+static const uint32_t QUAD_BSRR_STATES[4] = {
+    GPIO_BSRR_BR_4 | GPIO_BSRR_BR_5, // State 0: EA=0, EB=0
+    GPIO_BSRR_BS_4 | GPIO_BSRR_BR_5, // State 1: EA=1, EB=0
+    GPIO_BSRR_BS_4 | GPIO_BSRR_BS_5, // State 2: EA=1, EB=1
+    GPIO_BSRR_BR_4 | GPIO_BSRR_BS_5  // State 3: EA=0, EB=1
+};
+
 #define usb_output_data UserTxBufferFS
 #define usb_input_data UserRxBufferFS
 
-static uint16_t usb_output_size;
-static uint16_t usb_input_size;
+static volatile uint16_t usb_output_size;
+static volatile uint16_t usb_input_size;
 
 static RunConfig_t config = {
     .odr = 1000,
@@ -110,7 +129,9 @@ RunConfig_t* GetConfig() {
 }
 
 static int8_t USB_ReceiveCallback(uint8_t* buf, uint32_t* len) {
-  assert(buf == usb_input_data);
+  if (buf != usb_input_data && len && *len <= sizeof(usb_input_data)) {
+    memcpy(usb_input_data, buf, *len);
+  }
   usb_input_size = *len;
   return USBD_OK;
 }
@@ -124,7 +145,7 @@ static void USB_ReceiveReady() {
 static void USB_Flush(void) {
   if (usb_output_size == 0) return;
   uint8_t result = CDC_Transmit_FS(usb_output_data, usb_output_size);
-  if (result == USBD_OK) {
+  if (result == USBD_OK || result == USBD_FAIL) {
     usb_output_size = 0;
   }
 }
@@ -228,11 +249,57 @@ void ReportOverrideState(void) {
   ReportString("os", OverrideStateToString(GetOverrideState()));
 }
 
+void ReportFloat(const char* var, float value) {
+  int size;
+  char output[24];
+  if (value < 0.0f) {
+    float abs_val = -value;
+    int32_t int_part = (int32_t) abs_val;
+    int32_t frac_part = (int32_t) ((abs_val - (float) int_part) * 10000.0f + 0.5f);
+    size = snprintf(output, sizeof(output), " -%ld.%04ld\r\n", int_part, frac_part);
+  } else {
+    int32_t int_part = (int32_t) value;
+    int32_t frac_part = (int32_t) ((value - (float) int_part) * 10000.0f + 0.5f);
+    size = snprintf(output, sizeof(output), " %ld.%04ld\r\n", int_part, frac_part);
+  }
+  WriteString(var);
+  WriteData((uint8_t*) output, size);
+}
+
+float GetKp(void) {
+  return control_kp;
+}
+
+void SetKp(float kp) {
+  control_kp = kp;
+  ReportKp();
+}
+
+void ReportKp(void) {
+  ReportFloat("kp", GetKp());
+}
+
+float GetKff(void) {
+  return control_kff;
+}
+
+void SetKff(float kff) {
+  control_kff = kff;
+  ReportKff();
+}
+
+void ReportKff(void) {
+  ReportFloat("kff", GetKff());
+}
+
 static void SetOverrideEnable(void) {
   override_start_pos = position.encoder_pos;
   override_start_time = now;
   override_state = OverrideEnabling;
   ReportOverrideState();
+  if (!motion_active) {
+    Motion_Start();
+  }
 }
 
 void SetOverrideDisable(void) {
@@ -240,6 +307,9 @@ void SetOverrideDisable(void) {
   override_start_time = now;
   override_state = OverrideDisabling;
   ReportOverrideState();
+  if (!motion_active) {
+    Motion_Start();
+  }
 }
 
 void SetOverrideTarget(int32_t target) {
@@ -263,7 +333,28 @@ int32_t GetEncoderPosition(void) {
 }
 
 void SetEncoderPosition(int32_t pos) {
+  __disable_irq();
   position.encoder_pos = pos;
+  planned_encoder_pos = pos;
+  if (config.epr != 0) {
+    position.step_pos = (int32_t)(((int64_t)pos * config.spr) / config.epr);
+  } else {
+    position.step_pos = 0;
+  }
+  position.step_cnt_prev = UINT16_MAX - (uint16_t) DMA1_Channel5->CNDTR;
+  position.step_dcnt = 0;
+  half_0_delta = 0;
+  half_1_delta = 0;
+  for (int i = 0; i < TOTAL_BUFFER_SIZE; i++) {
+    quad_buffer[i] = QUAD_BSRR_STATES[current_quad_state];
+  }
+  TIM3->CR1 &= ~TIM_CR1_CEN;
+  DMA1_Channel3->CCR &= ~DMA_CCR_EN;
+  motion_active = false;
+  TIM2->SR = ~TIM_SR_CC1IF;
+  TIM2->DIER = TIM_DIER_CC1DE | TIM_DIER_CC1IE;
+  __enable_irq();
+  ReportEncoderPosition();
 }
 
 void ReportEncoderPosition(void) {
@@ -291,9 +382,8 @@ void ReportStepEnabled(void) {
 }
 
 static int32_t StepToEncoderPosition(int32_t step_position) {
-  int32_t full = step_position / config.spr * config.epr;
-  int32_t part = step_position % config.spr * config.epr / config.spr;
-  return full + part;
+  if (config.spr == 0) return 0;
+  return (int32_t)(((int64_t) step_position * config.epr) / config.spr);
 }
 
 static int32_t GetOverridenPosision(int32_t current, int32_t target) {
@@ -339,16 +429,17 @@ static int32_t ApplyOverride(int32_t current, int32_t intent) {
 }
 
 void UpdateStepEnabled(void) {
+  __disable_irq();
   if (GetStepEnabled()) {
-    TIM2->CR1 = TIM_CR1_CEN;
+    TIM2->CR1 |= TIM_CR1_CEN;
   } else {
-    TIM2->CR1 = 0;
+    TIM2->CR1 &= ~TIM_CR1_CEN;
   }
+  __enable_irq();
   ReportStepEnabled();
 }
 
 static void UpdatePositionCounters(void) {
-  // Step
   uint16_t step_cnt = UINT16_MAX - (uint16_t) DMA1_Channel5->CNDTR;
   uint16_t step_dcnt = step_cnt - position.step_cnt_prev;
   position.step_cnt_prev = step_cnt;
@@ -358,74 +449,193 @@ static void UpdatePositionCounters(void) {
   } else {
     position.step_pos += step_dcnt;
   }
-
-  // Encoder
-  uint16_t encoder_cnt = (uint16_t) TIM1->CNT;
-  int16_t encoder_dcnt = encoder_cnt - position.encoder_cnt_prev;
-  position.encoder_cnt_prev = encoder_cnt;
-  position.encoder_pos += encoder_dcnt;
 }
 
 void UpdateStepDirection(void) {
   bool reverse = READ_BIT(DIR_GPIO_Port->IDR, DIR_Pin) == 0;
+  __disable_irq();
   UpdatePositionCounters();
   position.step_reverse = reverse;
-
-  __disable_irq();
-  TIM3->CR1 = 0;
-  if (position.step_reverse) {
-    TIM3->CCR1 = 1;
-    TIM3->CCR2 = 0;
-    TIM1->CR1 = TIM_CR1_CEN;
-  } else {
-    TIM3->CCR1 = 0;
-    TIM3->CCR2 = 1;
-    TIM1->CR1 = TIM_CR1_CEN | TIM_CR1_DIR;
-  }
-  // TIM3->CR1 = TIM_CR1_CEN;
   __enable_irq();
-
   ReportStepReverse();
 }
 
-static void UpdateVelocity(void) {
+static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
   UpdatePositionCounters();
 
-  int32_t current = position.encoder_pos;
   int32_t intent = StepToEncoderPosition(position.step_pos);
-  intent = ApplyOverride(current, intent);
-  int32_t error = intent - current;
+  intent = ApplyOverride(planned_encoder_pos, intent);
+  int32_t error = intent - planned_encoder_pos;
 
-  // All rates below are per millisecond, therefore the 48 MHz system clock
-  // becomes 48000 ticks per millisecond.
-
-  float input_rate = 0;
-  if (position.step_dcnt) {
-    input_rate = 48000.0f / (float) step_period_cnt;
+  float input_rate = 0.0f;
+  if (position.step_dcnt && step_period_cnt > 0) {
+    input_rate = (48000.0f / (float) step_period_cnt) * ((float) config.epr / (float) config.spr);
     if (position.step_reverse) {
       input_rate = -input_rate;
     }
   }
 
-  const float K_ff = 1;
-  const float K_p = 0.1;
+  float target_velocity = control_kff * input_rate + control_kp * (float) error;
 
-  float output_rate = K_ff * input_rate + K_p * error;
-  float abs_output_rate = fabs(output_rate);
-  if (abs_output_rate < 0.001f) {
-    TIM3->CR1 = 0;
+  int count_to_emit = 0;
+  int dir = 0;
+
+  if (error != 0) {
+    dir = (error > 0) ? 1 : -1;
+    int abs_error = abs(error);
+    count_to_emit = CHUNK_SIZE;
+    if (count_to_emit > abs_error) {
+      count_to_emit = abs_error;
+    }
+  }
+
+  for (int i = 0; i < count_to_emit; i++) {
+    if (dir > 0) {
+      current_quad_state = (current_quad_state + 1) & 3;
+    } else {
+      current_quad_state = (current_quad_state - 1) & 3;
+    }
+    chunk[i] = QUAD_BSRR_STATES[current_quad_state];
+  }
+
+  for (int i = count_to_emit; i < CHUNK_SIZE; i++) {
+    chunk[i] = QUAD_BSRR_STATES[current_quad_state];
+  }
+
+  *out_delta = (dir > 0) ? count_to_emit : -count_to_emit;
+  planned_encoder_pos += *out_delta;
+
+  // Calculate pacing frequency
+  float abs_rate = fabsf(target_velocity);
+  if (abs_rate < 0.1f) {
+    abs_rate = 0.1f;
+  }
+  if (abs_rate > 100.0f) {
+    abs_rate = 100.0f;
+  }
+
+  uint32_t ticks = (uint32_t)(48000.0f / abs_rate);
+  if (ticks < 480) {
+    ticks = 480; // max 100 kHz
+  }
+
+  uint32_t psc = 0;
+  if (ticks > 65536) {
+    psc = (ticks >> 16);
+    ticks = ticks / (psc + 1);
+  }
+  if (ticks > 65536) ticks = 65536;
+
+  TIM3->PSC = (uint16_t) psc;
+  TIM3->ARR = (uint16_t)(ticks - 1);
+}
+
+void Motion_Start(void) {
+  if (motion_active) return;
+
+  UpdatePositionCounters();
+  int32_t intent = StepToEncoderPosition(position.step_pos);
+  intent = ApplyOverride(position.encoder_pos, intent);
+  if (intent == position.encoder_pos && position.step_dcnt == 0 && override_state == OverrideDisabled) {
     return;
   }
 
-  uint32_t psc = (uint32_t) (48000.0f / (2.0f * abs_output_rate)) - 1;
-  if (psc > 0xFFFF) psc = 0xFFFF;
-  TIM3->PSC = (uint16_t) psc;
-  TIM3->CR1 = TIM_CR1_CEN;
+  motion_active = true;
+  planned_encoder_pos = position.encoder_pos;
+
+  FillQuadChunk(&quad_buffer[0], &half_0_delta);
+  FillQuadChunk(&quad_buffer[CHUNK_SIZE], &half_1_delta);
+
+  if (half_0_delta == 0 && half_1_delta == 0) {
+    motion_active = false;
+    return;
+  }
+
+  DMA1_Channel3->CCR &= ~DMA_CCR_EN;
+  DMA1->IFCR = DMA_IFCR_CGIF3;
+  DMA1_Channel3->CNDTR = TOTAL_BUFFER_SIZE;
+  DMA1_Channel3->CCR |= DMA_CCR_EN;
+
+  TIM3->CNT = 0;
+  TIM3->CR1 |= TIM_CR1_CEN;
+}
+
+void Motion_Wakeup_Handler(void) {
+  TIM2->SR = ~TIM_SR_CC1IF;
+  TIM2->DIER &= ~TIM_DIER_CC1IE;
+
+  UpdatePositionCounters();
+  int32_t intent = StepToEncoderPosition(position.step_pos);
+  intent = ApplyOverride(planned_encoder_pos, intent);
+
+  if (intent != planned_encoder_pos || position.step_dcnt != 0 || override_state != OverrideDisabled) {
+    Motion_Start();
+  } else {
+    TIM2->SR = ~TIM_SR_CC1IF;
+    TIM2->DIER |= TIM_DIER_CC1IE;
+  }
+}
+
+static void CheckMotionIdle(void) {
+  if (half_0_delta == 0 && half_1_delta == 0) {
+    int32_t intent = StepToEncoderPosition(position.step_pos);
+    intent = ApplyOverride(position.encoder_pos, intent);
+    if (intent == position.encoder_pos && position.encoder_pos == planned_encoder_pos) {
+      TIM3->CR1 &= ~TIM_CR1_CEN;
+      DMA1_Channel3->CCR &= ~DMA_CCR_EN;
+      motion_active = false;
+      TIM2->SR = ~TIM_SR_CC1IF;
+      TIM2->DIER |= TIM_DIER_CC1IE;
+    }
+  }
+}
+
+void DMA_HalfTransfer_Handler(void) {
+  position.encoder_pos += half_0_delta;
+  FillQuadChunk(&quad_buffer[0], &half_0_delta);
+  CheckMotionIdle();
+}
+
+void DMA_TransferComplete_Handler(void) {
+  position.encoder_pos += half_1_delta;
+  FillQuadChunk(&quad_buffer[CHUNK_SIZE], &half_1_delta);
+  CheckMotionIdle();
+}
+
+void Motion_Init(void) {
+  current_quad_state = 0;
+  half_0_delta = 0;
+  half_1_delta = 0;
+  motion_active = false;
+  planned_encoder_pos = position.encoder_pos;
+
+  for (int i = 0; i < TOTAL_BUFFER_SIZE; i++) {
+    quad_buffer[i] = QUAD_BSRR_STATES[0];
+  }
+
+  GPIOB->BSRR = QUAD_BSRR_STATES[0];
+
+  TIM3->CR1 &= ~TIM_CR1_CEN;
+  DMA1_Channel3->CCR &= ~DMA_CCR_EN;
+
+  TIM2->SR = 0;
+  TIM2->DIER = TIM_DIER_CC1DE | TIM_DIER_CC1IE;
 }
 
 void UpdateTick(void) {
   ++now;
-  UpdateVelocity();
+
+  if (!motion_active) {
+    uint16_t step_cnt = UINT16_MAX - (uint16_t) DMA1_Channel5->CNDTR;
+    if (step_cnt != position.step_cnt_prev || override_state != OverrideDisabled) {
+      int32_t intent = StepToEncoderPosition(position.step_pos);
+      intent = ApplyOverride(position.encoder_pos, intent);
+      if (intent != position.encoder_pos || step_cnt != position.step_cnt_prev || override_state != OverrideDisabled) {
+        TIM2->DIER &= ~TIM_DIER_CC1IE;
+        Motion_Start();
+      }
+    }
+  }
 }
 
 void SetLimit1(bool active) {
@@ -496,7 +706,6 @@ static void InitPeripherals(void) {
                ;
 
   RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN
-               |  RCC_APB2ENR_TIM1EN
                |  RCC_APB2ENR_TIM16EN
                |  RCC_APB2ENR_TIM17EN
                ;
@@ -510,9 +719,7 @@ static void InitPeripherals(void) {
                 | (0 << GPIO_AFRH_AFSEL14_Pos)  // PA14 alternate function SWCLK (SWCLK)
                 ;
 
-  GPIOB->AFR[0] = (1 << GPIO_AFRL_AFSEL4_Pos)  // PB4 alternate function TIM3 CH1 (EA)
-                | (1 << GPIO_AFRL_AFSEL5_Pos)  // PB5 alternate function TIM3 CH2 (EB)
-                ;
+  GPIOB->AFR[0] = 0; // PB4 and PB5 are GPIO outputs, no alternate function
 
   GPIOA->MODER = (0 << GPIO_MODER_MODER3_Pos)   // PA3 input (ENA)
                | (0 << GPIO_MODER_MODER4_Pos)   // PA4 input (DIR)
@@ -522,11 +729,17 @@ static void InitPeripherals(void) {
                | (2 << GPIO_MODER_MODER13_Pos)  // PA13 alternate function SWDIO (SWDIO)
                | (2 << GPIO_MODER_MODER14_Pos)  // PA14 alternate function SWCLK (SWCLK)
                ;
+
   GPIOB->MODER = (1 << GPIO_MODER_MODER0_Pos)  // PB0 output (LIM1)
                | (1 << GPIO_MODER_MODER1_Pos)  // PB1 output (LIM2)
-               | (2 << GPIO_MODER_MODER4_Pos)  // PB4 alternate function TIM3 CH1 (EA)
-               | (2 << GPIO_MODER_MODER5_Pos)  // PB5 alternate function TIM3 CH2 (EB)
+               | (1 << GPIO_MODER_MODER4_Pos)  // PB4 output (EA)
+               | (1 << GPIO_MODER_MODER5_Pos)  // PB5 output (EB)
                ;
+
+  GPIOB->OSPEEDR = (3 << GPIO_OSPEEDR_OSPEEDR4_Pos)  // PB4 high speed
+                 | (3 << GPIO_OSPEEDR_OSPEEDR5_Pos); // PB5 high speed
+
+  GPIOB->BSRR = GPIO_BSRR_BR_4 | GPIO_BSRR_BR_5;     // Initialize EA=0, EB=0
 
   GPIOA->PUPDR = (1 << GPIO_PUPDR_PUPDR4_Pos)  // Enable internal pull-up on PA4
                | (1 << GPIO_PUPDR_PUPDR5_Pos); // Enable internal pull-up on PA5
@@ -534,6 +747,7 @@ static void InitPeripherals(void) {
   SYSCFG->EXTICR[0] = 0;  // EXTI0-3 from PORTA (ENA on EXTI3)
   SYSCFG->EXTICR[1] = 0;  // EXTI4-7 from PORTA (DIR on EXTI4)
 
+  // DMA1 Channel 5: Transfers TIM2->CCR1 captured period to step_period_cnt
   DMA1_Channel5->CPAR = (uint32_t) &TIM2->CCR1;
   DMA1_Channel5->CMAR = (uint32_t) &step_period_cnt;
   DMA1_Channel5->CNDTR = UINT16_MAX;
@@ -541,13 +755,6 @@ static void InitPeripherals(void) {
                      | (0b10 << DMA_CCR_PSIZE_Pos)  // 32-bit peripheral
                      | DMA_CCR_CIRC                 // Circular mode
                      | DMA_CCR_EN;                  // Start DMA
-
-  // TIM1 counts the number of toggles of the EA pin, or half-cycles of the quadrature encoder.
-  TIM1->PSC = 0;
-  TIM1->ARR = UINT16_MAX;
-  TIM1->SMCR = (0b010 << TIM_SMCR_TS_Pos)    // ITR2 (TIM3)
-             | (0b111 << TIM_SMCR_SMS_Pos);  // External clock mode 1
-  TIM1->CR1 = TIM_CR1_CEN;
 
   // TIM2 measures pulse period on the PUL pin.
   TIM2->PSC = 0;
@@ -559,22 +766,30 @@ static void InitPeripherals(void) {
              | TIM_CCER_CC2E;                  // Pulse width captured in CCR2
   TIM2->SMCR = (0b101 << TIM_SMCR_TS_Pos)      // Filtered Timer Input 1 (TI1FP1)
              | (0b100 << TIM_SMCR_SMS_Pos);    // Reset mode
-  TIM2->DIER = TIM_DIER_CC1DE;                 // Link DMA to CCR1
+  TIM2->DIER = TIM_DIER_CC1DE | TIM_DIER_CC1IE;// Link DMA to CCR1 + arm CC1 interrupt for wakeup
   TIM2->CR1 = TIM_CR1_CEN;
 
-  // TIM3 outputs a quadrature encoder signal on the EA and EB pins.
-  // Additionally, it attaches TRGO (sent to TIM1) to update events on every toggle of EA.
+  // TIM3 acts as periodic heartbeat triggering DMA1 Channel 3 on Update Events
   TIM3->PSC = 0;
-  TIM3->ARR = 2 - 1;
-  TIM3->CCR1 = 0;
-  TIM3->CCR2 = 1;
-  TIM3->CCMR1 = (0b011 << TIM_CCMR1_OC1M_Pos)   // CH1 toggle
-              | (0b011 << TIM_CCMR1_OC2M_Pos);  // CH2 toggle
-  TIM3->CCER = TIM_CCER_CC1E |                  // Enable CH1 output
-               TIM_CCER_CC2E;                   // Enable CH2 output
-  TIM3->DIER = 0;                               // Disable interrupts
-  TIM3->CR2 = TIM_CR2_MMS_1;                    // Update event is trigger output (TRGO to TIM1)
-  TIM3->CR1 = 0;
+  TIM3->ARR = 480 - 1;                          // Default rate (100 kHz)
+  TIM3->CCMR1 = 0;
+  TIM3->CCER = 0;
+  TIM3->DIER = TIM_DIER_UDE;                    // Trigger DMA on update event
+  TIM3->CR2 = 0;
+  TIM3->CR1 = TIM_CR1_ARPE;                     // Auto-reload preload enabled, CEN=0 initially
+
+  // DMA1 Channel 3: Streams quad_buffer states to GPIOB->BSRR
+  DMA1_Channel3->CPAR = (uint32_t) &GPIOB->BSRR;
+  DMA1_Channel3->CMAR = (uint32_t) quad_buffer;
+  DMA1_Channel3->CNDTR = TOTAL_BUFFER_SIZE;
+  DMA1_Channel3->CCR = (0b10 << DMA_CCR_PL_Pos)     // High priority
+                     | (0b10 << DMA_CCR_MSIZE_Pos)  // 32-bit memory
+                     | (0b10 << DMA_CCR_PSIZE_Pos)  // 32-bit peripheral
+                     | DMA_CCR_MINC                 // Memory increment
+                     | DMA_CCR_CIRC                 // Circular mode
+                     | DMA_CCR_DIR                  // Memory to peripheral
+                     | DMA_CCR_HTIE                 // Half-transfer interrupt
+                     | DMA_CCR_TCIE;                // Transfer-complete interrupt
 
   // TIM16 is used to control LED_G
   TIM16->PSC = 8 - 1;                           // Prescaler: count at 6MHz
@@ -596,8 +811,12 @@ static void InitPeripherals(void) {
   TIM17->BDTR = TIM_BDTR_MOE;                   // Main output enable
   TIM17->CR1 = TIM_CR1_CEN;
 
+  NVIC_SetPriority(DMA1_Channel2_3_IRQn, 1);
+  NVIC_SetPriority(TIM2_IRQn, 1);
   NVIC_SetPriority(EXTI2_3_IRQn, 2);
   NVIC_SetPriority(EXTI4_15_IRQn, 2);
+  NVIC_EnableIRQ(DMA1_Channel2_3_IRQn);
+  NVIC_EnableIRQ(TIM2_IRQn);
   NVIC_EnableIRQ(EXTI2_3_IRQn);
   NVIC_EnableIRQ(EXTI4_15_IRQn);
 
@@ -646,6 +865,7 @@ int main(void)
   position.encoder_pos = 0;
   UpdateStepDirection();
   UpdateStepEnabled();
+  Motion_Init();
 
   /* USER CODE END 2 */
 
