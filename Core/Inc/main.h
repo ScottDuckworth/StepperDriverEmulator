@@ -1,0 +1,163 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file           : main.h
+  * @brief          : Header for main.c file.
+  *                   This file contains the common defines of the application.
+  ******************************************************************************
+  * @attention
+  *
+  * Copyright (c) 2025 STMicroelectronics.
+  * All rights reserved.
+  *
+  * This software is licensed under terms that can be found in the LICENSE file
+  * in the root directory of this software component.
+  * If no LICENSE file comes with this software, it is provided AS-IS.
+  *
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+
+/* Define to prevent recursive inclusion -------------------------------------*/
+#ifndef __MAIN_H
+#define __MAIN_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Includes ------------------------------------------------------------------*/
+#include "stm32f0xx_hal.h"
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
+
+#include <stdbool.h>
+
+/* USER CODE END Includes */
+
+/* Exported types ------------------------------------------------------------*/
+/* USER CODE BEGIN ET */
+
+typedef struct {
+  uint16_t odr;  // Output Data Rate (milliseconds)
+  uint16_t epr;  // Encoder count per revolution
+  uint16_t spr;  // Step count per revolution
+} RunConfig_t;
+
+typedef enum {
+  OverrideDisabled,
+  OverrideEnabling,
+  OverrideEnabled,
+  OverrideDisabling,
+} OverrideState_t;
+
+/* USER CODE END ET */
+
+/* Exported constants --------------------------------------------------------*/
+/* USER CODE BEGIN EC */
+
+/* USER CODE END EC */
+
+/* Exported macro ------------------------------------------------------------*/
+/* USER CODE BEGIN EM */
+
+/* USER CODE END EM */
+
+void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
+
+/* Exported functions prototypes ---------------------------------------------*/
+void Error_Handler(void);
+void MX_GPIO_Init(void);
+void MX_TIM2_Init(void);
+void MX_TIM3_Init(void);
+void MX_TIM1_Init(void);
+void MX_TIM16_Init(void);
+void MX_TIM17_Init(void);
+
+/* USER CODE BEGIN EFP */
+
+void InitSystemClock(void);
+void UpdateStepDirection(void);
+void UpdateStepEnabled(void);
+void UpdateTick(void);
+
+RunConfig_t* GetConfig();
+
+int32_t GetEncoderPosition(void);
+void SetEncoderPosition(int32_t pos);
+
+bool GetStepReverse(void);
+bool GetStepEnabled(void);
+
+bool GetLimit1(void);
+void SetLimit1(bool active);
+
+bool GetLimit2(void);
+void SetLimit2(bool active);
+
+void GetLED(uint8_t* r, uint8_t* g);
+void SetLED(uint8_t r, uint8_t g);
+
+int32_t GetOverrideRate(void);
+void SetOverrideRate(int32_t rate);
+
+int32_t GetOverrideTarget(void);
+void SetOverrideTarget(int32_t target);
+
+void SetOverrideDisable(void);
+
+OverrideState_t GetOverrideState(void);
+const char* OverrideStateToString(OverrideState_t state);
+
+uint16_t WriteData(const uint8_t* data, uint16_t size);
+uint16_t WriteString(const char* text);
+void ReportString(const char* var, const char* value);
+void ReportI32(const char* var, int32_t value);
+void ReportU32(const char* var, uint32_t value);
+void ReportU16(const char* var, uint16_t value);
+void ReportU8(const char* var, uint8_t value);
+
+void ReportOverrideTarget(void);
+void ReportOverrideRate(void);
+void ReportOverrideState(void);
+void ReportEncoderPosition(void);
+void ReportStepPosition(void);
+void ReportStepReverse(void);
+void ReportStepEnabled(void);
+void ReportLimit1(void);
+void ReportLimit2(void);
+
+/* USER CODE END EFP */
+
+/* Private defines -----------------------------------------------------------*/
+#define ENA_Pin GPIO_PIN_3
+#define ENA_GPIO_Port GPIOA
+#define ENA_EXTI_IRQn EXTI2_3_IRQn
+#define DIR_Pin GPIO_PIN_4
+#define DIR_GPIO_Port GPIOA
+#define DIR_EXTI_IRQn EXTI4_15_IRQn
+#define PUL_Pin GPIO_PIN_5
+#define PUL_GPIO_Port GPIOA
+#define LED_G_Pin GPIO_PIN_6
+#define LED_G_GPIO_Port GPIOA
+#define LED_R_Pin GPIO_PIN_7
+#define LED_R_GPIO_Port GPIOA
+#define LIM1_Pin GPIO_PIN_0
+#define LIM1_GPIO_Port GPIOB
+#define LIM2_Pin GPIO_PIN_1
+#define LIM2_GPIO_Port GPIOB
+#define EA_Pin GPIO_PIN_4
+#define EA_GPIO_Port GPIOB
+#define EB_Pin GPIO_PIN_5
+#define EB_GPIO_Port GPIOB
+
+/* USER CODE BEGIN Private defines */
+
+/* USER CODE END Private defines */
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* __MAIN_H */

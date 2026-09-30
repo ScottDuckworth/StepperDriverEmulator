@@ -1,0 +1,397 @@
+{
+  "name": "StepperDriverEmulator",
+  "source_ide": "STM32CubeIDE",
+  "path": "c:\\Users\\Scott\\STM32CubeIDE\\StepperDriverEmulator\\StepperDriverEmulator",
+  "languages": [
+      "C"
+  ],
+  "configurations": [
+    {
+      "name": "Debug",
+      "output_filename": "StepperDriverEmulator",
+      "type": "Executable",
+      "toolchain_type": "GCC",
+      "toolchain_prefix": "arm-none-eabi-",
+      "mcu": "STM32F042G6Ux",
+      "board": "genericBoard",
+      "sources": [
+        { "path": "Core/Src/cmd.c" },
+        { "path": "Core/Src/main.c" },
+        { "path": "Core/Src/stm32f0xx_hal_msp.c" },
+        { "path": "Core/Src/stm32f0xx_it.c" },
+        { "path": "Core/Src/syscalls.c" },
+        { "path": "Core/Src/sysmem.c" },
+        { "path": "Core/Src/system_stm32f0xx.c" },
+        { "path": "Core/Startup/startup_stm32f042g6ux.s" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_cortex.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_dma.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_exti.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_flash.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_flash_ex.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_gpio.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_i2c.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_i2c_ex.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_pcd.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_pcd_ex.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_pwr.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_pwr_ex.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_rcc.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_rcc_ex.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_tim.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_tim_ex.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_ll_usb.c" },
+        { "path": "Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_cdc.c" },
+        { "path": "Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_core.c" },
+        { "path": "Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ctlreq.c" },
+        { "path": "Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ioreq.c" },
+        { "path": "USB_DEVICE/App/usb_device.c" },
+        { "path": "USB_DEVICE/App/usbd_cdc_if.c" },
+        { "path": "USB_DEVICE/App/usbd_desc.c" },
+        { "path": "USB_DEVICE/Target/usbd_conf.c" }
+      ],
+      "tools": [
+            {
+              "type": "c_assembler",
+              "options": {
+                      "option.debuglevel": "-g3",
+                      "option.definedsymbols": "-DDEBUG",
+                      "option.preprocessassembler": "-x assembler-with-cpp"
+              },
+              "flags": [
+                  "-mfloat-abi=soft",
+                  "-mthumb",
+                  "--specs=nano.specs",
+                  "-mcpu=cortex-m0",
+                  "-g3",
+                  "-DDEBUG",
+                  "-x",
+                  "assembler-with-cpp"
+              ]
+            },
+            {
+              "type": "c_compiler",
+              "options": {
+                      "option.languagestandard": "-std=gnu11",
+                      "option.debuglevel": "-g3",
+                      "option.definedsymbols": "-DDEBUG, -DUSE_HAL_DRIVER, -DSTM32F042x6",
+                      "option.includepaths": "-I../USB_DEVICE/App, -I../USB_DEVICE/Target, -I../Core/Inc, -I../Drivers/STM32F0xx_HAL_Driver/Inc, -I../Drivers/STM32F0xx_HAL_Driver/Inc/Legacy, -I../Middlewares/ST/STM32_USB_Device_Library/Core/Inc, -I../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc, -I../Drivers/CMSIS/Device/ST/STM32F0xx/Include, -I../Drivers/CMSIS/Include",
+                      "option.optimization.level": "-Og",
+                      "option.ffunction": "-ffunction-sections",
+                      "option.fdata": "-fdata-sections",
+                      "option.warnings.all": "-Wall",
+                      "option.fstackusage": "-fstack-usage",
+                      "option.cyclomaticcomplexity": "-fcyclomatic-complexity"
+              },
+              "flags": [
+                  "-mfloat-abi=soft",
+                  "-mthumb",
+                  "--specs=nano.specs",
+                  "-mcpu=cortex-m0",
+                  "-std=gnu11",
+                  "-g3",
+                  "-DDEBUG",
+                  "-DUSE_HAL_DRIVER",
+                  "-DSTM32F042x6",
+                  "-I../USB_DEVICE/App",
+                  "-I../USB_DEVICE/Target",
+                  "-I../Core/Inc",
+                  "-I../Drivers/STM32F0xx_HAL_Driver/Inc",
+                  "-I../Drivers/STM32F0xx_HAL_Driver/Inc/Legacy",
+                  "-I../Middlewares/ST/STM32_USB_Device_Library/Core/Inc",
+                  "-I../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc",
+                  "-I../Drivers/CMSIS/Device/ST/STM32F0xx/Include",
+                  "-I../Drivers/CMSIS/Include",
+                  "-Og",
+                  "-ffunction-sections",
+                  "-fdata-sections",
+                  "-Wall",
+                  "-fstack-usage",
+                  "-fcyclomatic-complexity"
+              ]
+            },
+            {
+              "type": "cpp_compiler",
+              "options": {
+                      "option.languagestandard": "-std=gnu++14",
+                      "option.debuglevel": "-g3",
+                      "option.optimization.level": "-O0",
+                      "option.ffunction": "-ffunction-sections",
+                      "option.fdata": "-fdata-sections",
+                      "option.noexceptions": "-fno-exceptions",
+                      "option.nortti": "-fno-rtti",
+                      "option.nousecxaatexit": "-fno-use-cxa-atexit",
+                      "option.warnings.all": "-Wall",
+                      "option.fstackusage": "-fstack-usage",
+                      "option.cyclomaticcomplexity": "-fcyclomatic-complexity"
+              },
+              "flags": [
+                  "-mfloat-abi=soft",
+                  "-mthumb",
+                  "--specs=nano.specs",
+                  "-mcpu=cortex-m0",
+                  "-std=gnu++14",
+                  "-g3",
+                  "-O0",
+                  "-ffunction-sections",
+                  "-fdata-sections",
+                  "-fno-exceptions",
+                  "-fno-rtti",
+                  "-fno-use-cxa-atexit",
+                  "-Wall",
+                  "-fstack-usage",
+                  "-fcyclomatic-complexity"
+              ]
+            },
+            {
+              "type": "c_linker",
+              "options": {
+                      "option.script": "-T\"C:/Users/Scott/STM32CubeIDE/StepperDriverEmulator/StepperDriverEmulator/STM32F042G6UX_FLASH.ld\"",
+                      "option.systemcalls": "--specs=nosys.specs",
+                      "option.map": "-Wl,-Map=\"StepperDriverEmulator.map\"",
+                      "option.gcsections": "-Wl,--gc-sections",
+                      "option.static": "-static",
+                      "option.generate.secure.lib": "-Wl,--cmse-implib -Wl,--out-implib=./secure_nsclib.o",
+                      "option.libmath": "-Wl,--start-group -lc -lm -Wl,--end-group"
+              },
+              "flags": [
+                  "-mfloat-abi=soft",
+                  "-mthumb",
+                  "--specs=nano.specs",
+                  "-mcpu=cortex-m0",
+                  "-T\"C:/Users/Scott/STM32CubeIDE/StepperDriverEmulator/StepperDriverEmulator/STM32F042G6UX_FLASH.ld\"",
+                  "--specs=nosys.specs",
+                  "-Wl,-Map=\"StepperDriverEmulator.map\"",
+                  "-Wl,--gc-sections",
+                  "-static"
+              ]
+            },
+            {
+              "type": "cpp_linker",
+              "options": {
+                      "option.script": "-T\"\"",
+                      "option.systemcalls": "--specs=nosys.specs",
+                      "option.map": "-Wl,-Map=\"StepperDriverEmulator.map\"",
+                      "option.gcsections": "-Wl,--gc-sections",
+                      "option.static": "-static",
+                      "option.generate.secure.lib": "-Wl,--cmse-implib -Wl,--out-implib=./secure_nsclib.o",
+                      "option.libmath": "-Wl,--start-group -lc -lm -lstdc++ -lsupc++ -Wl,--end-group"
+              },
+              "flags": [
+                  "-mfloat-abi=soft",
+                  "-mthumb",
+                  "--specs=nano.specs",
+                  "-mcpu=cortex-m0",
+                  "-T\"\"",
+                  "--specs=nosys.specs",
+                  "-Wl,-Map=\"StepperDriverEmulator.map\"",
+                  "-Wl,--gc-sections",
+                  "-static"
+              ]
+            },
+            {
+              "type": "c_archiver",
+              "options": {
+                      "option.replace": "-r"
+              },
+              "flags": [
+                  "-mfloat-abi=soft",
+                  "-mthumb",
+                  "--specs=nano.specs",
+                  "-mcpu=cortex-m0",
+                  "-r"
+              ]
+            }
+        ]
+    },
+    {
+      "name": "Release",
+      "output_filename": "StepperDriverEmulator",
+      "type": "Executable",
+      "toolchain_type": "GCC",
+      "toolchain_prefix": "arm-none-eabi-",
+      "mcu": "STM32F042G6Ux",
+      "board": "genericBoard",
+      "sources": [
+        { "path": "Core/Src/cmd.c" },
+        { "path": "Core/Src/main.c" },
+        { "path": "Core/Src/stm32f0xx_hal_msp.c" },
+        { "path": "Core/Src/stm32f0xx_it.c" },
+        { "path": "Core/Src/syscalls.c" },
+        { "path": "Core/Src/sysmem.c" },
+        { "path": "Core/Src/system_stm32f0xx.c" },
+        { "path": "Core/Startup/startup_stm32f042g6ux.s" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_cortex.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_dma.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_exti.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_flash.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_flash_ex.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_gpio.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_i2c.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_i2c_ex.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_pcd.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_pcd_ex.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_pwr.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_pwr_ex.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_rcc.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_rcc_ex.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_tim.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_tim_ex.c" },
+        { "path": "Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_ll_usb.c" },
+        { "path": "Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_cdc.c" },
+        { "path": "Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_core.c" },
+        { "path": "Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ctlreq.c" },
+        { "path": "Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ioreq.c" },
+        { "path": "USB_DEVICE/App/usb_device.c" },
+        { "path": "USB_DEVICE/App/usbd_cdc_if.c" },
+        { "path": "USB_DEVICE/App/usbd_desc.c" },
+        { "path": "USB_DEVICE/Target/usbd_conf.c" }
+      ],
+      "tools": [
+            {
+              "type": "c_assembler",
+              "options": {
+                      "option.preprocessassembler": "-x assembler-with-cpp"
+              },
+              "flags": [
+                  "-mfloat-abi=soft",
+                  "-mthumb",
+                  "--specs=nano.specs",
+                  "-mcpu=cortex-m0",
+                  "-x",
+                  "assembler-with-cpp"
+              ]
+            },
+            {
+              "type": "c_compiler",
+              "options": {
+                      "option.languagestandard": "-std=gnu11",
+                      "option.definedsymbols": "-DUSE_HAL_DRIVER, -DSTM32F042x6",
+                      "option.includepaths": "-I../USB_DEVICE/App, -I../USB_DEVICE/Target, -I../Core/Inc, -I../Drivers/STM32F0xx_HAL_Driver/Inc, -I../Drivers/STM32F0xx_HAL_Driver/Inc/Legacy, -I../Middlewares/ST/STM32_USB_Device_Library/Core/Inc, -I../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc, -I../Drivers/CMSIS/Device/ST/STM32F0xx/Include, -I../Drivers/CMSIS/Include",
+                      "option.optimization.level": "-Os",
+                      "option.ffunction": "-ffunction-sections",
+                      "option.fdata": "-fdata-sections",
+                      "option.warnings.all": "-Wall",
+                      "option.fstackusage": "-fstack-usage",
+                      "option.cyclomaticcomplexity": "-fcyclomatic-complexity"
+              },
+              "flags": [
+                  "-mfloat-abi=soft",
+                  "-mthumb",
+                  "--specs=nano.specs",
+                  "-mcpu=cortex-m0",
+                  "-std=gnu11",
+                  "-DUSE_HAL_DRIVER",
+                  "-DSTM32F042x6",
+                  "-I../USB_DEVICE/App",
+                  "-I../USB_DEVICE/Target",
+                  "-I../Core/Inc",
+                  "-I../Drivers/STM32F0xx_HAL_Driver/Inc",
+                  "-I../Drivers/STM32F0xx_HAL_Driver/Inc/Legacy",
+                  "-I../Middlewares/ST/STM32_USB_Device_Library/Core/Inc",
+                  "-I../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc",
+                  "-I../Drivers/CMSIS/Device/ST/STM32F0xx/Include",
+                  "-I../Drivers/CMSIS/Include",
+                  "-Os",
+                  "-ffunction-sections",
+                  "-fdata-sections",
+                  "-Wall",
+                  "-fstack-usage",
+                  "-fcyclomatic-complexity"
+              ]
+            },
+            {
+              "type": "cpp_compiler",
+              "options": {
+                      "option.languagestandard": "-std=gnu++14",
+                      "option.optimization.level": "-Os",
+                      "option.ffunction": "-ffunction-sections",
+                      "option.fdata": "-fdata-sections",
+                      "option.noexceptions": "-fno-exceptions",
+                      "option.nortti": "-fno-rtti",
+                      "option.nousecxaatexit": "-fno-use-cxa-atexit",
+                      "option.warnings.all": "-Wall",
+                      "option.fstackusage": "-fstack-usage",
+                      "option.cyclomaticcomplexity": "-fcyclomatic-complexity"
+              },
+              "flags": [
+                  "-mfloat-abi=soft",
+                  "-mthumb",
+                  "--specs=nano.specs",
+                  "-mcpu=cortex-m0",
+                  "-std=gnu++14",
+                  "-Os",
+                  "-ffunction-sections",
+                  "-fdata-sections",
+                  "-fno-exceptions",
+                  "-fno-rtti",
+                  "-fno-use-cxa-atexit",
+                  "-Wall",
+                  "-fstack-usage",
+                  "-fcyclomatic-complexity"
+              ]
+            },
+            {
+              "type": "c_linker",
+              "options": {
+                      "option.script": "-T\"C:/Users/Scott/STM32CubeIDE/StepperDriverEmulator/StepperDriverEmulator/STM32F042G6UX_FLASH.ld\"",
+                      "option.systemcalls": "--specs=nosys.specs",
+                      "option.map": "-Wl,-Map=\"StepperDriverEmulator.map\"",
+                      "option.gcsections": "-Wl,--gc-sections",
+                      "option.static": "-static",
+                      "option.generate.secure.lib": "-Wl,--cmse-implib -Wl,--out-implib=./secure_nsclib.o",
+                      "option.libmath": "-Wl,--start-group -lc -lm -Wl,--end-group"
+              },
+              "flags": [
+                  "-mfloat-abi=soft",
+                  "-mthumb",
+                  "--specs=nano.specs",
+                  "-mcpu=cortex-m0",
+                  "-T\"C:/Users/Scott/STM32CubeIDE/StepperDriverEmulator/StepperDriverEmulator/STM32F042G6UX_FLASH.ld\"",
+                  "--specs=nosys.specs",
+                  "-Wl,-Map=\"StepperDriverEmulator.map\"",
+                  "-Wl,--gc-sections",
+                  "-static"
+              ]
+            },
+            {
+              "type": "cpp_linker",
+              "options": {
+                      "option.script": "-T\"\"",
+                      "option.systemcalls": "--specs=nosys.specs",
+                      "option.map": "-Wl,-Map=\"StepperDriverEmulator.map\"",
+                      "option.gcsections": "-Wl,--gc-sections",
+                      "option.static": "-static",
+                      "option.generate.secure.lib": "-Wl,--cmse-implib -Wl,--out-implib=./secure_nsclib.o",
+                      "option.libmath": "-Wl,--start-group -lc -lm -lstdc++ -lsupc++ -Wl,--end-group"
+              },
+              "flags": [
+                  "-mfloat-abi=soft",
+                  "-mthumb",
+                  "--specs=nano.specs",
+                  "-mcpu=cortex-m0",
+                  "-T\"\"",
+                  "--specs=nosys.specs",
+                  "-Wl,-Map=\"StepperDriverEmulator.map\"",
+                  "-Wl,--gc-sections",
+                  "-static"
+              ]
+            },
+            {
+              "type": "c_archiver",
+              "options": {
+                      "option.replace": "-r"
+              },
+              "flags": [
+                  "-mfloat-abi=soft",
+                  "-mthumb",
+                  "--specs=nano.specs",
+                  "-mcpu=cortex-m0",
+                  "-r"
+              ]
+            }
+        ]
+    }
+  ]
+}

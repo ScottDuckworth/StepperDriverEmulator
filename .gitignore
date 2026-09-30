@@ -1,0 +1,27 @@
+# --- STM32CubeIDE / Eclipse Build Artifacts ---
+Debug/
+Release/
+*.elf
+*.hex
+*.bin
+*.map
+*.o
+*.obj
+*.su
+*.d
+
+# --- IDE Metadata & Local Settings ---
+.metadata/
+.settings/
+*.launch
+
+# --- VS Code Target Rules ---
+.vscode/
+# Note: If your team shares debug tools, uncomment the line below
+# to allow tracking tasks.json and launch.json while ignoring local states.
+# !.vscode/launch.json
+# !.vscode/tasks.json
+
+# --- OS / Miscellaneous ---
+.DS_Store
+Thumbs.db
