@@ -204,3 +204,25 @@ cmake --build build/Release
 # or using CMake presets:
 cmake --build --preset Release
 ```
+
+---
+
+## Unit Tests
+
+Unit tests are written using the [Unity](https://github.com/ThrowTheSwitch/Unity) test framework and execute natively on the host PC using CMake and CTest. Unity is fetched automatically via CMake's `FetchContent`.
+
+### Running Unit Tests
+
+```powershell
+# 1. Configure the host test preset
+cmake --preset host-test
+
+# 2. Build the test suite
+cmake --build --preset host-test
+
+# 3. Run all tests via CTest
+ctest --preset host-test
+
+# Or run the test executable directly for verbose breakdown:
+./build/host-test/tests/Debug/test_coordinates.exe
+```

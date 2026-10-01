@@ -343,19 +343,6 @@ void ReportStallTrip(void) {
   ReportU8("stall_trip", GetStallTrip());
 }
 
-int32_t CalcMotorTorqueConfig(const EmulatorConfig_t* cfg, float speed_abs) {
-  uint32_t v = (uint32_t) speed_abs;
-  if (v <= cfg->torque_v_knee) {
-    return cfg->torque_t0;
-  }
-  if (v >= cfg->torque_v_max) {
-    return cfg->torque_t_min;
-  }
-  int64_t num = (int64_t)(cfg->torque_t0 - cfg->torque_t_min) * (v - cfg->torque_v_knee);
-  int64_t den = (int64_t)(cfg->torque_v_max - cfg->torque_v_knee);
-  return (int32_t)(cfg->torque_t0 - (num / den));
-}
-
 int32_t CalcMotorTorque(float speed_abs) {
   return CalcMotorTorqueConfig(&config, speed_abs);
 }
@@ -411,11 +398,7 @@ void SetEncoderPosition(int32_t pos) {
   __disable_irq();
   position.encoder_pos = pos;
   planned_encoder_pos = pos;
-  if (config.epr != 0) {
-    position.step_pos = (int32_t)(((int64_t)pos * config.spr) / config.epr);
-  } else {
-    position.step_pos = 0;
-  }
+  position.step_pos = EncoderToStepPositionConfig(&config, pos);
   position.step_cnt_prev = UINT16_MAX - (uint16_t) DMA1_Channel5->CNDTR;
   position.step_dcnt = 0;
   half_0_delta = 0;
@@ -456,9 +439,8 @@ void ReportStepEnabled(void) {
   ReportU8("ena", GetStepEnabled());
 }
 
-static int32_t StepToEncoderPosition(int32_t step_position) {
-  if (config.spr == 0) return 0;
-  return (int32_t)(((int64_t) step_position * config.epr) / config.spr);
+static inline int32_t StepToEncoderPosition(int32_t step_position) {
+  return StepToEncoderPositionConfig(&config, step_position);
 }
 
 void UpdateStepEnabled(void) {
@@ -471,9 +453,7 @@ void UpdateStepEnabled(void) {
       stall_tripped = false;
       cleared_stall = true;
     }
-    if (config.epr != 0) {
-      position.step_pos = (int32_t)(((int64_t)position.encoder_pos * config.spr) / config.epr);
-    }
+    position.step_pos = EncoderToStepPositionConfig(&config, position.encoder_pos);
     planned_encoder_pos = position.encoder_pos;
     position.step_cnt_prev = UINT16_MAX - (uint16_t) DMA1_Channel5->CNDTR;
     position.step_dcnt = 0;

@@ -1,4 +1,5 @@
-# --- STM32CubeIDE / Eclipse Build Artifacts ---
+# --- STM32CubeIDE / Eclipse / CMake Build Artifacts ---
+build/
 Debug/
 Release/
 *.elf

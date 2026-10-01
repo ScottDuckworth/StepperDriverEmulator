@@ -1,64 +1,72 @@
 # Set the minimum version of CMake that can be used
 cmake_minimum_required(VERSION 3.20)
 
-# Enable compile command to ease indexing with e.g. clangd
-set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
-set(CMAKE_C_COMPILER_FORCED TRUE)
-set(CMAKE_CXX_COMPILER_FORCED TRUE)
+option(ENABLE_TESTS "Build host unit tests" OFF)
 
-# Set target definition variables required by the toolchain file
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/target.cmake)
+if(ENABLE_TESTS)
+  project(StepperDriverEmulatorTests C)
+  enable_testing()
+  add_subdirectory(tests)
+else()
+  # Enable compile command to ease indexing with e.g. clangd
+  set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
+  set(CMAKE_C_COMPILER_FORCED TRUE)
+  set(CMAKE_CXX_COMPILER_FORCED TRUE)
 
-# Set the toolchain file for cross-compilation
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/gcc-arm-none-eabi.cmake)
+  # Set target definition variables required by the toolchain file
+  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/target.cmake)
 
-# Project definition
-project(StepperDriverEmulator)
+  # Set the toolchain file for cross-compilation
+  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/gcc-arm-none-eabi.cmake)
 
-# Enable CMake support for ASM and C/CPP languages
-enable_language(C ASM)
+  # Project definition
+  project(StepperDriverEmulator)
 
-set(PROJECT_NAME StepperDriverEmulator)
+  # Enable CMake support for ASM and C/CPP languages
+  enable_language(C ASM)
 
-# Create an executable object type
-add_executable(${PROJECT_NAME})
+  set(PROJECT_NAME StepperDriverEmulator)
 
-# Include additional CMake files for flags, components, and files
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/flags.cmake)
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/components.cmake)
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/files.cmake)
+  # Create an executable object type
+  add_executable(${PROJECT_NAME})
 
-# Add sources to executable/library
-target_sources(${PROJECT_NAME} PRIVATE
-  # User defined sources
-)
+  # Include additional CMake files for flags, components, and files
+  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/flags.cmake)
+  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/components.cmake)
+  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/files.cmake)
 
-# Add include directories
-target_include_directories(${PROJECT_NAME} PRIVATE
-  # User defined include directories
-)
+  # Add sources to executable/library
+  target_sources(${PROJECT_NAME} PRIVATE
+    # User defined sources
+  )
 
-# Compiler options
-target_compile_options(${PROJECT_NAME} PRIVATE
-  # User defined compiler options
-)
+  # Add include directories
+  target_include_directories(${PROJECT_NAME} PRIVATE
+    # User defined include directories
+  )
 
-# Add additional defined symbols
-target_compile_definitions(${PROJECT_NAME} PRIVATE
-  # Add additional defined symbols here
-)
+  # Compiler options
+  target_compile_options(${PROJECT_NAME} PRIVATE
+    # User defined compiler options
+  )
 
-# Linker options
-target_link_options(${PROJECT_NAME} PRIVATE 
-  # User defined linker options
-)
+  # Add additional defined symbols
+  target_compile_definitions(${PROJECT_NAME} PRIVATE
+    # Add additional defined symbols here
+  )
 
-# Add additional linker search directories
-target_link_directories(${PROJECT_NAME} PRIVATE
-  # Add additional linker search directories here
-)
+  # Linker options
+  target_link_options(${PROJECT_NAME} PRIVATE 
+    # User defined linker options
+  )
 
-# Add additional linker libraries
-target_link_libraries(${PROJECT_NAME} PRIVATE
-  # Add additional linker libraries here
-)
+  # Add additional linker search directories
+  target_link_directories(${PROJECT_NAME} PRIVATE
+    # Add additional linker search directories here
+  )
+
+  # Add additional linker libraries
+  target_link_libraries(${PROJECT_NAME} PRIVATE
+    # Add additional linker libraries here
+  )
+endif()

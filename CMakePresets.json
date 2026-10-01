@@ -20,6 +20,16 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
             }
+        },
+        {
+            "name": "host-test",
+            "displayName": "Host Unit Tests (MSVC)",
+            "generator": "Visual Studio 17 2022",
+            "binaryDir": "${sourceDir}/build/host-test",
+            "cacheVariables": {
+                "ENABLE_TESTS": "ON",
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
         }
     ],
     "buildPresets": [
@@ -30,6 +40,18 @@
         {
             "name": "Release",
             "configurePreset": "Release"
+        },
+        {
+            "name": "host-test",
+            "configurePreset": "host-test",
+            "configuration": "Debug"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "host-test",
+            "configurePreset": "host-test",
+            "configuration": "Debug"
         }
     ]
 }
