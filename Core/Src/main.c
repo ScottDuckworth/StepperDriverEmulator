@@ -114,7 +114,7 @@ static volatile uint16_t usb_input_size;
 
 static RunConfig_t config = {
     .odr = 1000,
-    .epr = 2000,
+    .epr = 4000,
     .spr = 1000,
 };
 
