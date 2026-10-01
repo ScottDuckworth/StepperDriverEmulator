@@ -62,3 +62,45 @@ target_link_libraries(test_quadrature PRIVATE
 )
 add_test(NAME test_quadrature COMMAND test_quadrature)
 
+# 5. Status LED & Priority Engine Test
+add_executable(test_led
+    test_led.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/led_control.c
+)
+target_include_directories(test_led PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Inc
+)
+target_link_libraries(test_led PRIVATE
+    unity
+)
+add_test(NAME test_led COMMAND test_led)
+
+# 6. Position Tracking Math Test
+add_executable(test_position
+    test_position.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/position_tracker.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/motion_math.c
+)
+target_include_directories(test_position PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Inc
+)
+target_link_libraries(test_position PRIVATE
+    unity
+)
+add_test(NAME test_position COMMAND test_position)
+
+# 7. Motion Planning & Stall Engine Test
+add_executable(test_motion_planner
+    test_motion_planner.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/motion_planner.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/motion_math.c
+)
+target_include_directories(test_motion_planner PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Inc
+)
+target_link_libraries(test_motion_planner PRIVATE
+    unity
+)
+add_test(NAME test_motion_planner COMMAND test_motion_planner)
+
+

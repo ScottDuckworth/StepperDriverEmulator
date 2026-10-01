@@ -64,14 +64,6 @@ extern USBD_HandleTypeDef hUsbDeviceFS;
 
 static volatile uint32_t now;
 
-typedef struct {
-  int32_t step_pos;
-  int32_t encoder_pos;
-  uint16_t step_cnt_prev;
-  uint16_t step_dcnt;
-  bool step_reverse;
-} PositionCounters_t;
-
 static PositionCounters_t position;
 
 static volatile uint32_t step_period_cnt;
@@ -211,18 +203,9 @@ void ReportBlinkMode(void) {
 }
 
 static void UpdateLEDs(void) {
-  bool blink_phase = ((now / 125) & 1) != 0;
-  if (blink_mode) {
-    SetLED(blink_phase ? 255 : 0, blink_phase ? 255 : 0);
-  } else if (stall_tripped) {
-    SetLED(blink_phase ? 255 : 0, 0);
-  } else if (!GetStepEnabled()) {
-    SetLED(0, 0);
-  } else if ((now - last_step_time) < 200) {
-    SetLED(0, blink_phase ? 255 : 0);
-  } else {
-    SetLED(0, 255);
-  }
+  uint8_t r = 0, g = 0;
+  EvalLEDState(now, blink_mode, stall_tripped, GetStepEnabled(), last_step_time, &r, &g);
+  SetLED(r, g);
 }
 
 int32_t GetTension(void) {
@@ -390,11 +373,9 @@ int32_t GetEncoderPosition(void) {
 
 void SetEncoderPosition(int32_t pos) {
   __disable_irq();
-  position.encoder_pos = pos;
+  uint16_t current_cnt = UINT16_MAX - (uint16_t) DMA1_Channel5->CNDTR;
+  RealignPositionCounters(&position, pos, &config, current_cnt);
   planned_encoder_pos = pos;
-  position.step_pos = EncoderToStepPositionConfig(&config, pos);
-  position.step_cnt_prev = UINT16_MAX - (uint16_t) DMA1_Channel5->CNDTR;
-  position.step_dcnt = 0;
   half_0_delta = 0;
   half_1_delta = 0;
   for (int i = 0; i < TOTAL_BUFFER_SIZE; i++) {
@@ -447,10 +428,9 @@ void UpdateStepEnabled(void) {
       stall_tripped = false;
       cleared_stall = true;
     }
-    position.step_pos = EncoderToStepPositionConfig(&config, position.encoder_pos);
+    uint16_t current_cnt = UINT16_MAX - (uint16_t) DMA1_Channel5->CNDTR;
+    RealignPositionCounters(&position, position.encoder_pos, &config, current_cnt);
     planned_encoder_pos = position.encoder_pos;
-    position.step_cnt_prev = UINT16_MAX - (uint16_t) DMA1_Channel5->CNDTR;
-    position.step_dcnt = 0;
   } else {
     TIM2->CR1 &= ~TIM_CR1_CEN;
     if (stall_tripped) {
@@ -470,17 +450,13 @@ void UpdateStepEnabled(void) {
 
 static void UpdatePositionCounters(void) {
   uint16_t step_cnt = UINT16_MAX - (uint16_t) DMA1_Channel5->CNDTR;
-  uint16_t step_dcnt = step_cnt - position.step_cnt_prev;
+  uint16_t step_dcnt = CalcStepDelta(step_cnt, position.step_cnt_prev);
   position.step_cnt_prev = step_cnt;
   position.step_dcnt = step_dcnt;
   if (step_dcnt != 0) {
     last_step_time = now;
   }
-  if (position.step_reverse) {
-    position.step_pos -= step_dcnt;
-  } else {
-    position.step_pos += step_dcnt;
-  }
+  position.step_pos = AccumulateStepPosition(position.step_pos, step_dcnt, position.step_reverse);
 }
 
 void UpdateStepDirection(void) {
@@ -497,92 +473,35 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
 
   bool is_freewheeling = stall_tripped || !GetStepEnabled();
   int32_t commanded_pos = StepToEncoderPosition(position.step_pos);
-  int32_t error = commanded_pos - planned_encoder_pos;
 
-  int count_to_emit = 0;
-  int dir = 0;
-  float target_velocity = 0.0f;
+  MotionPlanRequest_t req = {
+      .cfg = &config,
+      .commanded_pos = commanded_pos,
+      .planned_encoder_pos = planned_encoder_pos,
+      .load_tension = load_tension,
+      .now = now,
+      .last_step_time = last_step_time,
+      .step_period_cnt = step_period_cnt,
+      .step_reverse = position.step_reverse,
+      .is_freewheeling = is_freewheeling,
+      .stall_tripped = stall_tripped,
+      .chunk_size = CHUNK_SIZE
+  };
+  MotionPlanResult_t res;
+  PlanMotionStep(&req, &res);
 
-  if (is_freewheeling) {
-    float v_free = CalcFreewheelVelocity(&config, load_tension);
-    if (v_free != 0.0f) {
-      dir = (v_free > 0.0f) ? 1 : -1;
-      count_to_emit = CHUNK_SIZE;
-      target_velocity = v_free / 1000.0f;
-    } else {
-      dir = 0;
-      count_to_emit = 0;
-      target_velocity = 0.0f;
-    }
-  } else {
-    float input_rate = 0.0f;
-    if ((now - last_step_time) <= 50 && step_period_cnt > 0) {
-      input_rate = (48000.0f / (float) step_period_cnt) * ((float) config.epr / (float) config.spr);
-      if (position.step_reverse) {
-        input_rate = -input_rate;
-      }
-    }
-
-    target_velocity = config.kff * input_rate + config.kp * (float) error;
-
-    if (error != 0) {
-      dir = (error > 0) ? 1 : -1;
-      float speed_hz = fabsf(target_velocity) * 1000.0f;
-      int32_t t_motor = CalcMotorTorque(speed_hz);
-      int32_t t_net = CalcNetTorque(t_motor, dir, load_tension);
-
-      if (t_net >= 0) {
-        // Sufficient torque: motor drives normally toward target
-        int abs_error = (error > 0) ? error : -error;
-        count_to_emit = (abs_error < CHUNK_SIZE) ? abs_error : CHUNK_SIZE;
-      } else {
-        // Torque deficit: motor cannot advance in commanded direction
-        float v_slip = CalcSlipVelocity(&config, load_tension);
-        if (v_slip > 0.0f) {
-          dir = (load_tension > 0) ? 1 : -1;
-          count_to_emit = CHUNK_SIZE;
-          target_velocity = (dir > 0) ? (v_slip / 1000.0f) : -(v_slip / 1000.0f);
-        } else {
-          dir = 0;
-          count_to_emit = 0;
-        }
-
-        // Under torque deficit, motor stalls and accumulates lag against commanded steps
-        uint32_t lag = (error >= 0) ? (uint32_t) error : (uint32_t)(-error);
-        if (config.stall_threshold > 0 && lag >= config.stall_threshold) {
-          stall_tripped = true;
-          ReportStallTrip();
-          is_freewheeling = true;
-        }
-      }
-    } else {
-      // error == 0: motor is at target
-      float v_slip = CalcSlipVelocity(&config, load_tension);
-      if (v_slip > 0.0f) {
-        dir = (load_tension > 0) ? 1 : -1;
-        count_to_emit = CHUNK_SIZE;
-        target_velocity = (dir > 0) ? (v_slip / 1000.0f) : -(v_slip / 1000.0f);
-
-        uint32_t lag = abs(commanded_pos - planned_encoder_pos);
-        if (config.stall_threshold > 0 && lag >= config.stall_threshold) {
-          stall_tripped = true;
-          ReportStallTrip();
-          is_freewheeling = true;
-        }
-      } else {
-        dir = 0;
-        count_to_emit = 0;
-      }
-    }
+  if (res.stall_trip_event) {
+    stall_tripped = true;
+    ReportStallTrip();
   }
 
-  *out_delta = GenerateQuadChunk(chunk, CHUNK_SIZE, &current_quad_state, dir, count_to_emit);
+  *out_delta = GenerateQuadChunk(chunk, CHUNK_SIZE, &current_quad_state, res.dir, res.count_to_emit);
   planned_encoder_pos += *out_delta;
 
   // Calculate pacing frequency
   uint16_t psc = 0;
   uint16_t arr = 0;
-  CalcTimerPacing(target_velocity, &psc, &arr);
+  CalcTimerPacing(res.target_velocity, &psc, &arr);
   TIM3->PSC = psc;
   TIM3->ARR = arr;
 }

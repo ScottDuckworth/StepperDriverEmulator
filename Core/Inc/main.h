@@ -39,6 +39,9 @@ typedef void TIM_HandleTypeDef;
 #include "emulator_config.h"
 #include "motion_math.h"
 #include "quadrature.h"
+#include "led_control.h"
+#include "position_tracker.h"
+#include "motion_planner.h"
 
 /* USER CODE END Includes */
 
