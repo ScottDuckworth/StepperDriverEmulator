@@ -136,11 +136,11 @@ Commands are sent via the USB Virtual COM Port (terminated with `\r` or `\n`).
 | `r` | `r` | Dump full configuration and runtime status | `r` | Multi-line report (see below) |
 | `help` | `help` | Print command usage list | `help` | Usage list (see below) |
 
-> **Note on Queries:** Commands that accept optional parameters (`t`, `tcurve`, `stall`, `kfree`, `blink`, `kp`, `kff`) return the current value when issued with no arguments (e.g. typing `t` replies `t 0\r\n`).
+> **Note on Queries:** Commands that accept optional parameters (`t`, `tcurve`, `stall`, `kfree`, `blink`, `odr`, `epr`, `spr`, `kp`, `kff`) return the current value when issued with no arguments (e.g. typing `t` replies `t 0\r\n`, typing `odr` replies `odr 1000\r\n`).
 
 ### Full State Report (`r` command)
 
-Executing `r` prints all parameters and live hardware states:
+Executes `r` to print all parameters and live hardware states:
 
 ```text
 odr 1000
@@ -191,10 +191,16 @@ The emulator transmits asynchronous notifications over the Virtual COM Port as p
 
 ### Build Commands
 
+Build using CMake (which automatically invokes the underlying build tool specified in `CMakePresets.json`):
+
 ```powershell
 # Build Debug
-ninja -C build/Debug
+cmake --build build/Debug
+# or using CMake presets:
+cmake --build --preset Debug
 
 # Build Release
-ninja -C build/Release
+cmake --build build/Release
+# or using CMake presets:
+cmake --build --preset Release
 ```
