@@ -45,13 +45,6 @@ typedef struct {
   uint16_t spr;  // Step count per revolution
 } RunConfig_t;
 
-typedef enum {
-  OverrideDisabled,
-  OverrideEnabling,
-  OverrideEnabled,
-  OverrideDisabling,
-} OverrideState_t;
-
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/
@@ -111,16 +104,28 @@ void SetLimit2(bool active);
 void GetLED(uint8_t* r, uint8_t* g);
 void SetLED(uint8_t r, uint8_t g);
 
-int32_t GetOverrideRate(void);
-void SetOverrideRate(int32_t rate);
+bool GetBlinkMode(void);
+void SetBlinkMode(bool enable);
+void ReportBlinkMode(void);
 
-int32_t GetOverrideTarget(void);
-void SetOverrideTarget(int32_t target);
+int32_t GetTension(void);
+void SetTension(int32_t tension);
+void ReportTension(void);
 
-void SetOverrideDisable(void);
+void GetTorqueCurve(int32_t* t0, uint32_t* v_knee, uint32_t* v_max, int32_t* t_min);
+void SetTorqueCurve(int32_t t0, uint32_t v_knee, uint32_t v_max, int32_t t_min);
+void ReportTorqueCurve(void);
 
-OverrideState_t GetOverrideState(void);
-const char* OverrideStateToString(OverrideState_t state);
+uint32_t GetStallThreshold(void);
+void SetStallThreshold(uint32_t threshold);
+void ReportStallThreshold(void);
+
+float GetKfree(void);
+void SetKfree(float kfree);
+void ReportKfree(void);
+
+bool GetStallTrip(void);
+void ReportStallTrip(void);
 
 uint16_t WriteData(const uint8_t* data, uint16_t size);
 uint16_t WriteString(const char* text);
@@ -129,10 +134,6 @@ void ReportI32(const char* var, int32_t value);
 void ReportU32(const char* var, uint32_t value);
 void ReportU16(const char* var, uint16_t value);
 void ReportU8(const char* var, uint8_t value);
-
-void ReportOverrideTarget(void);
-void ReportOverrideRate(void);
-void ReportOverrideState(void);
 void ReportEncoderPosition(void);
 void ReportStepPosition(void);
 void ReportStepReverse(void);

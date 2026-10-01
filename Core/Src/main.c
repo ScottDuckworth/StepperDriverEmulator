@@ -75,11 +75,16 @@ typedef struct {
 static PositionCounters_t position;
 
 static volatile uint32_t step_period_cnt;
-static volatile int32_t override_target_pos;
-static volatile int32_t override_rate;
-static volatile int32_t override_start_pos;
-static volatile uint32_t override_start_time;
-static volatile OverrideState_t override_state;
+static volatile int32_t load_tension = 0;
+static int32_t torque_t0 = 1000;
+static uint32_t torque_v_knee = 1000;
+static uint32_t torque_v_max = 8000;
+static int32_t torque_t_min = 200;
+static uint32_t stall_threshold = 16;
+static float kfree = 0.005f;
+static volatile bool stall_tripped = false;
+static volatile bool blink_mode = false;
+static volatile uint32_t last_step_time = 0;
 
 #define CHUNK_SIZE 8
 #define TOTAL_BUFFER_SIZE (2 * CHUNK_SIZE)
@@ -211,42 +216,118 @@ void GetLED(uint8_t* r, uint8_t* g) {
   if (g) *g = TIM16->CCR1;
 }
 
-int32_t GetOverrideTarget(void) {
-  return override_target_pos;
+bool GetBlinkMode(void) {
+  return blink_mode;
 }
 
-int32_t GetOverrideRate(void) {
-  return override_rate;
+void SetBlinkMode(bool enable) {
+  blink_mode = enable;
+  ReportBlinkMode();
 }
 
-OverrideState_t GetOverrideState(void) {
-  return override_state;
+void ReportBlinkMode(void) {
+  ReportU8("blink", GetBlinkMode());
 }
 
-const char* OverrideStateToString(OverrideState_t state) {
-  switch (state) {
-    case OverrideEnabling:
-      return "enabling";
-    case OverrideEnabled:
-      return "enabled";
-    case OverrideDisabling:
-      return "disabling";
-    case OverrideDisabled:
-      // fall-through
+static void UpdateLEDs(void) {
+  bool blink_phase = ((now / 125) & 1) != 0;
+  if (blink_mode) {
+    SetLED(blink_phase ? 255 : 0, blink_phase ? 255 : 0);
+  } else if (stall_tripped) {
+    SetLED(blink_phase ? 255 : 0, 0);
+  } else if (!GetStepEnabled()) {
+    SetLED(0, 0);
+  } else if ((now - last_step_time) < 200) {
+    SetLED(0, blink_phase ? 255 : 0);
+  } else {
+    SetLED(0, 255);
   }
-  return "disabled";
 }
 
-void ReportOverrideTarget(void) {
-  ReportI32("ot", GetOverrideTarget());
+int32_t GetTension(void) {
+  return load_tension;
 }
 
-void ReportOverrideRate(void) {
-  ReportI32("or", GetOverrideRate());
+void SetTension(int32_t tension) {
+  load_tension = tension;
+  ReportTension();
+  if (!motion_active) {
+    Motion_Start();
+  }
 }
 
-void ReportOverrideState(void) {
-  ReportString("os", OverrideStateToString(GetOverrideState()));
+void ReportTension(void) {
+  ReportI32("t", GetTension());
+}
+
+void GetTorqueCurve(int32_t* t0, uint32_t* v_knee, uint32_t* v_max, int32_t* t_min) {
+  if (t0) *t0 = torque_t0;
+  if (v_knee) *v_knee = torque_v_knee;
+  if (v_max) *v_max = torque_v_max;
+  if (t_min) *t_min = torque_t_min;
+}
+
+void SetTorqueCurve(int32_t t0, uint32_t v_knee, uint32_t v_max, int32_t t_min) {
+  if (v_max <= v_knee) v_max = v_knee + 1;
+  torque_t0 = t0;
+  torque_v_knee = v_knee;
+  torque_v_max = v_max;
+  torque_t_min = t_min;
+  ReportTorqueCurve();
+}
+
+void ReportTorqueCurve(void) {
+  char buf[48];
+  int size = snprintf(buf, sizeof(buf), "tcurve %ld %lu %lu %ld\r\n",
+                      torque_t0, torque_v_knee, torque_v_max, torque_t_min);
+  WriteData((uint8_t*) buf, size);
+}
+
+uint32_t GetStallThreshold(void) {
+  return stall_threshold;
+}
+
+void SetStallThreshold(uint32_t threshold) {
+  stall_threshold = threshold;
+  ReportStallThreshold();
+}
+
+void ReportStallThreshold(void) {
+  ReportU32("stall", GetStallThreshold());
+}
+
+float GetKfree(void) {
+  return kfree;
+}
+
+void SetKfree(float k) {
+  kfree = k;
+  ReportKfree();
+}
+
+void ReportKfree(void) {
+  ReportFloat("kfree", GetKfree());
+}
+
+bool GetStallTrip(void) {
+  return stall_tripped;
+}
+
+void ReportStallTrip(void) {
+  ReportU8("stall_trip", GetStallTrip());
+}
+
+static int32_t CalcMotorTorque(float speed_abs) {
+  uint32_t v = (uint32_t) speed_abs;
+  if (v <= torque_v_knee) {
+    return torque_t0;
+  }
+  if (v >= torque_v_max) {
+    return torque_t_min;
+  }
+  int64_t num = (int64_t)(torque_t0 - torque_t_min) * (v - torque_v_knee);
+  int64_t den = (int64_t)(torque_v_max - torque_v_knee);
+  return (int32_t)(torque_t0 - (num / den));
 }
 
 void ReportFloat(const char* var, float value) {
@@ -290,42 +371,6 @@ void SetKff(float kff) {
 
 void ReportKff(void) {
   ReportFloat("kff", GetKff());
-}
-
-static void SetOverrideEnable(void) {
-  override_start_pos = position.encoder_pos;
-  override_start_time = now;
-  override_state = OverrideEnabling;
-  ReportOverrideState();
-  if (!motion_active) {
-    Motion_Start();
-  }
-}
-
-void SetOverrideDisable(void) {
-  override_start_pos = position.encoder_pos;
-  override_start_time = now;
-  override_state = OverrideDisabling;
-  ReportOverrideState();
-  if (!motion_active) {
-    Motion_Start();
-  }
-}
-
-void SetOverrideTarget(int32_t target) {
-  override_target_pos = target;
-  ReportOverrideTarget();
-  SetOverrideEnable();
-}
-
-void SetOverrideRate(int32_t rate) {
-  override_rate = rate;
-  ReportOverrideRate();
-  if (override_state == OverrideEnabling) {
-    SetOverrideEnable();
-  } else if (override_state == OverrideDisabling) {
-    SetOverrideDisable();
-  }
 }
 
 int32_t GetEncoderPosition(void) {
@@ -386,57 +431,37 @@ static int32_t StepToEncoderPosition(int32_t step_position) {
   return (int32_t)(((int64_t) step_position * config.epr) / config.spr);
 }
 
-static int32_t GetOverridenPosision(int32_t current, int32_t target) {
-  int32_t rate = override_rate;
-  if ((target < current) != (rate < 0)) {
-    rate = -rate;
-  }
-  uint32_t ms = now - override_start_time;
-  return override_start_pos + rate * (ms / 1000.0f) + 0.5f;
-}
-
-static bool MetOrCrossed(int32_t started, int32_t current, int32_t target) {
-  return current == target || ((current < target) != (started < target));
-}
-
-static int32_t ApplyOverride(int32_t current, int32_t intent) {
-  switch (override_state) {
-    case OverrideEnabling: {
-      int32_t override = GetOverridenPosision(current, override_target_pos);
-      if (!MetOrCrossed(override_start_pos, current, override_target_pos)) {
-        return override;
-      }
-      override_state = OverrideEnabled;
-      ReportOverrideState();
-      // fall-through
-    }
-    case OverrideEnabled: {
-      return override_target_pos;
-    }
-    case OverrideDisabling: {
-      int32_t override = GetOverridenPosision(current, intent);
-      if (!MetOrCrossed(override_start_pos, current, intent)) {
-        return override;
-      }
-      override_state = OverrideDisabled;
-      ReportOverrideState();
-      // fall-through
-    }
-    case OverrideDisabled:
-      // fall-through
-  }
-  return intent;
-}
-
 void UpdateStepEnabled(void) {
+  bool cleared_stall = false;
   __disable_irq();
-  if (GetStepEnabled()) {
+  bool enabled = GetStepEnabled();
+  if (enabled) {
     TIM2->CR1 |= TIM_CR1_CEN;
+    if (stall_tripped) {
+      stall_tripped = false;
+      cleared_stall = true;
+    }
+    if (config.epr != 0) {
+      position.step_pos = (int32_t)(((int64_t)position.encoder_pos * config.spr) / config.epr);
+    }
+    planned_encoder_pos = position.encoder_pos;
+    position.step_cnt_prev = UINT16_MAX - (uint16_t) DMA1_Channel5->CNDTR;
+    position.step_dcnt = 0;
   } else {
     TIM2->CR1 &= ~TIM_CR1_CEN;
+    if (stall_tripped) {
+      stall_tripped = false;
+      cleared_stall = true;
+    }
   }
   __enable_irq();
+  if (cleared_stall) {
+    ReportStallTrip();
+  }
   ReportStepEnabled();
+  if (!enabled && load_tension != 0 && !motion_active) {
+    Motion_Start();
+  }
 }
 
 static void UpdatePositionCounters(void) {
@@ -444,6 +469,9 @@ static void UpdatePositionCounters(void) {
   uint16_t step_dcnt = step_cnt - position.step_cnt_prev;
   position.step_cnt_prev = step_cnt;
   position.step_dcnt = step_dcnt;
+  if (step_dcnt != 0) {
+    last_step_time = now;
+  }
   if (position.step_reverse) {
     position.step_pos -= step_dcnt;
   } else {
@@ -463,29 +491,83 @@ void UpdateStepDirection(void) {
 static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
   UpdatePositionCounters();
 
-  int32_t intent = StepToEncoderPosition(position.step_pos);
-  intent = ApplyOverride(planned_encoder_pos, intent);
-  int32_t error = intent - planned_encoder_pos;
+  bool is_freewheeling = stall_tripped || !GetStepEnabled();
+  int32_t commanded_pos = StepToEncoderPosition(position.step_pos);
+  int32_t error = commanded_pos - planned_encoder_pos;
+  uint32_t lag = (error >= 0) ? (uint32_t) error : (uint32_t)(-error);
 
-  float input_rate = 0.0f;
-  if (position.step_dcnt && step_period_cnt > 0) {
-    input_rate = (48000.0f / (float) step_period_cnt) * ((float) config.epr / (float) config.spr);
-    if (position.step_reverse) {
-      input_rate = -input_rate;
-    }
+  if (!is_freewheeling && stall_threshold > 0 && lag >= stall_threshold) {
+    stall_tripped = true;
+    ReportStallTrip();
+    is_freewheeling = true;
   }
-
-  float target_velocity = control_kff * input_rate + control_kp * (float) error;
 
   int count_to_emit = 0;
   int dir = 0;
+  float target_velocity = 0.0f;
 
-  if (error != 0) {
-    dir = (error > 0) ? 1 : -1;
-    int abs_error = abs(error);
-    count_to_emit = CHUNK_SIZE;
-    if (count_to_emit > abs_error) {
-      count_to_emit = abs_error;
+  if (is_freewheeling) {
+    float v_free = (float) load_tension * kfree;
+    if (v_free > (float) torque_v_max) {
+      v_free = (float) torque_v_max;
+    } else if (v_free < -(float) torque_v_max) {
+      v_free = -(float) torque_v_max;
+    }
+
+    if (v_free != 0.0f) {
+      dir = (v_free > 0.0f) ? 1 : -1;
+      count_to_emit = CHUNK_SIZE;
+      target_velocity = v_free / 1000.0f;
+    } else {
+      dir = 0;
+      count_to_emit = 0;
+      target_velocity = 0.0f;
+    }
+  } else {
+    float input_rate = 0.0f;
+    if (position.step_dcnt && step_period_cnt > 0) {
+      input_rate = (48000.0f / (float) step_period_cnt) * ((float) config.epr / (float) config.spr);
+      if (position.step_reverse) {
+        input_rate = -input_rate;
+      }
+    }
+
+    target_velocity = control_kff * input_rate + control_kp * (float) error;
+
+    if (error != 0) {
+      dir = (error > 0) ? 1 : -1;
+      float speed_hz = fabsf(target_velocity) * 1000.0f;
+      int32_t t_motor = CalcMotorTorque(speed_hz);
+      int32_t t_net = t_motor + dir * load_tension;
+
+      if (t_net >= 0) {
+        int abs_error = (error > 0) ? error : -error;
+        count_to_emit = (abs_error < CHUNK_SIZE) ? abs_error : CHUNK_SIZE;
+      } else {
+        int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
+        if (abs_tension > torque_t0) {
+          dir = (load_tension > 0) ? 1 : -1;
+          count_to_emit = CHUNK_SIZE;
+          float v_slip = (float)(abs_tension - torque_t0) * kfree;
+          if (v_slip > (float) torque_v_max) v_slip = (float) torque_v_max;
+          target_velocity = (dir > 0) ? (v_slip / 1000.0f) : -(v_slip / 1000.0f);
+        } else {
+          dir = 0;
+          count_to_emit = 0;
+        }
+      }
+    } else {
+      int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
+      if (abs_tension > torque_t0) {
+        dir = (load_tension > 0) ? 1 : -1;
+        count_to_emit = CHUNK_SIZE;
+        float v_slip = (float)(abs_tension - torque_t0) * kfree;
+        if (v_slip > (float) torque_v_max) v_slip = (float) torque_v_max;
+        target_velocity = (dir > 0) ? (v_slip / 1000.0f) : -(v_slip / 1000.0f);
+      } else {
+        dir = 0;
+        count_to_emit = 0;
+      }
     }
   }
 
@@ -502,8 +584,17 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
     chunk[i] = QUAD_BSRR_STATES[current_quad_state];
   }
 
-  *out_delta = (dir > 0) ? count_to_emit : -count_to_emit;
+  *out_delta = (dir > 0) ? count_to_emit : (dir < 0) ? -count_to_emit : 0;
   planned_encoder_pos += *out_delta;
+
+  if (!is_freewheeling && !stall_tripped && stall_threshold > 0) {
+    int32_t new_error = commanded_pos - planned_encoder_pos;
+    uint32_t new_lag = (new_error >= 0) ? (uint32_t) new_error : (uint32_t)(-new_error);
+    if (new_lag >= stall_threshold) {
+      stall_tripped = true;
+      ReportStallTrip();
+    }
+  }
 
   // Calculate pacing frequency
   float abs_rate = fabsf(target_velocity);
@@ -534,9 +625,17 @@ void Motion_Start(void) {
   if (motion_active) return;
 
   UpdatePositionCounters();
-  int32_t intent = StepToEncoderPosition(position.step_pos);
-  intent = ApplyOverride(position.encoder_pos, intent);
-  if (intent == position.encoder_pos && position.step_dcnt == 0 && override_state == OverrideDisabled) {
+  int32_t commanded = StepToEncoderPosition(position.step_pos);
+  int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
+
+  bool should_start = false;
+  if (stall_tripped || !GetStepEnabled()) {
+    should_start = (load_tension != 0);
+  } else {
+    should_start = (commanded != position.encoder_pos) || (position.step_dcnt != 0) || (abs_tension > torque_t0);
+  }
+
+  if (!should_start) {
     return;
   }
 
@@ -546,7 +645,7 @@ void Motion_Start(void) {
   FillQuadChunk(&quad_buffer[0], &half_0_delta);
   FillQuadChunk(&quad_buffer[CHUNK_SIZE], &half_1_delta);
 
-  if (half_0_delta == 0 && half_1_delta == 0) {
+  if (half_0_delta == 0 && half_1_delta == 0 && !stall_tripped && GetStepEnabled() && abs_tension <= torque_t0 && position.step_dcnt == 0 && commanded == position.encoder_pos) {
     motion_active = false;
     return;
   }
@@ -565,22 +664,43 @@ void Motion_Wakeup_Handler(void) {
   TIM2->DIER &= ~TIM_DIER_CC1IE;
 
   UpdatePositionCounters();
-  int32_t intent = StepToEncoderPosition(position.step_pos);
-  intent = ApplyOverride(planned_encoder_pos, intent);
+  int32_t commanded = StepToEncoderPosition(position.step_pos);
+  int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
 
-  if (intent != planned_encoder_pos || position.step_dcnt != 0 || override_state != OverrideDisabled) {
+  bool should_start = false;
+  if (stall_tripped || !GetStepEnabled()) {
+    should_start = (load_tension != 0);
+  } else {
+    should_start = (commanded != planned_encoder_pos) || (position.step_dcnt != 0) || (abs_tension > torque_t0);
+  }
+
+  if (should_start) {
     Motion_Start();
   } else {
-    TIM2->SR = ~TIM_SR_CC1IF;
-    TIM2->DIER |= TIM_DIER_CC1IE;
+    if (GetStepEnabled()) {
+      TIM2->SR = ~TIM_SR_CC1IF;
+      TIM2->DIER |= TIM_DIER_CC1IE;
+    }
   }
 }
 
 static void CheckMotionIdle(void) {
   if (half_0_delta == 0 && half_1_delta == 0) {
-    int32_t intent = StepToEncoderPosition(position.step_pos);
-    intent = ApplyOverride(position.encoder_pos, intent);
-    if (intent == position.encoder_pos && position.encoder_pos == planned_encoder_pos) {
+    if (stall_tripped || !GetStepEnabled()) {
+      if (load_tension == 0) {
+        TIM3->CR1 &= ~TIM_CR1_CEN;
+        DMA1_Channel3->CCR &= ~DMA_CCR_EN;
+        motion_active = false;
+        if (GetStepEnabled()) {
+          TIM2->SR = ~TIM_SR_CC1IF;
+          TIM2->DIER |= TIM_DIER_CC1IE;
+        }
+      }
+      return;
+    }
+    int32_t commanded = StepToEncoderPosition(position.step_pos);
+    int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
+    if (commanded == position.encoder_pos && position.encoder_pos == planned_encoder_pos && position.step_dcnt == 0 && abs_tension <= torque_t0) {
       TIM3->CR1 &= ~TIM_CR1_CEN;
       DMA1_Channel3->CCR &= ~DMA_CCR_EN;
       motion_active = false;
@@ -624,16 +744,23 @@ void Motion_Init(void) {
 
 void UpdateTick(void) {
   ++now;
+  UpdateLEDs();
 
   if (!motion_active) {
     uint16_t step_cnt = UINT16_MAX - (uint16_t) DMA1_Channel5->CNDTR;
-    if (step_cnt != position.step_cnt_prev || override_state != OverrideDisabled) {
-      int32_t intent = StepToEncoderPosition(position.step_pos);
-      intent = ApplyOverride(position.encoder_pos, intent);
-      if (intent != position.encoder_pos || step_cnt != position.step_cnt_prev || override_state != OverrideDisabled) {
+    int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
+    bool should_start = false;
+    if (stall_tripped || !GetStepEnabled()) {
+      should_start = (load_tension != 0);
+    } else {
+      int32_t commanded = StepToEncoderPosition(position.step_pos);
+      should_start = (commanded != position.encoder_pos) || (step_cnt != position.step_cnt_prev) || (abs_tension > torque_t0);
+    }
+    if (should_start) {
+      if (GetStepEnabled()) {
         TIM2->DIER &= ~TIM_DIER_CC1IE;
-        Motion_Start();
       }
+      Motion_Start();
     }
   }
 }

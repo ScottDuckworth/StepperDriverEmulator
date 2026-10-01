@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_ARGC 4
+#define MAX_ARGC 6
 static int argc;
 static char* argv[MAX_ARGC];
 static char cmd_buffer[80];
@@ -24,6 +24,15 @@ static bool StrToI32(const char* str, int32_t* dst) {
   value = strtol(str, &end, 0);
   if (*end != '\0' || value > INT32_MAX || value < INT32_MIN) return false;
   *dst = value;
+  return true;
+}
+
+static bool StrToU32(const char* str, uint32_t* dst) {
+  unsigned long value;
+  char* end;
+  value = strtoul(str, &end, 0);
+  if (*end != '\0' || value > UINT32_MAX) return false;
+  *dst = (uint32_t) value;
   return true;
 }
 
@@ -104,23 +113,52 @@ static void Cmd_lim2(const Command_t* self) {
   SetLimit2(limit);
 }
 
-static void Cmd_od(const Command_t* self) {
-  if (argc != 1) return InvalidUsage(self->usage);
-  SetOverrideDisable();
-}
-
-static void Cmd_ot(const Command_t* self) {
+static void Cmd_t(const Command_t* self) {
+  if (argc == 1) {
+    ReportTension();
+    return;
+  }
   if (argc != 2) return InvalidUsage(self->usage);
   int32_t value;
   if (!StrToI32(argv[1], &value)) return InvalidValue("int32", argv[1]);
-  SetOverrideTarget(value);
+  SetTension(value);
 }
 
-static void Cmd_or(const Command_t* self) {
+static void Cmd_tcurve(const Command_t* self) {
+  if (argc == 1) {
+    ReportTorqueCurve();
+    return;
+  }
+  if (argc != 5) return InvalidUsage(self->usage);
+  int32_t t0, t_min;
+  uint32_t v_knee, v_max;
+  if (!StrToI32(argv[1], &t0)) return InvalidValue("int32", argv[1]);
+  if (!StrToU32(argv[2], &v_knee)) return InvalidValue("uint32", argv[2]);
+  if (!StrToU32(argv[3], &v_max)) return InvalidValue("uint32", argv[3]);
+  if (!StrToI32(argv[4], &t_min)) return InvalidValue("int32", argv[4]);
+  SetTorqueCurve(t0, v_knee, v_max, t_min);
+}
+
+static void Cmd_stall(const Command_t* self) {
+  if (argc == 1) {
+    ReportStallThreshold();
+    return;
+  }
   if (argc != 2) return InvalidUsage(self->usage);
-  int32_t value;
-  if (!StrToI32(argv[1], &value)) return InvalidValue("int32", argv[1]);
-  SetOverrideRate(value);
+  uint32_t value;
+  if (!StrToU32(argv[1], &value)) return InvalidValue("uint32", argv[1]);
+  SetStallThreshold(value);
+}
+
+static void Cmd_kfree(const Command_t* self) {
+  if (argc == 1) {
+    ReportKfree();
+    return;
+  }
+  if (argc != 2) return InvalidUsage(self->usage);
+  float value;
+  if (!StrToFloat(argv[1], &value)) return InvalidValue("float", argv[1]);
+  SetKfree(value);
 }
 
 static void Cmd_zero(const Command_t* self) {
@@ -128,12 +166,17 @@ static void Cmd_zero(const Command_t* self) {
   SetEncoderPosition(0);
 }
 
-static void Cmd_led(const Command_t* self) {
-  if (argc != 3) return InvalidUsage(self->usage);
-  uint8_t r, g;
-  if (!StrToU8(argv[1], &r)) return InvalidValue("uint8", argv[1]);
-  if (!StrToU8(argv[2], &g)) return InvalidValue("uint8", argv[2]);
-  SetLED(r, g);
+static void Cmd_blink(const Command_t* self) {
+  if (argc == 1) {
+    ReportBlinkMode();
+    return;
+  }
+  if (argc != 2) return InvalidUsage(self->usage);
+  uint8_t value;
+  if (!StrToU8(argv[1], &value) || (value != 0 && value != 1)) {
+    return InvalidValue("bool (0 or 1)", argv[1]);
+  }
+  SetBlinkMode(value != 0);
 }
 
 static void Cmd_odr(const Command_t* self) {
@@ -185,9 +228,12 @@ static void Cmd_r(const Command_t* self) {
   ReportKff();
   ReportLimit1();
   ReportLimit2();
-  ReportOverrideTarget();
-  ReportOverrideRate();
-  ReportOverrideState();
+  ReportTension();
+  ReportTorqueCurve();
+  ReportStallThreshold();
+  ReportKfree();
+  ReportStallTrip();
+  ReportBlinkMode();
   ReportStepReverse();
   ReportStepEnabled();
   ReportEncoderPosition();
@@ -198,11 +244,12 @@ static void Cmd_help(const Command_t* self);
 static const Command_t commands[] = {
     {"lim1", "lim1 <uint8>", Cmd_lim1},
     {"lim2", "lim2 <uint8>", Cmd_lim2},
-    {"od", "od", Cmd_od},
-    {"ot", "ot <int32>", Cmd_ot},
-    {"or", "or <int32>", Cmd_or},
+    {"t", "t [int32]", Cmd_t},
+    {"tcurve", "tcurve [T0] [V_knee] [V_max] [T_min]", Cmd_tcurve},
+    {"stall", "stall [uint32]", Cmd_stall},
+    {"kfree", "kfree [float]", Cmd_kfree},
     {"zero", "zero", Cmd_zero},
-    {"led", "led <red:uint8> <green:uint8>", Cmd_led},
+    {"blink", "blink [0|1]", Cmd_blink},
     {"odr", "odr <uint16>", Cmd_odr},
     {"epr", "epr <uint16>", Cmd_epr},
     {"spr", "spr <uint16>", Cmd_spr},
