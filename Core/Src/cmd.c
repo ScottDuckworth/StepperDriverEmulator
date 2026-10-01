@@ -100,16 +100,16 @@ static void InvalidValue(const char* type, const char* value) {
 }
 
 static void Cmd_lim1(const Command_t* self) {
-  if (argc != 2) return InvalidUsage(self->usage);
+  if (argc != 2) { InvalidUsage(self->usage); return; }
   uint8_t limit;
-  if (!StrToU8(argv[1], &limit)) return InvalidValue("uint8", argv[1]);
+  if (!StrToU8(argv[1], &limit)) { InvalidValue("uint8", argv[1]); return; }
   SetLimit1(limit);
 }
 
 static void Cmd_lim2(const Command_t* self) {
-  if (argc != 2) return InvalidUsage(self->usage);
+  if (argc != 2) { InvalidUsage(self->usage); return; }
   uint8_t limit;
-  if (!StrToU8(argv[1], &limit)) return InvalidValue("uint8", argv[1]);
+  if (!StrToU8(argv[1], &limit)) { InvalidValue("uint8", argv[1]); return; }
   SetLimit2(limit);
 }
 
@@ -118,9 +118,9 @@ static void Cmd_t(const Command_t* self) {
     ReportTension();
     return;
   }
-  if (argc != 2) return InvalidUsage(self->usage);
+  if (argc != 2) { InvalidUsage(self->usage); return; }
   int32_t value;
-  if (!StrToI32(argv[1], &value)) return InvalidValue("int32", argv[1]);
+  if (!StrToI32(argv[1], &value)) { InvalidValue("int32", argv[1]); return; }
   SetTension(value);
 }
 
@@ -129,13 +129,13 @@ static void Cmd_tcurve(const Command_t* self) {
     ReportTorqueCurve();
     return;
   }
-  if (argc != 5) return InvalidUsage(self->usage);
+  if (argc != 5) { InvalidUsage(self->usage); return; }
   int32_t t0, t_min;
   uint32_t v_knee, v_max;
-  if (!StrToI32(argv[1], &t0)) return InvalidValue("int32", argv[1]);
-  if (!StrToU32(argv[2], &v_knee)) return InvalidValue("uint32", argv[2]);
-  if (!StrToU32(argv[3], &v_max)) return InvalidValue("uint32", argv[3]);
-  if (!StrToI32(argv[4], &t_min)) return InvalidValue("int32", argv[4]);
+  if (!StrToI32(argv[1], &t0)) { InvalidValue("int32", argv[1]); return; }
+  if (!StrToU32(argv[2], &v_knee)) { InvalidValue("uint32", argv[2]); return; }
+  if (!StrToU32(argv[3], &v_max)) { InvalidValue("uint32", argv[3]); return; }
+  if (!StrToI32(argv[4], &t_min)) { InvalidValue("int32", argv[4]); return; }
   SetTorqueCurve(t0, v_knee, v_max, t_min);
 }
 
@@ -144,9 +144,9 @@ static void Cmd_stall(const Command_t* self) {
     ReportStallThreshold();
     return;
   }
-  if (argc != 2) return InvalidUsage(self->usage);
+  if (argc != 2) { InvalidUsage(self->usage); return; }
   uint32_t value;
-  if (!StrToU32(argv[1], &value)) return InvalidValue("uint32", argv[1]);
+  if (!StrToU32(argv[1], &value)) { InvalidValue("uint32", argv[1]); return; }
   SetStallThreshold(value);
 }
 
@@ -155,14 +155,14 @@ static void Cmd_kfree(const Command_t* self) {
     ReportKfree();
     return;
   }
-  if (argc != 2) return InvalidUsage(self->usage);
+  if (argc != 2) { InvalidUsage(self->usage); return; }
   float value;
-  if (!StrToFloat(argv[1], &value)) return InvalidValue("float", argv[1]);
+  if (!StrToFloat(argv[1], &value)) { InvalidValue("float", argv[1]); return; }
   SetKfree(value);
 }
 
 static void Cmd_zero(const Command_t* self) {
-  if (argc != 1) return InvalidUsage(self->usage);
+  if (argc != 1) { InvalidUsage(self->usage); return; }
   SetEncoderPosition(0);
 }
 
@@ -171,10 +171,11 @@ static void Cmd_blink(const Command_t* self) {
     ReportBlinkMode();
     return;
   }
-  if (argc != 2) return InvalidUsage(self->usage);
+  if (argc != 2) { InvalidUsage(self->usage); return; }
   uint8_t value;
   if (!StrToU8(argv[1], &value) || (value != 0 && value != 1)) {
-    return InvalidValue("bool (0 or 1)", argv[1]);
+    InvalidValue("bool (0 or 1)", argv[1]);
+    return;
   }
   SetBlinkMode(value != 0);
 }
@@ -184,9 +185,9 @@ static void Cmd_odr(const Command_t* self) {
     ReportOdr();
     return;
   }
-  if (argc != 2) return InvalidUsage(self->usage);
+  if (argc != 2) { InvalidUsage(self->usage); return; }
   uint16_t value;
-  if (!StrToU16(argv[1], &value)) return InvalidValue("uint16", argv[1]);
+  if (!StrToU16(argv[1], &value)) { InvalidValue("uint16", argv[1]); return; }
   SetOdr(value);
 }
 
@@ -195,9 +196,9 @@ static void Cmd_epr(const Command_t* self) {
     ReportEpr();
     return;
   }
-  if (argc != 2) return InvalidUsage(self->usage);
+  if (argc != 2) { InvalidUsage(self->usage); return; }
   uint16_t value;
-  if (!StrToU16(argv[1], &value)) return InvalidValue("uint16", argv[1]);
+  if (!StrToU16(argv[1], &value)) { InvalidValue("uint16", argv[1]); return; }
   SetEpr(value);
 }
 
@@ -206,9 +207,9 @@ static void Cmd_spr(const Command_t* self) {
     ReportSpr();
     return;
   }
-  if (argc != 2) return InvalidUsage(self->usage);
+  if (argc != 2) { InvalidUsage(self->usage); return; }
   uint16_t value;
-  if (!StrToU16(argv[1], &value)) return InvalidValue("uint16", argv[1]);
+  if (!StrToU16(argv[1], &value)) { InvalidValue("uint16", argv[1]); return; }
   SetSpr(value);
 }
 
@@ -217,9 +218,9 @@ static void Cmd_kp(const Command_t* self) {
     ReportKp();
     return;
   }
-  if (argc != 2) return InvalidUsage(self->usage);
+  if (argc != 2) { InvalidUsage(self->usage); return; }
   float value;
-  if (!StrToFloat(argv[1], &value)) return InvalidValue("float", argv[1]);
+  if (!StrToFloat(argv[1], &value)) { InvalidValue("float", argv[1]); return; }
   SetKp(value);
 }
 
@@ -228,14 +229,14 @@ static void Cmd_kff(const Command_t* self) {
     ReportKff();
     return;
   }
-  if (argc != 2) return InvalidUsage(self->usage);
+  if (argc != 2) { InvalidUsage(self->usage); return; }
   float value;
-  if (!StrToFloat(argv[1], &value)) return InvalidValue("float", argv[1]);
+  if (!StrToFloat(argv[1], &value)) { InvalidValue("float", argv[1]); return; }
   SetKff(value);
 }
 
 static void Cmd_r(const Command_t* self) {
-  if (argc != 1) return InvalidUsage(self->usage);
+  if (argc != 1) { InvalidUsage(self->usage); return; }
   ReportOdr();
   ReportEpr();
   ReportSpr();
@@ -286,7 +287,8 @@ static void CmdRun(void) {
   for (int i = 0; i < sizeof(commands) / sizeof(commands[0]); ++i) {
     const Command_t* cmd = &commands[i];
     if (strcmp(argv[0], cmd->name) == 0) {
-      return (*cmd->impl)(cmd);
+      (*cmd->impl)(cmd);
+      return;
     }
   }
 

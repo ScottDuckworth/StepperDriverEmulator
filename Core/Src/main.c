@@ -510,13 +510,7 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
   float target_velocity = 0.0f;
 
   if (is_freewheeling) {
-    float v_free = (float) load_tension * config.kfree;
-    if (v_free > (float) config.torque_v_max) {
-      v_free = (float) config.torque_v_max;
-    } else if (v_free < -(float) config.torque_v_max) {
-      v_free = -(float) config.torque_v_max;
-    }
-
+    float v_free = CalcFreewheelVelocity(&config, load_tension);
     if (v_free != 0.0f) {
       dir = (v_free > 0.0f) ? 1 : -1;
       count_to_emit = CHUNK_SIZE;
@@ -541,7 +535,7 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
       dir = (error > 0) ? 1 : -1;
       float speed_hz = fabsf(target_velocity) * 1000.0f;
       int32_t t_motor = CalcMotorTorque(speed_hz);
-      int32_t t_net = t_motor + dir * load_tension;
+      int32_t t_net = CalcNetTorque(t_motor, dir, load_tension);
 
       if (t_net >= 0) {
         // Sufficient torque: motor drives normally toward target
@@ -549,12 +543,10 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
         count_to_emit = (abs_error < CHUNK_SIZE) ? abs_error : CHUNK_SIZE;
       } else {
         // Torque deficit: motor cannot advance in commanded direction
-        int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
-        if (abs_tension > config.torque_t0) {
+        float v_slip = CalcSlipVelocity(&config, load_tension);
+        if (v_slip > 0.0f) {
           dir = (load_tension > 0) ? 1 : -1;
           count_to_emit = CHUNK_SIZE;
-          float v_slip = (float)(abs_tension - config.torque_t0) * config.kfree;
-          if (v_slip > (float) config.torque_v_max) v_slip = (float) config.torque_v_max;
           target_velocity = (dir > 0) ? (v_slip / 1000.0f) : -(v_slip / 1000.0f);
         } else {
           dir = 0;
@@ -571,12 +563,10 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
       }
     } else {
       // error == 0: motor is at target
-      int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
-      if (abs_tension > config.torque_t0) {
+      float v_slip = CalcSlipVelocity(&config, load_tension);
+      if (v_slip > 0.0f) {
         dir = (load_tension > 0) ? 1 : -1;
         count_to_emit = CHUNK_SIZE;
-        float v_slip = (float)(abs_tension - config.torque_t0) * config.kfree;
-        if (v_slip > (float) config.torque_v_max) v_slip = (float) config.torque_v_max;
         target_velocity = (dir > 0) ? (v_slip / 1000.0f) : -(v_slip / 1000.0f);
 
         uint32_t lag = abs(commanded_pos - planned_encoder_pos);

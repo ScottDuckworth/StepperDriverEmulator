@@ -26,8 +26,11 @@
 extern "C" {
 #endif
 
-/* Includes ------------------------------------------------------------------*/
+#ifndef UNIT_TEST
 #include "stm32f0xx_hal.h"
+#else
+typedef void TIM_HandleTypeDef;
+#endif
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
