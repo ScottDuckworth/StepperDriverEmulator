@@ -40,30 +40,35 @@ extern "C" {
 /* USER CODE BEGIN ET */
 
 typedef struct {
-  uint16_t odr;  // Output Data Rate (milliseconds)
-  uint16_t epr;  // Encoder count per revolution
-  uint16_t spr;  // Step count per revolution
-  float kp;
-  float kff;
-  int32_t torque_t0;
-  uint32_t torque_v_knee;
-  uint32_t torque_v_max;
-  int32_t torque_t_min;
-  uint32_t stall_threshold;
-  float kfree;
-} RunConfig_t;
+  // Timing and Resolution
+  uint16_t odr;               // Output Data Rate for periodic position reports (ms, 0 = disabled)
+  uint16_t epr;               // Encoder counts per revolution (quadrature edges)
+  uint16_t spr;               // Step pulses per revolution
 
-#define DEFAULT_RUN_CONFIG { \
+  // Torque-Speed Curve Parameters
+  int32_t torque_t0;          // Maximum holding torque shelf below v_knee
+  uint32_t torque_v_knee;     // Knee velocity where torque starts derating (encoder counts/s)
+  uint32_t torque_v_max;      // High-speed cutoff where torque reaches t_min (encoder counts/s)
+  int32_t torque_t_min;       // Minimum pull-out torque at and above v_max
+  uint32_t stall_threshold;   // Rotor lag error threshold before tripping stall fault (encoder counts, 0 = disabled)
+
+  // Floating-point Control Gains & Physical Coefficients
+  float kp;                   // Proportional gain for position tracking error
+  float kff;                  // Feedforward velocity gain for input pulse rate
+  float kfree;                // Viscous freewheeling velocity coefficient under load tension
+} EmulatorConfig_t;
+
+#define DEFAULT_EMULATOR_CONFIG { \
   .odr = 1000, \
   .epr = 4000, \
   .spr = 1000, \
-  .kp = 0.1f, \
-  .kff = 1.0f, \
   .torque_t0 = 1000, \
   .torque_v_knee = 1000, \
   .torque_v_max = 8000, \
   .torque_t_min = 200, \
-  .stall_threshold = 16, \
+  .stall_threshold = 4000, \
+  .kp = 0.1f, \
+  .kff = 1.0f, \
   .kfree = 0.005f, \
 }
 
@@ -109,7 +114,7 @@ void ReportKp(void);
 void ReportKff(void);
 void ReportFloat(const char* var, float value);
 
-RunConfig_t* GetConfig(void);
+EmulatorConfig_t* GetConfig(void);
 
 uint16_t GetOdr(void);
 void SetOdr(uint16_t odr);
@@ -158,7 +163,7 @@ float GetKfree(void);
 void SetKfree(float kfree);
 void ReportKfree(void);
 
-int32_t CalcMotorTorqueConfig(const RunConfig_t* cfg, float speed_abs);
+int32_t CalcMotorTorqueConfig(const EmulatorConfig_t* cfg, float speed_abs);
 int32_t CalcMotorTorque(float speed_abs);
 
 bool GetStallTrip(void);

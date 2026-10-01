@@ -103,7 +103,7 @@ static const uint32_t QUAD_BSRR_STATES[4] = {
 static volatile uint16_t usb_output_size;
 static volatile uint16_t usb_input_size;
 
-static RunConfig_t config = DEFAULT_RUN_CONFIG;
+static EmulatorConfig_t config = DEFAULT_EMULATOR_CONFIG;
 
 /* USER CODE END PV */
 
@@ -116,7 +116,7 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-RunConfig_t* GetConfig() {
+EmulatorConfig_t* GetConfig(void) {
   return &config;
 }
 
@@ -343,7 +343,7 @@ void ReportStallTrip(void) {
   ReportU8("stall_trip", GetStallTrip());
 }
 
-int32_t CalcMotorTorqueConfig(const RunConfig_t* cfg, float speed_abs) {
+int32_t CalcMotorTorqueConfig(const EmulatorConfig_t* cfg, float speed_abs) {
   uint32_t v = (uint32_t) speed_abs;
   if (v <= cfg->torque_v_knee) {
     return cfg->torque_t0;

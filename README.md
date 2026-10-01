@@ -122,7 +122,7 @@ Commands are sent via the USB Virtual COM Port (terminated with `\r` or `\n`).
 | :--- | :--- | :--- | :--- | :--- |
 | `t` | `t [int32]` | Query or set load tension/torque | `t -1200` | `t -1200\r\n` |
 | `tcurve` | `tcurve [T0] [V_knee] [V_max] [T_min]` | Query or set torque-speed parameters | `tcurve 1000 1000 8000 200` | `tcurve 1000 1000 8000 200\r\n` |
-| `stall` | `stall [uint32]` | Query or set stall threshold (`0` = disable) | `stall 16` | `stall 16\r\n` |
+| `stall` | `stall [uint32]` | Query or set stall threshold (`0` = disable) | `stall 4000` | `stall 4000\r\n` |
 | `kfree` | `kfree [float]` | Query or set viscous freewheel coefficient | `kfree 0.005` | `kfree 0.0050\r\n` |
 | `blink` | `blink [0\|1]` | Query or toggle yellow identify blink | `blink 1` | `blink 1\r\n` |
 | `zero` | `zero` | Zero encoder and step positions | `zero` | `pos 0\r\n` |
@@ -152,7 +152,7 @@ lim1 0
 lim2 0
 t 0
 tcurve 1000 1000 8000 200
-stall 16
+stall 4000
 kfree 0.0050
 stall_trip 0
 blink 0
