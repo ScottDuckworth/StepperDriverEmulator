@@ -38,6 +38,7 @@ typedef void TIM_HandleTypeDef;
 #include <stdbool.h>
 #include "emulator_config.h"
 #include "motion_math.h"
+#include "quadrature.h"
 
 /* USER CODE END Includes */
 

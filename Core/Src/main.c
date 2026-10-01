@@ -90,12 +90,6 @@ static int8_t half_1_delta = 0;
 static volatile bool motion_active = false;
 static volatile int32_t planned_encoder_pos = 0;
 
-static const uint32_t QUAD_BSRR_STATES[4] = {
-    GPIO_BSRR_BR_4 | GPIO_BSRR_BR_5, // State 0: EA=0, EB=0
-    GPIO_BSRR_BS_4 | GPIO_BSRR_BR_5, // State 1: EA=1, EB=0
-    GPIO_BSRR_BS_4 | GPIO_BSRR_BS_5, // State 2: EA=1, EB=1
-    GPIO_BSRR_BR_4 | GPIO_BSRR_BS_5  // State 3: EA=0, EB=1
-};
 
 #define usb_output_data UserTxBufferFS
 #define usb_input_data UserRxBufferFS
@@ -404,7 +398,7 @@ void SetEncoderPosition(int32_t pos) {
   half_0_delta = 0;
   half_1_delta = 0;
   for (int i = 0; i < TOTAL_BUFFER_SIZE; i++) {
-    quad_buffer[i] = QUAD_BSRR_STATES[current_quad_state];
+    quad_buffer[i] = GetQuadBsrrValue(current_quad_state);
   }
   TIM3->CR1 &= ~TIM_CR1_CEN;
   DMA1_Channel3->CCR &= ~DMA_CCR_EN;
@@ -582,45 +576,15 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
     }
   }
 
-  for (int i = 0; i < count_to_emit; i++) {
-    if (dir > 0) {
-      current_quad_state = (current_quad_state + 1) & 3;
-    } else {
-      current_quad_state = (current_quad_state - 1) & 3;
-    }
-    chunk[i] = QUAD_BSRR_STATES[current_quad_state];
-  }
-
-  for (int i = count_to_emit; i < CHUNK_SIZE; i++) {
-    chunk[i] = QUAD_BSRR_STATES[current_quad_state];
-  }
-
-  *out_delta = (dir > 0) ? count_to_emit : (dir < 0) ? -count_to_emit : 0;
+  *out_delta = GenerateQuadChunk(chunk, CHUNK_SIZE, &current_quad_state, dir, count_to_emit);
   planned_encoder_pos += *out_delta;
 
   // Calculate pacing frequency
-  float abs_rate = fabsf(target_velocity);
-  if (abs_rate < 0.1f) {
-    abs_rate = 0.1f;
-  }
-  if (abs_rate > 100.0f) {
-    abs_rate = 100.0f;
-  }
-
-  uint32_t ticks = (uint32_t)(48000.0f / abs_rate);
-  if (ticks < 480) {
-    ticks = 480; // max 100 kHz
-  }
-
-  uint32_t psc = 0;
-  if (ticks > 65536) {
-    psc = (ticks >> 16);
-    ticks = ticks / (psc + 1);
-  }
-  if (ticks > 65536) ticks = 65536;
-
-  TIM3->PSC = (uint16_t) psc;
-  TIM3->ARR = (uint16_t)(ticks - 1);
+  uint16_t psc = 0;
+  uint16_t arr = 0;
+  CalcTimerPacing(target_velocity, &psc, &arr);
+  TIM3->PSC = psc;
+  TIM3->ARR = arr;
 }
 
 void Motion_Start(void) {
@@ -732,10 +696,10 @@ void Motion_Init(void) {
   planned_encoder_pos = position.encoder_pos;
 
   for (int i = 0; i < TOTAL_BUFFER_SIZE; i++) {
-    quad_buffer[i] = QUAD_BSRR_STATES[0];
+    quad_buffer[i] = GetQuadBsrrValue(0);
   }
 
-  GPIOB->BSRR = QUAD_BSRR_STATES[0];
+  GPIOB->BSRR = GetQuadBsrrValue(0);
 
   TIM3->CR1 &= ~TIM_CR1_CEN;
   DMA1_Channel3->CCR &= ~DMA_CCR_EN;

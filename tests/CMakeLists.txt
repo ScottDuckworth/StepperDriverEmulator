@@ -48,3 +48,17 @@ target_link_libraries(test_cmd PRIVATE
     unity
 )
 add_test(NAME test_cmd COMMAND test_cmd)
+
+# 4. Quadrature Generation & Pacing Test
+add_executable(test_quadrature
+    test_quadrature.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/quadrature.c
+)
+target_include_directories(test_quadrature PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Inc
+)
+target_link_libraries(test_quadrature PRIVATE
+    unity
+)
+add_test(NAME test_quadrature COMMAND test_quadrature)
+
