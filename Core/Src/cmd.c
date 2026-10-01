@@ -180,21 +180,36 @@ static void Cmd_blink(const Command_t* self) {
 }
 
 static void Cmd_odr(const Command_t* self) {
+  if (argc == 1) {
+    ReportOdr();
+    return;
+  }
   if (argc != 2) return InvalidUsage(self->usage);
-  if (!StrToU16(argv[1], &GetConfig()->odr)) return InvalidValue("uint16", argv[1]);
-  ReportU16("odr", GetConfig()->odr);
+  uint16_t value;
+  if (!StrToU16(argv[1], &value)) return InvalidValue("uint16", argv[1]);
+  SetOdr(value);
 }
 
 static void Cmd_epr(const Command_t* self) {
+  if (argc == 1) {
+    ReportEpr();
+    return;
+  }
   if (argc != 2) return InvalidUsage(self->usage);
-  if (!StrToU16(argv[1], &GetConfig()->epr)) return InvalidValue("uint16", argv[1]);
-  ReportU16("epr", GetConfig()->epr);
+  uint16_t value;
+  if (!StrToU16(argv[1], &value)) return InvalidValue("uint16", argv[1]);
+  SetEpr(value);
 }
 
 static void Cmd_spr(const Command_t* self) {
+  if (argc == 1) {
+    ReportSpr();
+    return;
+  }
   if (argc != 2) return InvalidUsage(self->usage);
-  if (!StrToU16(argv[1], &GetConfig()->spr)) return InvalidValue("uint16", argv[1]);
-  ReportU16("spr", GetConfig()->spr);
+  uint16_t value;
+  if (!StrToU16(argv[1], &value)) return InvalidValue("uint16", argv[1]);
+  SetSpr(value);
 }
 
 static void Cmd_kp(const Command_t* self) {
@@ -221,9 +236,9 @@ static void Cmd_kff(const Command_t* self) {
 
 static void Cmd_r(const Command_t* self) {
   if (argc != 1) return InvalidUsage(self->usage);
-  ReportU16("odr", GetConfig()->odr);
-  ReportU16("epr", GetConfig()->epr);
-  ReportU16("spr", GetConfig()->spr);
+  ReportOdr();
+  ReportEpr();
+  ReportSpr();
   ReportKp();
   ReportKff();
   ReportLimit1();

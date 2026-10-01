@@ -43,7 +43,29 @@ typedef struct {
   uint16_t odr;  // Output Data Rate (milliseconds)
   uint16_t epr;  // Encoder count per revolution
   uint16_t spr;  // Step count per revolution
+  float kp;
+  float kff;
+  int32_t torque_t0;
+  uint32_t torque_v_knee;
+  uint32_t torque_v_max;
+  int32_t torque_t_min;
+  uint32_t stall_threshold;
+  float kfree;
 } RunConfig_t;
+
+#define DEFAULT_RUN_CONFIG { \
+  .odr = 1000, \
+  .epr = 4000, \
+  .spr = 1000, \
+  .kp = 0.1f, \
+  .kff = 1.0f, \
+  .torque_t0 = 1000, \
+  .torque_v_knee = 1000, \
+  .torque_v_max = 8000, \
+  .torque_t_min = 200, \
+  .stall_threshold = 16, \
+  .kfree = 0.005f, \
+}
 
 /* USER CODE END ET */
 
@@ -87,7 +109,19 @@ void ReportKp(void);
 void ReportKff(void);
 void ReportFloat(const char* var, float value);
 
-RunConfig_t* GetConfig();
+RunConfig_t* GetConfig(void);
+
+uint16_t GetOdr(void);
+void SetOdr(uint16_t odr);
+void ReportOdr(void);
+
+uint16_t GetEpr(void);
+void SetEpr(uint16_t epr);
+void ReportEpr(void);
+
+uint16_t GetSpr(void);
+void SetSpr(uint16_t spr);
+void ReportSpr(void);
 
 int32_t GetEncoderPosition(void);
 void SetEncoderPosition(int32_t pos);
@@ -123,6 +157,9 @@ void ReportStallThreshold(void);
 float GetKfree(void);
 void SetKfree(float kfree);
 void ReportKfree(void);
+
+int32_t CalcMotorTorqueConfig(const RunConfig_t* cfg, float speed_abs);
+int32_t CalcMotorTorque(float speed_abs);
 
 bool GetStallTrip(void);
 void ReportStallTrip(void);

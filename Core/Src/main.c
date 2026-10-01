@@ -76,12 +76,6 @@ static PositionCounters_t position;
 
 static volatile uint32_t step_period_cnt;
 static volatile int32_t load_tension = 0;
-static int32_t torque_t0 = 1000;
-static uint32_t torque_v_knee = 1000;
-static uint32_t torque_v_max = 8000;
-static int32_t torque_t_min = 200;
-static uint32_t stall_threshold = 2000;
-static float kfree = 0.005f;
 static volatile bool stall_tripped = false;
 static volatile bool blink_mode = false;
 static volatile uint32_t last_step_time = 0;
@@ -96,9 +90,6 @@ static int8_t half_1_delta = 0;
 static volatile bool motion_active = false;
 static volatile int32_t planned_encoder_pos = 0;
 
-static float control_kp = 0.1f;
-static float control_kff = 1.0f;
-
 static const uint32_t QUAD_BSRR_STATES[4] = {
     GPIO_BSRR_BR_4 | GPIO_BSRR_BR_5, // State 0: EA=0, EB=0
     GPIO_BSRR_BS_4 | GPIO_BSRR_BR_5, // State 1: EA=1, EB=0
@@ -112,11 +103,7 @@ static const uint32_t QUAD_BSRR_STATES[4] = {
 static volatile uint16_t usb_output_size;
 static volatile uint16_t usb_input_size;
 
-static RunConfig_t config = {
-    .odr = 1000,
-    .epr = 4000,
-    .spr = 1000,
-};
+static RunConfig_t config = DEFAULT_RUN_CONFIG;
 
 /* USER CODE END PV */
 
@@ -260,35 +247,74 @@ void ReportTension(void) {
   ReportI32("t", GetTension());
 }
 
+uint16_t GetOdr(void) {
+  return config.odr;
+}
+
+void SetOdr(uint16_t odr) {
+  config.odr = odr;
+  ReportOdr();
+}
+
+void ReportOdr(void) {
+  ReportU16("odr", GetOdr());
+}
+
+uint16_t GetEpr(void) {
+  return config.epr;
+}
+
+void SetEpr(uint16_t epr) {
+  config.epr = epr;
+  ReportEpr();
+}
+
+void ReportEpr(void) {
+  ReportU16("epr", GetEpr());
+}
+
+uint16_t GetSpr(void) {
+  return config.spr;
+}
+
+void SetSpr(uint16_t spr) {
+  config.spr = spr;
+  ReportSpr();
+}
+
+void ReportSpr(void) {
+  ReportU16("spr", GetSpr());
+}
+
 void GetTorqueCurve(int32_t* t0, uint32_t* v_knee, uint32_t* v_max, int32_t* t_min) {
-  if (t0) *t0 = torque_t0;
-  if (v_knee) *v_knee = torque_v_knee;
-  if (v_max) *v_max = torque_v_max;
-  if (t_min) *t_min = torque_t_min;
+  if (t0) *t0 = config.torque_t0;
+  if (v_knee) *v_knee = config.torque_v_knee;
+  if (v_max) *v_max = config.torque_v_max;
+  if (t_min) *t_min = config.torque_t_min;
 }
 
 void SetTorqueCurve(int32_t t0, uint32_t v_knee, uint32_t v_max, int32_t t_min) {
   if (v_max <= v_knee) v_max = v_knee + 1;
-  torque_t0 = t0;
-  torque_v_knee = v_knee;
-  torque_v_max = v_max;
-  torque_t_min = t_min;
+  config.torque_t0 = t0;
+  config.torque_v_knee = v_knee;
+  config.torque_v_max = v_max;
+  config.torque_t_min = t_min;
   ReportTorqueCurve();
 }
 
 void ReportTorqueCurve(void) {
   char buf[48];
   int size = snprintf(buf, sizeof(buf), "tcurve %ld %lu %lu %ld\r\n",
-                      torque_t0, torque_v_knee, torque_v_max, torque_t_min);
+                      config.torque_t0, config.torque_v_knee, config.torque_v_max, config.torque_t_min);
   WriteData((uint8_t*) buf, size);
 }
 
 uint32_t GetStallThreshold(void) {
-  return stall_threshold;
+  return config.stall_threshold;
 }
 
 void SetStallThreshold(uint32_t threshold) {
-  stall_threshold = threshold;
+  config.stall_threshold = threshold;
   ReportStallThreshold();
 }
 
@@ -297,11 +323,11 @@ void ReportStallThreshold(void) {
 }
 
 float GetKfree(void) {
-  return kfree;
+  return config.kfree;
 }
 
 void SetKfree(float k) {
-  kfree = k;
+  config.kfree = k;
   ReportKfree();
 }
 
@@ -317,17 +343,21 @@ void ReportStallTrip(void) {
   ReportU8("stall_trip", GetStallTrip());
 }
 
-static int32_t CalcMotorTorque(float speed_abs) {
+int32_t CalcMotorTorqueConfig(const RunConfig_t* cfg, float speed_abs) {
   uint32_t v = (uint32_t) speed_abs;
-  if (v <= torque_v_knee) {
-    return torque_t0;
+  if (v <= cfg->torque_v_knee) {
+    return cfg->torque_t0;
   }
-  if (v >= torque_v_max) {
-    return torque_t_min;
+  if (v >= cfg->torque_v_max) {
+    return cfg->torque_t_min;
   }
-  int64_t num = (int64_t)(torque_t0 - torque_t_min) * (v - torque_v_knee);
-  int64_t den = (int64_t)(torque_v_max - torque_v_knee);
-  return (int32_t)(torque_t0 - (num / den));
+  int64_t num = (int64_t)(cfg->torque_t0 - cfg->torque_t_min) * (v - cfg->torque_v_knee);
+  int64_t den = (int64_t)(cfg->torque_v_max - cfg->torque_v_knee);
+  return (int32_t)(cfg->torque_t0 - (num / den));
+}
+
+int32_t CalcMotorTorque(float speed_abs) {
+  return CalcMotorTorqueConfig(&config, speed_abs);
 }
 
 void ReportFloat(const char* var, float value) {
@@ -348,11 +378,11 @@ void ReportFloat(const char* var, float value) {
 }
 
 float GetKp(void) {
-  return control_kp;
+  return config.kp;
 }
 
 void SetKp(float kp) {
-  control_kp = kp;
+  config.kp = kp;
   ReportKp();
 }
 
@@ -361,11 +391,11 @@ void ReportKp(void) {
 }
 
 float GetKff(void) {
-  return control_kff;
+  return config.kff;
 }
 
 void SetKff(float kff) {
-  control_kff = kff;
+  config.kff = kff;
   ReportKff();
 }
 
@@ -500,11 +530,11 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
   float target_velocity = 0.0f;
 
   if (is_freewheeling) {
-    float v_free = (float) load_tension * kfree;
-    if (v_free > (float) torque_v_max) {
-      v_free = (float) torque_v_max;
-    } else if (v_free < -(float) torque_v_max) {
-      v_free = -(float) torque_v_max;
+    float v_free = (float) load_tension * config.kfree;
+    if (v_free > (float) config.torque_v_max) {
+      v_free = (float) config.torque_v_max;
+    } else if (v_free < -(float) config.torque_v_max) {
+      v_free = -(float) config.torque_v_max;
     }
 
     if (v_free != 0.0f) {
@@ -525,7 +555,7 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
       }
     }
 
-    target_velocity = control_kff * input_rate + control_kp * (float) error;
+    target_velocity = config.kff * input_rate + config.kp * (float) error;
 
     if (error != 0) {
       dir = (error > 0) ? 1 : -1;
@@ -540,11 +570,11 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
       } else {
         // Torque deficit: motor cannot advance in commanded direction
         int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
-        if (abs_tension > torque_t0) {
+        if (abs_tension > config.torque_t0) {
           dir = (load_tension > 0) ? 1 : -1;
           count_to_emit = CHUNK_SIZE;
-          float v_slip = (float)(abs_tension - torque_t0) * kfree;
-          if (v_slip > (float) torque_v_max) v_slip = (float) torque_v_max;
+          float v_slip = (float)(abs_tension - config.torque_t0) * config.kfree;
+          if (v_slip > (float) config.torque_v_max) v_slip = (float) config.torque_v_max;
           target_velocity = (dir > 0) ? (v_slip / 1000.0f) : -(v_slip / 1000.0f);
         } else {
           dir = 0;
@@ -553,7 +583,7 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
 
         // Under torque deficit, motor stalls and accumulates lag against commanded steps
         uint32_t lag = (error >= 0) ? (uint32_t) error : (uint32_t)(-error);
-        if (stall_threshold > 0 && lag >= stall_threshold) {
+        if (config.stall_threshold > 0 && lag >= config.stall_threshold) {
           stall_tripped = true;
           ReportStallTrip();
           is_freewheeling = true;
@@ -562,15 +592,15 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
     } else {
       // error == 0: motor is at target
       int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
-      if (abs_tension > torque_t0) {
+      if (abs_tension > config.torque_t0) {
         dir = (load_tension > 0) ? 1 : -1;
         count_to_emit = CHUNK_SIZE;
-        float v_slip = (float)(abs_tension - torque_t0) * kfree;
-        if (v_slip > (float) torque_v_max) v_slip = (float) torque_v_max;
+        float v_slip = (float)(abs_tension - config.torque_t0) * config.kfree;
+        if (v_slip > (float) config.torque_v_max) v_slip = (float) config.torque_v_max;
         target_velocity = (dir > 0) ? (v_slip / 1000.0f) : -(v_slip / 1000.0f);
 
         uint32_t lag = abs(commanded_pos - planned_encoder_pos);
-        if (stall_threshold > 0 && lag >= stall_threshold) {
+        if (config.stall_threshold > 0 && lag >= config.stall_threshold) {
           stall_tripped = true;
           ReportStallTrip();
           is_freewheeling = true;
@@ -634,7 +664,7 @@ void Motion_Start(void) {
   if (stall_tripped || !GetStepEnabled()) {
     should_start = (load_tension != 0);
   } else {
-    should_start = (commanded != position.encoder_pos) || (position.step_dcnt != 0) || (abs_tension > torque_t0);
+    should_start = (commanded != position.encoder_pos) || (position.step_dcnt != 0) || (abs_tension > config.torque_t0);
   }
 
   if (!should_start) {
@@ -647,7 +677,7 @@ void Motion_Start(void) {
   FillQuadChunk(&quad_buffer[0], &half_0_delta);
   FillQuadChunk(&quad_buffer[CHUNK_SIZE], &half_1_delta);
 
-  if (half_0_delta == 0 && half_1_delta == 0 && !stall_tripped && GetStepEnabled() && abs_tension <= torque_t0 && position.step_dcnt == 0 && commanded == position.encoder_pos) {
+  if (half_0_delta == 0 && half_1_delta == 0 && !stall_tripped && GetStepEnabled() && abs_tension <= config.torque_t0 && position.step_dcnt == 0 && commanded == position.encoder_pos) {
     motion_active = false;
     return;
   }
@@ -673,7 +703,7 @@ void Motion_Wakeup_Handler(void) {
   if (stall_tripped || !GetStepEnabled()) {
     should_start = (load_tension != 0);
   } else {
-    should_start = (commanded != planned_encoder_pos) || (position.step_dcnt != 0) || (abs_tension > torque_t0);
+    should_start = (commanded != planned_encoder_pos) || (position.step_dcnt != 0) || (abs_tension > config.torque_t0);
   }
 
   if (should_start) {
@@ -702,7 +732,7 @@ static void CheckMotionIdle(void) {
     }
     int32_t commanded = StepToEncoderPosition(position.step_pos);
     int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
-    if (commanded == position.encoder_pos && position.encoder_pos == planned_encoder_pos && position.step_dcnt == 0 && abs_tension <= torque_t0) {
+    if (commanded == position.encoder_pos && position.encoder_pos == planned_encoder_pos && position.step_dcnt == 0 && abs_tension <= config.torque_t0) {
       TIM3->CR1 &= ~TIM_CR1_CEN;
       DMA1_Channel3->CCR &= ~DMA_CCR_EN;
       motion_active = false;
@@ -756,7 +786,7 @@ void UpdateTick(void) {
       should_start = (load_tension != 0);
     } else {
       int32_t commanded = StepToEncoderPosition(position.step_pos);
-      should_start = (commanded != position.encoder_pos) || (step_cnt != position.step_cnt_prev) || (abs_tension > torque_t0);
+      should_start = (commanded != position.encoder_pos) || (step_cnt != position.step_cnt_prev) || (abs_tension > config.torque_t0);
     }
     if (should_start) {
       if (GetStepEnabled()) {
