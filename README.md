@@ -118,31 +118,66 @@ $$V_{\text{freewheel}} = \tau_{\text{tension}} \cdot K_{\text{free}}$$
 
 Commands are sent via the USB Virtual COM Port (terminated with `\r` or `\n`).
 
-| Command | Syntax | Description | Example |
-| :--- | :--- | :--- | :--- |
-| `t` | `t [int32]` | Query or set external load tension/torque | `t -1200` |
-| `tcurve` | `tcurve [T0] [V_knee] [V_max] [T_min]` | Query or set torque-speed curve parameters | `tcurve 1000 1000 8000 200` |
-| `stall` | `stall [uint32]` | Query or set stall threshold in encoder counts (`0` disables trip) | `stall 16` |
-| `kfree` | `kfree [float]` | Query or set viscous freewheel coefficient | `kfree 0.005` |
-| `blink` | `blink [0\|1]` | Query or toggle yellow identify/locate blink mode | `blink 1` |
-| `zero` | `zero` | Zero physical encoder and commanded step positions | `zero` |
-| `odr` | `odr [uint16]` | Set periodic position report rate in ms (`0` = disable) | `odr 500` |
-| `epr` | `epr [uint16]` | Set encoder counts (pulses) per revolution | `epr 4000` |
-| `spr` | `spr [uint16]` | Set input steps per revolution | `spr 1000` |
-| `kp` | `kp [float]` | Set tracking proportional gain | `kp 0.1` |
-| `kff` | `kff [float]` | Set feedforward velocity gain | `kff 1.0` |
-| `lim1` | `lim1 <0\|1>` | Drive simulated limit switch 1 output | `lim1 1` |
-| `lim2` | `lim2 <0\|1>` | Drive simulated limit switch 2 output | `lim2 0` |
-| `r` | `r` | Dump full configuration and runtime status | `r` |
-| `help` | `help` | Print command usage list | `help` |
+| Command | Syntax | Description | Example Command | Serial Response |
+| :--- | :--- | :--- | :--- | :--- |
+| `t` | `t [int32]` | Query or set load tension/torque | `t -1200` | `t -1200\r\n` |
+| `tcurve` | `tcurve [T0] [V_knee] [V_max] [T_min]` | Query or set torque-speed parameters | `tcurve 1000 1000 8000 200` | `tcurve 1000 1000 8000 200\r\n` |
+| `stall` | `stall [uint32]` | Query or set stall threshold (`0` = disable) | `stall 16` | `stall 16\r\n` |
+| `kfree` | `kfree [float]` | Query or set viscous freewheel coefficient | `kfree 0.005` | `kfree 0.0050\r\n` |
+| `blink` | `blink [0\|1]` | Query or toggle yellow identify blink | `blink 1` | `blink 1\r\n` |
+| `zero` | `zero` | Zero encoder and step positions | `zero` | `pos 0\r\n` |
+| `odr` | `odr [uint16]` | Periodic position report rate in ms (`0` = off) | `odr 500` | `odr 500\r\n` |
+| `epr` | `epr [uint16]` | Encoder counts per revolution | `epr 4000` | `epr 4000\r\n` |
+| `spr` | `spr [uint16]` | Input steps per revolution | `spr 1000` | `spr 1000\r\n` |
+| `kp` | `kp [float]` | Tracking proportional gain | `kp 0.1` | `kp 0.1000\r\n` |
+| `kff` | `kff [float]` | Feedforward velocity gain | `kff 1.0` | `kff 1.0000\r\n` |
+| `lim1` | `lim1 <0\|1>` | Drive simulated limit switch 1 pin | `lim1 1` | `lim1 1\r\n` |
+| `lim2` | `lim2 <0\|1>` | Drive simulated limit switch 2 pin | `lim2 0` | `lim2 0\r\n` |
+| `r` | `r` | Dump full configuration and runtime status | `r` | Multi-line report (see below) |
+| `help` | `help` | Print command usage list | `help` | Usage list (see below) |
+
+> **Note on Queries:** Commands that accept optional parameters (`t`, `tcurve`, `stall`, `kfree`, `blink`, `kp`, `kff`) return the current value when issued with no arguments (e.g. typing `t` replies `t 0\r\n`).
+
+### Full State Report (`r` command)
+
+Executing `r` prints all parameters and live hardware states:
+
+```text
+odr 1000
+epr 4000
+spr 1000
+kp 0.1000
+kff 1.0000
+lim1 0
+lim2 0
+t 0
+tcurve 1000 1000 8000 200
+stall 16
+kfree 0.0050
+stall_trip 0
+blink 0
+rev 0
+ena 1
+pos 0
+```
+
+### Error Responses
+
+The CLI validates argument count, formatting, and numeric ranges, returning descriptive errors:
+* **Invalid Argument Count / Usage:** `error: invalid usage: <usage_string>\r\n`
+  * Example: `t 10 20` $\to$ `error: invalid usage: t [int32]\r\n`
+* **Invalid Data Type / Value:** `error: invalid <type>: <bad_value>\r\n`
+  * Example: `t abc` $\to$ `error: invalid int32: abc\r\n`
+  * Example: `blink 5` $\to$ `error: invalid bool (0 or 1): 5\r\n`
+* **Unrecognized Command:** `error: unknown command: <input>\r\n`
 
 ### Asynchronous Event Messages
 
-The emulator transmits asynchronous notifications when hardware states change:
-* `stall_trip <0|1>`: Emitted when entering (`1`) or leaving (`0`) the stall trip state.
-* `ena <0|1>`: Emitted when the `ENA` pin changes state.
-* `rev <0|1>`: Emitted when the `DIR` pin changes state.
-* `pos <int32>`: Emitted periodically at the configured `odr` interval.
+The emulator transmits asynchronous notifications over the Virtual COM Port as physical and logical states change:
+* `stall_trip <0|1>\r\n`: Emitted when entering (`1`) or leaving (`0`) the stall trip fault state.
+* `ena <0|1>\r\n`: Emitted when the `ENA` pin (PA3) transitions (`1` = enabled, `0` = disabled).
+* `rev <0|1>\r\n`: Emitted when the `DIR` pin (PA4) transitions (`1` = reverse, `0` = forward).
+* `pos <int32>\r\n`: Emitted periodically at the configured `odr` interval (e.g. `pos 4000\r\n`).
 
 ---
 

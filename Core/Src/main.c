@@ -80,7 +80,7 @@ static int32_t torque_t0 = 1000;
 static uint32_t torque_v_knee = 1000;
 static uint32_t torque_v_max = 8000;
 static int32_t torque_t_min = 200;
-static uint32_t stall_threshold = 16;
+static uint32_t stall_threshold = 2000;
 static float kfree = 0.005f;
 static volatile bool stall_tripped = false;
 static volatile bool blink_mode = false;
@@ -494,13 +494,6 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
   bool is_freewheeling = stall_tripped || !GetStepEnabled();
   int32_t commanded_pos = StepToEncoderPosition(position.step_pos);
   int32_t error = commanded_pos - planned_encoder_pos;
-  uint32_t lag = (error >= 0) ? (uint32_t) error : (uint32_t)(-error);
-
-  if (!is_freewheeling && stall_threshold > 0 && lag >= stall_threshold) {
-    stall_tripped = true;
-    ReportStallTrip();
-    is_freewheeling = true;
-  }
 
   int count_to_emit = 0;
   int dir = 0;
@@ -525,7 +518,7 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
     }
   } else {
     float input_rate = 0.0f;
-    if (position.step_dcnt && step_period_cnt > 0) {
+    if ((now - last_step_time) <= 50 && step_period_cnt > 0) {
       input_rate = (48000.0f / (float) step_period_cnt) * ((float) config.epr / (float) config.spr);
       if (position.step_reverse) {
         input_rate = -input_rate;
@@ -541,9 +534,11 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
       int32_t t_net = t_motor + dir * load_tension;
 
       if (t_net >= 0) {
+        // Sufficient torque: motor drives normally toward target
         int abs_error = (error > 0) ? error : -error;
         count_to_emit = (abs_error < CHUNK_SIZE) ? abs_error : CHUNK_SIZE;
       } else {
+        // Torque deficit: motor cannot advance in commanded direction
         int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
         if (abs_tension > torque_t0) {
           dir = (load_tension > 0) ? 1 : -1;
@@ -555,8 +550,17 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
           dir = 0;
           count_to_emit = 0;
         }
+
+        // Under torque deficit, motor stalls and accumulates lag against commanded steps
+        uint32_t lag = (error >= 0) ? (uint32_t) error : (uint32_t)(-error);
+        if (stall_threshold > 0 && lag >= stall_threshold) {
+          stall_tripped = true;
+          ReportStallTrip();
+          is_freewheeling = true;
+        }
       }
     } else {
+      // error == 0: motor is at target
       int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
       if (abs_tension > torque_t0) {
         dir = (load_tension > 0) ? 1 : -1;
@@ -564,6 +568,13 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
         float v_slip = (float)(abs_tension - torque_t0) * kfree;
         if (v_slip > (float) torque_v_max) v_slip = (float) torque_v_max;
         target_velocity = (dir > 0) ? (v_slip / 1000.0f) : -(v_slip / 1000.0f);
+
+        uint32_t lag = abs(commanded_pos - planned_encoder_pos);
+        if (stall_threshold > 0 && lag >= stall_threshold) {
+          stall_tripped = true;
+          ReportStallTrip();
+          is_freewheeling = true;
+        }
       } else {
         dir = 0;
         count_to_emit = 0;
@@ -586,15 +597,6 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
 
   *out_delta = (dir > 0) ? count_to_emit : (dir < 0) ? -count_to_emit : 0;
   planned_encoder_pos += *out_delta;
-
-  if (!is_freewheeling && !stall_tripped && stall_threshold > 0) {
-    int32_t new_error = commanded_pos - planned_encoder_pos;
-    uint32_t new_lag = (new_error >= 0) ? (uint32_t) new_error : (uint32_t)(-new_error);
-    if (new_lag >= stall_threshold) {
-      stall_tripped = true;
-      ReportStallTrip();
-    }
-  }
 
   // Calculate pacing frequency
   float abs_rate = fabsf(target_velocity);
