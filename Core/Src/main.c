@@ -73,7 +73,7 @@ static volatile bool stall_tripped = false;
 static volatile bool blink_mode = false;
 static volatile uint32_t last_step_time = 0;
 
-#define CHUNK_SIZE 8
+#define CHUNK_SIZE 4
 #define TOTAL_BUFFER_SIZE (2 * CHUNK_SIZE)
 
 static uint32_t quad_buffer[TOTAL_BUFFER_SIZE];
@@ -505,9 +505,27 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
   planned_encoder_pos += *out_delta;
 
   // Calculate pacing frequency
+  float pace_velocity = res.target_velocity;
+  if (res.count_to_emit == 0) {
+    // When emitting static padding (waiting for steps or settling into idle),
+    // pace at nominal step rate so blank chunks flush quickly (in ~1 ms) rather
+    // than stalling the DMA pipeline at 100 counts/sec (which would delay subsequent pulse response by 40-80 ms).
+    if (config.spr > 0) {
+      pace_velocity = ((float) config.epr / (float) config.spr);
+    } else {
+      pace_velocity = 4.0f;
+    }
+  } else if (startup_sync_count > 0 && config.spr > 0) {
+    float step_rate_nominal = ((float) config.epr / (float) config.spr);
+    float abs_v = (pace_velocity >= 0.0f) ? pace_velocity : -pace_velocity;
+    if (abs_v < step_rate_nominal) {
+      pace_velocity = (res.dir >= 0) ? step_rate_nominal : -step_rate_nominal;
+    }
+  }
+
   uint16_t psc = 0;
   uint16_t arr = 0;
-  CalcTimerPacing(res.target_velocity, &psc, &arr);
+  CalcTimerPacing(pace_velocity, &psc, &arr);
   TIM3->PSC = psc;
   TIM3->ARR = arr;
 }
@@ -535,7 +553,14 @@ void Motion_Start(void) {
   planned_encoder_pos = position.encoder_pos;
 
   FillQuadChunk(&quad_buffer[0], &half_0_delta);
+  uint16_t chunk0_psc = TIM3->PSC;
+  uint16_t chunk0_arr = TIM3->ARR;
+
   FillQuadChunk(&quad_buffer[CHUNK_SIZE], &half_1_delta);
+
+  // Arm TIM3 with Chunk 0 pacing, since Chunk 0 is the chunk transmitted first by DMA!
+  TIM3->PSC = chunk0_psc;
+  TIM3->ARR = chunk0_arr;
 
   if (half_0_delta == 0 && half_1_delta == 0 && !stall_tripped && GetStepEnabled() && abs_tension <= config.torque_t0 && position.step_dcnt == 0 && commanded == position.encoder_pos) {
     motion_active = false;
@@ -552,13 +577,13 @@ void Motion_Start(void) {
   TIM3->CR1 |= TIM_CR1_CEN;
 
   if (GetStepEnabled()) {
-    TIM2->SR = ~TIM_SR_CC1IF;
+    TIM2->SR = 0;
     TIM2->DIER |= TIM_DIER_CC1IE;
   }
 }
 
 void Motion_Wakeup_Handler(void) {
-  TIM2->SR = ~TIM_SR_CC1IF;
+  TIM2->SR = 0;
 
   UpdatePositionCounters();
 
@@ -581,6 +606,11 @@ void Motion_Wakeup_Handler(void) {
           TIM3->CNT = 0;
         }
       }
+
+      if (half_1_delta == 0) {
+        FillQuadChunk(&quad_buffer[CHUNK_SIZE], &half_1_delta);
+      }
+
       if (startup_sync_count == 0) {
         TIM2->DIER &= ~TIM_DIER_CC1IE;
       }
@@ -602,7 +632,7 @@ void Motion_Wakeup_Handler(void) {
     Motion_Start();
   } else {
     if (GetStepEnabled()) {
-      TIM2->SR = ~TIM_SR_CC1IF;
+      TIM2->SR = 0;
       TIM2->DIER |= TIM_DIER_CC1IE;
     }
   }
@@ -616,7 +646,7 @@ static void CheckMotionIdle(void) {
         DMA1_Channel3->CCR &= ~DMA_CCR_EN;
         motion_active = false;
         if (GetStepEnabled()) {
-          TIM2->SR = ~TIM_SR_CC1IF;
+          TIM2->SR = 0;
           TIM2->DIER |= TIM_DIER_CC1IE;
         }
       }
@@ -628,7 +658,7 @@ static void CheckMotionIdle(void) {
       TIM3->CR1 &= ~TIM_CR1_CEN;
       DMA1_Channel3->CCR &= ~DMA_CCR_EN;
       motion_active = false;
-      TIM2->SR = ~TIM_SR_CC1IF;
+      TIM2->SR = 0;
       TIM2->DIER |= TIM_DIER_CC1IE;
     }
   }

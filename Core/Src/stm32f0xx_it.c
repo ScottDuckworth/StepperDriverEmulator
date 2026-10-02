@@ -214,10 +214,8 @@ void DMA1_Channel2_3_IRQHandler(void)
   */
 void TIM2_IRQHandler(void)
 {
-  if (TIM2->SR & TIM_SR_CC1IF) {
-    TIM2->SR = ~TIM_SR_CC1IF;
-    Motion_Wakeup_Handler();
-  }
+  TIM2->SR = 0;
+  Motion_Wakeup_Handler();
 }
 
 /* USER CODE END 1 */
