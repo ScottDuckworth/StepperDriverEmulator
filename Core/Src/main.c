@@ -842,15 +842,15 @@ static void InitPeripherals(void) {
   TIM2->ARR = UINT32_MAX;
   TIM2->CCMR1 = (0b01 << TIM_CCMR1_CC1S_Pos)   // CC1 channel is configured as input, IC1 is mapped on TI1
               | (0b10 << TIM_CCMR1_CC2S_Pos)   // CC2 channel is configured as input, IC2 is mapped on TI1.
-              | (0b1000 << TIM_CCMR1_IC1F_Pos) // Hardware digital filter: fDTS/8, N=6 (1.0 us filter)
-              | (0b1000 << TIM_CCMR1_IC2F_Pos);// Hardware digital filter: fDTS/8, N=6 (1.0 us filter)
+              | (0b1111 << TIM_CCMR1_IC1F_Pos) // Hardware digital filter: fDTS/32, N=8 (21.33 us filter)
+              | (0b1111 << TIM_CCMR1_IC2F_Pos);// Hardware digital filter: fDTS/32, N=8 (21.33 us filter)
   TIM2->CCER = TIM_CCER_CC1P                   // Invert polarity
              | TIM_CCER_CC1E                   // Period captured in CCR1
              | TIM_CCER_CC2E;                  // Pulse width captured in CCR2
   TIM2->SMCR = (0b101 << TIM_SMCR_TS_Pos)      // Filtered Timer Input 1 (TI1FP1)
              | (0b100 << TIM_SMCR_SMS_Pos);    // Reset mode
   TIM2->DIER = TIM_DIER_CC1DE | TIM_DIER_CC1IE;// Link DMA to CCR1 + arm CC1 interrupt for wakeup
-  TIM2->CR1 = TIM_CR1_CEN;
+  TIM2->CR1 = TIM_CR1_CEN | TIM_CR1_CKD_1;     // Enable counter with CKD=div4 for 21.33 us digital filter
 
   // TIM3 acts as periodic heartbeat triggering DMA1 Channel 3 on Update Events
   TIM3->PSC = 0;
