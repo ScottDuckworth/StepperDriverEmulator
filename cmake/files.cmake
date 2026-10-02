@@ -1,6 +1,7 @@
 # Add sources to executable/library
 target_sources(${PROJECT_NAME} PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/cmd.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/config_store.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/main.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/motion_math.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/quadrature.c"

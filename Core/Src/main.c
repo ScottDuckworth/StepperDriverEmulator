@@ -31,6 +31,7 @@
 #include <string.h>
 
 #include "cmd.h"
+#include "config_store.h"
 #include "usbd_cdc_if.h"
 
 /* USER CODE END Includes */
@@ -104,6 +105,10 @@ void SystemClock_Config(void);
 
 EmulatorConfig_t* GetConfig(void) {
   return &config;
+}
+
+bool SaveConfig(void) {
+  return ConfigStore_Save(ConfigStore_GetStm32FlashDriver(), CONFIG_FLASH_PAGE_ADDR, &config);
 }
 
 static int8_t USB_ReceiveCallback(uint8_t* buf, uint32_t* len) {
@@ -871,6 +876,8 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
+
+  ConfigStore_Load(ConfigStore_GetStm32FlashDriver(), CONFIG_FLASH_PAGE_ADDR, &config);
 
   UpdatePositionCounters();
   position.step_pos = 0;

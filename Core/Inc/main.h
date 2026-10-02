@@ -145,6 +145,8 @@ int32_t CalcMotorTorque(float speed_abs);
 bool GetStallTrip(void);
 void ReportStallTrip(void);
 
+bool SaveConfig(void);
+
 uint16_t WriteData(const uint8_t* data, uint16_t size);
 uint16_t WriteString(const char* text);
 void ReportString(const char* var, const char* value);

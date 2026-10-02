@@ -13,6 +13,7 @@ static bool mock_lim1;
 static bool mock_lim2;
 static bool mock_blink;
 static bool mock_stall_trip;
+static bool mock_save_success;
 
 static char captured_output[4096];
 static size_t captured_len;
@@ -156,6 +157,10 @@ int32_t GetEncoderPosition(void) { return mock_pos; }
 void SetEncoderPosition(int32_t pos) { mock_pos = pos; ReportEncoderPosition(); }
 void ReportEncoderPosition(void) { ReportI32("pos", GetEncoderPosition()); }
 
+bool SaveConfig(void) {
+  return mock_save_success;
+}
+
 // --- Test Helper Functions ---
 
 static void clear_output(void) {
@@ -176,6 +181,7 @@ void setUp(void) {
   mock_lim2 = false;
   mock_blink = false;
   mock_stall_trip = false;
+  mock_save_success = true;
   clear_output();
 }
 
@@ -316,6 +322,24 @@ void test_cmd_help(void) {
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "tcurve [T0] [V_knee] [V_max] [T_min]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "stall [uint32]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "zero"));
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "save"));
+}
+
+void test_cmd_save_success(void) {
+  mock_save_success = true;
+  send_cmd("save\r\n");
+  TEST_ASSERT_EQUAL_STRING("save ok\r\n", captured_output);
+}
+
+void test_cmd_save_failure(void) {
+  mock_save_success = false;
+  send_cmd("save\r\n");
+  TEST_ASSERT_EQUAL_STRING("error: save failed\r\n", captured_output);
+}
+
+void test_cmd_save_invalid_usage(void) {
+  send_cmd("save extra\r\n");
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid usage: save\r\n"));
 }
 
 void test_cmd_error_invalid_usage(void) {
@@ -355,8 +379,12 @@ int main(void) {
   RUN_TEST(test_cmd_zero);
   RUN_TEST(test_cmd_r_state_report);
   RUN_TEST(test_cmd_help);
+  RUN_TEST(test_cmd_save_success);
+  RUN_TEST(test_cmd_save_failure);
+  RUN_TEST(test_cmd_save_invalid_usage);
   RUN_TEST(test_cmd_error_invalid_usage);
   RUN_TEST(test_cmd_error_invalid_value);
   RUN_TEST(test_cmd_error_unknown_command);
   return UNITY_END();
 }
+

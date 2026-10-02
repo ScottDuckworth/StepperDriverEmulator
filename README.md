@@ -112,6 +112,65 @@ Active whenever the motor is disengaged (either `stall_tripped == true` or `ENA`
 $$V_{\text{freewheel}} = \tau_{\text{tension}} \cdot K_{\text{free}}$$
 (clamped to $\pm V_{\text{max}}$). The DMA continuously streams quadrature pulses corresponding to this shaft rotation.
 
+### Dimensional Analysis & Unit Relationships
+
+The firmware uses a generalized, dimensionless coordinate system that models physical mechanics through proportional scaling equations. Rather than enforcing fixed metric or imperial units, all parameters operate consistently across three primary dimensions:
+
+* **$[C]$ — Displacement:** Quantum of rotor angle or position measured in **encoder counts**.
+  * $1\text{ count} = \frac{1}{\text{epr}}\text{ revolutions} = \frac{360^\circ}{\text{epr}} = \frac{2\pi}{\text{epr}}\text{ radians}$.
+  * For linear systems (leadscrews, timing belts, rack-and-pinion), each count corresponds to a linear step distance $\Delta x = \frac{\text{lead}}{\text{epr}}$ or $\frac{2\pi r_{\text{pulley}}}{\text{epr}}$.
+* **$[s]$ — Time:** Measured in **seconds** (with milliseconds used for timer intervals).
+* **$[T]$ — Torque / Force:** Arbitrary consistent unit of effort (e.g. $\text{mN}\cdot\text{m}$, $\text{N}\cdot\text{cm}$, $\text{oz}\cdot\text{in}$, or linear force $\text{N}$ scaled by actuator radius).
+
+#### Dimensional Parameter Mapping
+
+| Parameter / Variable | CLI Command | Firmware Unit | Dimension | Physical Meaning & Proportional Relationship |
+| :--- | :--- | :--- | :--- | :--- |
+| $\text{epr}$ | `epr` | counts / rev | $[C / \text{rev}]$ | Quadrature encoder resolution (4 edges per cycle) |
+| $\text{spr}$ | `spr` | steps / rev | $[S / \text{rev}]$ | Stepper controller input resolution (full/microsteps per revolution) |
+| $T_0$ | `tcurve` | torque units | $[T]$ | Maximum holding torque capability at speeds $v \le V_{\text{knee}}$ |
+| $T_{\text{min}}$ | `tcurve` | torque units | $[T]$ | Residual pull-out torque at high speeds $v \ge V_{\text{max}}$ |
+| $V_{\text{knee}}$ | `tcurve` | counts / sec | $[C / s]$ | Knee speed below which torque is flat: $\omega_{\text{knee}} = \frac{V_{\text{knee}}}{\text{epr}}\text{ rev/s}$ |
+| $V_{\text{max}}$ | `tcurve` | counts / sec | $[C / s]$ | Cutoff speed where torque drops to $T_{\text{min}}$: $\omega_{\text{max}} = \frac{V_{\text{max}}}{\text{epr}}\text{ rev/s}$ |
+| $\tau_{\text{tension}}$ | `t` | torque units | $[T]$ | External load torque or tension (signed: $+1$ forward, $-1$ reverse) |
+| $\text{stall\_threshold}$ | `stall` | counts | $[C]$ | Permissible rotor position lag: $\Delta \theta_{\text{lag}} = \frac{\text{stall}}{\text{epr}}\text{ rev} = \text{stall} \cdot \Delta x$ |
+| $K_{\text{free}}$ | `kfree` | $\frac{\text{counts/s}}{\text{torque unit}}$ | $[C \cdot s^{-1} \cdot T^{-1}]$ | Viscous freewheel mobility coefficient (inverse damping $1/b$) |
+
+#### Core Governing Equations
+
+1. **Torque Homogeneity Requirement:**
+   $$T_{\text{net}} = T_{\text{motor}}(v) + \text{dir} \cdot \tau_{\text{tension}} \quad [T]$$
+   Because $T_{\text{motor}}(v)$ and $\tau_{\text{tension}}$ are algebraically summed to determine torque deficit, $T_0$, $T_{\text{min}}$, and $\tau_{\text{tension}}$ **must share the exact same torque unit** $[T]$.
+
+2. **Viscous Terminal Velocity & Slip Compliance:**
+   $$V_{\text{freewheel}} = \tau_{\text{tension}} \cdot K_{\text{free}} \quad [C / s]$$
+   $$V_{\text{slip}} = (|\tau_{\text{tension}}| - T_0) \cdot K_{\text{free}} \quad [C / s]$$
+   $K_{\text{free}}$ converts torque deficit or freewheeling load directly into rotor velocity. In classical mechanics with viscous damping torque $\tau = b \cdot \omega$, where $\omega = \frac{2\pi}{\text{epr}} V$:
+   $$K_{\text{free}} = \frac{\text{epr}}{2\pi \cdot b_{\text{angular}}} \quad\text{or for linear actuators:}\quad K_{\text{free}} = \frac{1}{\Delta x \cdot b_{\text{linear}}}$$
+
+3. **Stall Threshold to Physical Motion:**
+   $$\text{lag} = |\text{StepToEncoderPosition}(\text{step\_pos}) - \text{planned\_encoder\_pos}| \quad [C]$$
+   $$\text{Angular Error} = \frac{\text{lag}}{\text{epr}} \times 360^\circ, \qquad \text{Linear Error} = \text{lag} \times \Delta x$$
+
+#### Parameter Sizing & Calibration Recipe
+
+To configure consistent parameters for any target motor and mechanism:
+
+1. **Choose Torque Resolution $[T]$:**
+   * Pick an integer scale where $T_0$ represents nominal holding torque (e.g., $T_0 = 1000$).
+   * Scale external load commands (`t`) to match this unit (e.g. if the motor holds $1.0\text{ N}\cdot\text{m}$, setting $T_0 = 1000$ means $1\text{ unit} = 1\text{ mN}\cdot\text{m}$, so a $0.5\text{ N}\cdot\text{m}$ load is `t 500`).
+2. **Set Velocity Range $[C/s]$:**
+   * Given desired knee speed $\text{RPM}_{\text{knee}}$: $V_{\text{knee}} = \frac{\text{RPM}_{\text{knee}} \cdot \text{epr}}{60}$.
+   * Given maximum speed $\text{RPM}_{\text{max}}$: $V_{\text{max}} = \frac{\text{RPM}_{\text{max}} \cdot \text{epr}}{60}$.
+3. **Tune Freewheel Mobility $K_{\text{free}}$:**
+   * Decide the terminal freewheel velocity $V_{\text{target}}$ $[C/s]$ when subjected to a nominal load $\tau_{\text{test}}$ $[T]$:
+     $$K_{\text{free}} = \frac{V_{\text{target}}}{\tau_{\text{test}}}$$
+   * Example: If an external load of $1000\text{ units}$ should free-wheel the motor at $5\text{ rev/s}$ ($20{,}000\text{ counts/s}$ with $\text{epr} = 4000$):
+     $$K_{\text{free}} = \frac{20000}{1000} = 20.0$$
+4. **Set Stall Trip Sensitivity:**
+   * To trip after $\Phi$ revolutions of slip: $\text{stall} = \Phi \cdot \text{epr}$.
+   * Example: To trip after a half-rotation of slip with $\text{epr} = 4000$: $\text{stall} = 0.5 \times 4000 = 2000$.
+
 ---
 
 ## Serial CLI Commands
@@ -133,6 +192,7 @@ Commands are sent via the USB Virtual COM Port (terminated with `\r` or `\n`).
 | `kff` | `kff [float]` | Feedforward velocity gain | `kff 1.0` | `kff 1.0000\r\n` |
 | `lim1` | `lim1 <0\|1>` | Drive simulated limit switch 1 pin | `lim1 1` | `lim1 1\r\n` |
 | `lim2` | `lim2 <0\|1>` | Drive simulated limit switch 2 pin | `lim2 0` | `lim2 0\r\n` |
+| `save` | `save` | Save configuration to non-volatile flash | `save` | `save ok\r\n` |
 | `r` | `r` | Dump full configuration and runtime status | `r` | Multi-line report (see below) |
 | `help` | `help` | Print command usage list | `help` | Usage list (see below) |
 

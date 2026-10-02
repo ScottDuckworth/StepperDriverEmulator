@@ -47,7 +47,8 @@ else()
 
   # Compiler options
   target_compile_options(${PROJECT_NAME} PRIVATE
-    # User defined compiler options
+    # Optimize for size even in Debug on 32KB flash target
+    $<$<CONFIG:Debug>:-Os>
   )
 
   # Add additional defined symbols

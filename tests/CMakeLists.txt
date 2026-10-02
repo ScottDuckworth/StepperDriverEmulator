@@ -103,4 +103,20 @@ target_link_libraries(test_motion_planner PRIVATE
 )
 add_test(NAME test_motion_planner COMMAND test_motion_planner)
 
+# 8. Configuration Storage & Persistence Test
+add_executable(test_config_store
+    test_config_store.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/config_store.c
+)
+target_compile_definitions(test_config_store PRIVATE
+    UNIT_TEST
+)
+target_include_directories(test_config_store PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Inc
+)
+target_link_libraries(test_config_store PRIVATE
+    unity
+)
+add_test(NAME test_config_store COMMAND test_config_store)
+
 

@@ -255,6 +255,15 @@ static void Cmd_r(const Command_t* self) {
   ReportEncoderPosition();
 }
 
+static void Cmd_save(const Command_t* self) {
+  if (argc != 1) { InvalidUsage(self->usage); return; }
+  if (SaveConfig()) {
+    WriteString("save ok\r\n");
+  } else {
+    WriteString("error: save failed\r\n");
+  }
+}
+
 static void Cmd_help(const Command_t* self);
 
 static const Command_t commands[] = {
@@ -271,6 +280,7 @@ static const Command_t commands[] = {
     {"spr", "spr <uint16>", Cmd_spr},
     {"kp", "kp [float]", Cmd_kp},
     {"kff", "kff [float]", Cmd_kff},
+    {"save", "save", Cmd_save},
     {"r", "r", Cmd_r},
     {"help", "help", Cmd_help},
 };
