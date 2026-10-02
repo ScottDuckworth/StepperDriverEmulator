@@ -166,6 +166,58 @@ $$
 * $\tau_{\text{tension}} \lt 0$: Freewheels in the reverse (- counts) direction ($-V_{\text{freewheel}}$).
 * $\tau_{\text{tension}} = 0$: Shaft remains stationary ($V = 0$).
 
+### Closed-Loop Motion Tracking & Feedforward Control (`kff`, `kp`)
+
+When the motor is enabled and operating under sufficient torque ($T_{\text{net}} \ge 0$), the motion planner synthesizes quadrature encoder output pulses to precisely track incoming step pulses. The target velocity $V_{\text{target}}$ (expressed in encoder counts per millisecond, or kHz) controlling the pacing timer (**TIM3**) is computed using a combined velocity feedforward and proportional position feedback control law:
+
+$$
+V_{\text{target}} = K_{\text{ff}} \cdot V_{\text{in}} + K_{\text{p}} \cdot e_{\text{eff}} \quad [C / \text{ms}]
+$$
+
+where:
+* $V_{\text{in}}$ is the instantaneous measured input step velocity scaled to encoder counts/ms:
+  $$
+  V_{\text{in}} = \pm \left( \frac{48{,}000}{\text{period}} \right) \cdot \left( \frac{\text{epr}}{\text{spr}} \right) \quad [C / \text{ms}]
+  $$
+  (where `period` is the timer tick count captured by the 48 MHz timer **TIM2** on pin PA5, and the sign matches the direction sampled on PA4: `+` forward, `-` reverse).
+* $e = P_{\text{cmd}} - P_{\text{enc}}$ is the instantaneous position tracking error in encoder counts ($[C]$).
+* $e_{\text{eff}}$ is the effective tracking error processed through a soft-knee jitter attenuation filter.
+
+#### Role of Velocity Feedforward Gain ($K_{\text{ff}}$)
+
+Velocity feedforward ($K_{\text{ff}}$) provides open-loop, predictive speed matching based directly on the measured input step pulse frequency:
+* **Zero-Lag Synchronous Tracking ($K_{\text{ff}} = 1.0$, Default):** The emulator immediately matches the input step frequency on the quadrature output, scaled by the gear ratio $\text{epr} / \text{spr}$. During constant-velocity travel, the motor tracks with zero steady-state phase lag—it does not need to accumulate position error before generating output motion.
+* **Lagging Dynamics ($K_{\text{ff}} \lt 1.0$):** Output velocity runs below input velocity until an accumulating position error ($e$) generates sufficient restoring velocity via $K_{\text{p}}$. This simulates inertial rotor lag or compliance during velocity transients.
+* **Pure Feedback Mode ($K_{\text{ff}} = 0.0$):** Disables velocity anticipation entirely. Motion is driven strictly by accumulated position discrepancy ($e$).
+
+#### Role of Proportional Position Gain ($K_{\text{p}}$)
+
+Proportional feedback gain ($K_{\text{p}}$) acts as the restoring stiffness that pulls the physical encoder output position ($P_{\text{enc}}$) into alignment with the commanded step position ($P_{\text{cmd}}$):
+* **Units & Scaling:** $K_{\text{p}}$ has dimensions of inverse time ($[s^{-1}]$), configured in firmware as $1 / \text{ms}$ (or $1000 \cdot \text{s}^{-1}$).
+* **Restoring Authority:** For any tracking error, $K_{\text{p}}$ contributes a corrective velocity $\Delta V = K_{\text{p}} \cdot e_{\text{eff}}$. For example, with the default $K_{\text{p}} = 0.1000\text{ ms}^{-1}$, an instantaneous error of $10\text{ counts}$ produces an additional corrective velocity of $0.1 \times 10 = 1.0\text{ count/ms} = 1{,}000\text{ counts/s}$ toward eliminating the discrepancy.
+* **Transient & Stop Settling:** During start/stop transients, direction reversals, or step-rate changes, $K_{\text{p}}$ eliminates accumulated phase error. When step pulses cease ($V_{\text{in}} = 0$), $K_{\text{p}}$ remains active to drive any residual error counts to zero, guaranteeing that the final resting encoder position exactly matches the commanded step position.
+
+#### Soft-Knee Small-Signal Attenuation
+
+Because incoming step pulses are discrete events arriving at finite intervals, the discrete error $e = P_{\text{cmd}} - P_{\text{enc}}$ inherently oscillates between $0$ and $\frac{\text{epr}}{\text{spr}}\text{ counts}$ (the count width of one input step) even during steady constant-velocity streaming.
+
+Applying unfiltered proportional gain directly to this single-step discretization ripple causes cyclic pacing timer frequency modulation, manifesting as high-frequency phase jitter observable on an oscilloscope between the input step clock and output quadrature edges.
+
+To eliminate this ripple while preserving full restoring authority for genuine tracking errors, the motion planner applies a quadratic soft-knee attenuation profile during active pulse streaming ($V_{\text{in}} \ne 0$):
+
+$$
+e_{\text{eff}} = \begin{cases}
+\frac{e \cdot |e|}{\Delta P_{\text{step}}}, & |e| \le \Delta P_{\text{step}} \\
+e, & |e| \gt \Delta P_{\text{step}}
+\end{cases}
+$$
+
+where $\Delta P_{\text{step}} = \frac{\text{epr}}{\text{spr}}$ is the count equivalent of one input step.
+
+* **Sub-step errors ($|e| \le \Delta P_{\text{step}}$):** The quadratic response attenuates discrete quantization ripple smoothly to near-zero as error approaches zero, yielding clean, low-jitter quadrature waveforms.
+* **Macro errors ($|e| \gt \Delta P_{\text{step}}$):** The profile seamlessly transitions to full linear error ($e_{\text{eff}} = e$), providing full proportional stiffness ($K_{\text{p}}$) to immediately re-lock phase during accelerations or torque disturbances.
+* **At rest ($V_{\text{in}} = 0$):** Soft-knee filtering is automatically bypassed ($e_{\text{eff}} = e$), ensuring rapid, exact zero-error static settling.
+
 ### Dimensional Analysis & Unit Relationships
 
 The firmware uses a generalized, dimensionless coordinate system that models physical mechanics through proportional scaling equations. Rather than enforcing fixed metric or imperial units, all parameters operate consistently across three primary dimensions:
@@ -189,6 +241,8 @@ The firmware uses a generalized, dimensionless coordinate system that models phy
 | $\tau_{\text{tension}}$ | `t` | torque units | $[T]$ | External load torque or tension (signed: `+` pulls forward in $+C$, `-` pulls reverse in $-C$) |
 | $\text{stall}$ | `stall` | counts | $[C]$ | Permissible rotor position lag: $\Delta \theta_{\text{lag}} = \frac{\text{stall}}{\text{epr}}\text{ rev} = \text{stall} \cdot \Delta x$ |
 | $K_{\text{free}}$ | `kfree` | $\frac{\text{counts/s}}{\text{torque unit}}$ | $[C \cdot s^{-1} \cdot T^{-1}]$ | Viscous freewheel mobility coefficient (inverse damping $1/b$) |
+| $K_{\text{ff}}$ | `kff` | dimensionless | $[-]$ | Velocity feedforward gain (scales measured input step rate to target velocity) |
+| $K_{\text{p}}$ | `kp` | $1 / \text{ms}$ | $[s^{-1}]$ | Proportional position restoring gain (corrective velocity per count of tracking error) |
 
 #### Core Governing Equations
 
@@ -226,6 +280,16 @@ $$
 \text{Angular Error} = \frac{\text{lag}}{\text{epr}} \times 360^\circ, \qquad \text{Linear Error} = \text{lag} \times \Delta x
 $$
 
+##### 4. Closed-Loop Velocity Synthesis & Soft-Knee Tracking
+
+$$
+V_{\text{target}} = K_{\text{ff}} \cdot V_{\text{in}} + K_{\text{p}} \cdot e_{\text{eff}} \quad [C / \text{ms}]
+$$
+
+$$
+e_{\text{eff}} = \frac{e \cdot |e|}{\text{epr} / \text{spr}} \quad (\text{for } |e| \le \text{epr} / \text{spr} \text{ during active pulse streaming})
+$$
+
 #### Parameter Sizing & Calibration Recipe
 
 To configure consistent parameters for any target motor and mechanism:
@@ -242,6 +306,10 @@ To configure consistent parameters for any target motor and mechanism:
 4. **Set Stall Trip Sensitivity:**
    * To trip after $\Phi$ revolutions of slip: $\text{stall} = \Phi \cdot \text{epr}$.
    * Example: To trip after a half-rotation of slip with $\text{epr} = 4000$: $\text{stall} = 0.5 \times 4000 = 2000$.
+5. **Tune Dynamic Tracking Gains ($K_{\text{ff}}$ and $K_{\text{p}}$):**
+   * Keep $K_{\text{ff}} = 1.0$ (default) for standard synchronous tracking with zero steady-state phase lag.
+   * If step pulse sources suffer from jitter, reduce $K_{\text{p}}$ (e.g. $0.05$ to $0.08\text{ ms}^{-1}$) for greater filtering compliance.
+   * For rapid transient tracking or stiff mechanical coupling, increase $K_{\text{p}}$ (e.g. $0.15$ to $0.25\text{ ms}^{-1}$).
 
 ---
 
@@ -261,8 +329,8 @@ Commands are sent via the USB Virtual COM Port (terminated with `\r` or `\n`).
 | `odr` | `odr [uint16]` | Periodic position report rate in ms (`0` = off) | `odr 500` | `odr 500\r\n` |
 | `epr` | `epr [uint16]` | Encoder counts per revolution | `epr 4000` | `epr 4000\r\n` |
 | `spr` | `spr [uint16]` | Input steps per revolution | `spr 1000` | `spr 1000\r\n` |
-| `kp` | `kp [float]` | Tracking proportional gain | `kp 0.1` | `kp 0.1000\r\n` |
-| `kff` | `kff [float]` | Feedforward velocity gain | `kff 1.0` | `kff 1.0000\r\n` |
+| `kp` | `kp [float]` | Query or set proportional position restoring gain in 1/ms (default: `0.1000`) | `kp 0.1` | `kp 0.1000\r\n` |
+| `kff` | `kff [float]` | Query or set velocity feedforward gain (default: `1.0000` for zero-lag tracking) | `kff 1.0` | `kff 1.0000\r\n` |
 | `lim1` | `lim1 <0\|1>` | Drive simulated limit switch 1 pin | `lim1 1` | `lim1 1\r\n` |
 | `lim2` | `lim2 <0\|1>` | Drive simulated limit switch 2 pin | `lim2 0` | `lim2 0\r\n` |
 | `save` | `save` | Save configuration to non-volatile flash | `save` | `save ok\r\n` |
