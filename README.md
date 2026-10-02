@@ -77,15 +77,15 @@ T_min|               \___________
   0             V_knee      V_max
 ```
 
-$$
+```math
 \begin{cases}
 T_{\text{motor}}(v) = T_0, & v \le V_{\text{knee}} \\
 T_{\text{motor}}(v) = T_0 - \frac{T_0 - T_{\text{min}}}{V_{\text{max}} - V_{\text{knee}}} \cdot (v - V_{\text{knee}}), & V_{\text{knee}} \lt v \lt V_{\text{max}} \\
 T_{\text{motor}}(v) = T_{\text{min}}, & v \ge V_{\text{max}}
 \end{cases}
-$$
+```
 
-### Load Tension & Net Torque (`t`)
+### Load Tension and Net Torque (`t`)
 
 The `t` parameter models an external directional force or torque vector $\tau_{\text{tension}}$ acting continually along the axis in the emulator's coordinate frame.
 
@@ -115,7 +115,7 @@ The `t` parameter models an external directional force or torque vector $\tau_{\
 
 #### Directional Interaction Matrix & Net Torque
 
-In the commanded travel direction $\text{dir} \in \{+1, -1\}$ (where $\text{dir} = \operatorname{sgn}(P_{\text{cmd}} - P_{\text{enc}})$):
+In the commanded travel direction $`\text{dir} \in \{+1, -1\}`$ (where $`\text{dir} = \operatorname{sgn}(P_{\text{cmd}} - P_{\text{enc}})`$):
 
 $$
 T_{\text{net}} = T_{\text{motor}}(v) + (\text{dir} \cdot \tau_{\text{tension}})
@@ -133,7 +133,7 @@ $$
 * **$T_{\text{net}} \ge 0$ (Sufficient Torque):**
   * Motor drives normally toward commanded position, tracking input step pulses.
 * **$T_{\text{net}} \lt 0$ (Torque Deficit):**
-  * Opposing load exceeds current motor torque capability ($|t| \gt T_{\text{motor}}(v)$); motor cannot advance in the commanded direction.
+  * Opposing load exceeds current motor torque capability ($`|t| \gt T_{\text{motor}}(v)`$); motor cannot advance in the commanded direction.
   * **Slip / Back-driving ($|t| \gt T_0$):** If the opposing load exceeds static holding torque $T_0$, the load overpowers the motor and back-drives the rotor in the direction of the load at slip speed: $V_{\text{slip}} = (|t| - T_0) \cdot K_{\text{free}} \quad [C/s]$. Direction of slip matches the sign of `t` (`t > 0` slips in $+C$, `t < 0` slips in $-C$).
   * **Static Stall ($|t| \le T_0$):** If the opposing load does not exceed holding torque, the rotor locks in place ($V = 0$).
   * In both cases, rotor lag accumulates against commanded steps: $\text{lag} = |P_{\text{cmd}} - P_{\text{enc}}|$.
