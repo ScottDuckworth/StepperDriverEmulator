@@ -91,11 +91,11 @@ The `t` parameter models an external directional force or torque vector $\tau_{\
 
 * **Forward (+ / $+1$):**
   * `DIR` input pin (PA4) is HIGH (`rev 0`).
-  * Commanded step position increases ($+\Delta \text{step\_pos}$).
+  * Commanded step position (`step_pos`) increases ($+\Delta \text{step}$).
   * Encoder position increases ($+\Delta \text{pos}$); quadrature output streams Phase A leading Phase B.
 * **Reverse (- / $-1$):**
   * `DIR` input pin (PA4) is LOW (`rev 1`).
-  * Commanded step position decreases ($-\Delta \text{step\_pos}$).
+  * Commanded step position (`step_pos`) decreases ($-\Delta \text{step}$).
   * Encoder position decreases ($-\Delta \text{pos}$); quadrature output streams Phase B leading Phase A.
 
 #### Sign of Load Tension (`t`)
@@ -113,7 +113,7 @@ The `t` parameter models an external directional force or torque vector $\tau_{\
 
 #### Directional Interaction Matrix & Net Torque
 
-In the commanded travel direction $\text{dir} \in \{+1, -1\}$ (where $\text{dir} = \operatorname{sgn}(\text{commanded\_pos} - \text{planned\_encoder\_pos})$):
+In the commanded travel direction $\text{dir} \in \{+1, -1\}$ (where $\text{dir} = \operatorname{sgn}(P_{\text{cmd}} - P_{\text{enc}})$):
 $$T_{\text{net}} = T_{\text{motor}}(v) + (\text{dir} \cdot \tau_{\text{tension}})$$
 
 | Commanded Travel (`dir`) | `DIR` Pin (PA4) | Tension Sign (`t`) | Force Vector Direction | Effect on Motor | Net Torque ($T_{\text{net}}$) |
@@ -134,7 +134,7 @@ $$T_{\text{net}} = T_{\text{motor}}(v) + (\text{dir} \cdot \tau_{\text{tension}}
     Direction of slip matches the sign of `t` (`t > 0` slips in $+C$, `t < 0` slips in $-C$).
   * **Static Stall ($|t| \le T_0$):** If the opposing load does not exceed holding torque, the rotor locks in place ($V = 0$).
   * In both cases, rotor lag accumulates against commanded steps:
-    $$\text{lag} = |\text{StepToEncoderPosition}(\text{step\_pos}) - \text{planned\_encoder\_pos}|$$
+    $$\text{lag} = |P_{\text{cmd}} - P_{\text{enc}}|$$
 
 #### Testing Quick-Reference (Common Scenarios)
 
@@ -144,7 +144,7 @@ $$T_{\text{net}} = T_{\text{motor}}(v) + (\text{dir} \cdot \tau_{\text{tension}}
 
 ### Stall Fault Trip (`stall`)
 
-When engaged and $\text{lag} \ge \text{stall\_threshold}$:
+When engaged and $\text{lag} \ge \text{stall}$ (where $\text{stall}$ is the configured threshold):
 * Motor enters fault state (`stall_tripped = true`).
 * Status LED blinks red at 4 Hz.
 * Asynchronous USB message emitted: `stall_trip 1\r\n`.
@@ -181,7 +181,7 @@ The firmware uses a generalized, dimensionless coordinate system that models phy
 | $V_{\text{knee}}$ | `tcurve` | counts / sec | $[C / s]$ | Knee speed below which torque is flat: $\omega_{\text{knee}} = \frac{V_{\text{knee}}}{\text{epr}}\text{ rev/s}$ |
 | $V_{\text{max}}$ | `tcurve` | counts / sec | $[C / s]$ | Cutoff speed where torque drops to $T_{\text{min}}$: $\omega_{\text{max}} = \frac{V_{\text{max}}}{\text{epr}}\text{ rev/s}$ |
 | $\tau_{\text{tension}}$ | `t` | torque units | $[T]$ | External load torque or tension (signed: `+` pulls forward in $+C$, `-` pulls reverse in $-C$) |
-| $\text{stall\_threshold}$ | `stall` | counts | $[C]$ | Permissible rotor position lag: $\Delta \theta_{\text{lag}} = \frac{\text{stall}}{\text{epr}}\text{ rev} = \text{stall} \cdot \Delta x$ |
+| $\text{stall}$ | `stall` | counts | $[C]$ | Permissible rotor position lag: $\Delta \theta_{\text{lag}} = \frac{\text{stall}}{\text{epr}}\text{ rev} = \text{stall} \cdot \Delta x$ |
 | $K_{\text{free}}$ | `kfree` | $\frac{\text{counts/s}}{\text{torque unit}}$ | $[C \cdot s^{-1} \cdot T^{-1}]$ | Viscous freewheel mobility coefficient (inverse damping $1/b$) |
 
 #### Core Governing Equations
@@ -197,7 +197,7 @@ The firmware uses a generalized, dimensionless coordinate system that models phy
    $$K_{\text{free}} = \frac{\text{epr}}{2\pi \cdot b_{\text{angular}}} \quad\text{or for linear actuators:}\quad K_{\text{free}} = \frac{1}{\Delta x \cdot b_{\text{linear}}}$$
 
 3. **Stall Threshold to Physical Motion:**
-   $$\text{lag} = |\text{StepToEncoderPosition}(\text{step\_pos}) - \text{planned\_encoder\_pos}| \quad [C]$$
+   $$\text{lag} = |P_{\text{cmd}} - P_{\text{enc}}| \quad [C]$$
    $$\text{Angular Error} = \frac{\text{lag}}{\text{epr}} \times 360^\circ, \qquad \text{Linear Error} = \text{lag} \times \Delta x$$
 
 #### Parameter Sizing & Calibration Recipe
@@ -231,6 +231,7 @@ Commands are sent via the USB Virtual COM Port (terminated with `\r` or `\n`).
 | `tcurve` | `tcurve [T0] [V_knee] [V_max] [T_min]` | Query or set torque-speed parameters | `tcurve 1000 1000 8000 200` | `tcurve 1000 1000 8000 200\r\n` |
 | `stall` | `stall [uint32]` | Query or set stall threshold (`0` = disable) | `stall 4000` | `stall 4000\r\n` |
 | `kfree` | `kfree [float]` | Query or set viscous freewheel coefficient | `kfree 0.005` | `kfree 0.0050\r\n` |
+| `blank` | `blank [float]` | Query or set step blanking / hold-off window in µs (e.g. `3.5` for 200 kHz) | `blank 3.5` | `blank 3.5000\r\n` |
 | `blink` | `blink [0\|1]` | Query or toggle yellow identify blink | `blink 1` | `blink 1\r\n` |
 | `zero` | `zero` | Zero encoder and step positions | `zero` | `pos 0\r\n` |
 | `odr` | `odr [uint16]` | Periodic position report rate in ms (`0` = off) | `odr 500` | `odr 500\r\n` |
@@ -244,7 +245,7 @@ Commands are sent via the USB Virtual COM Port (terminated with `\r` or `\n`).
 | `r` | `r` | Dump full configuration and runtime status | `r` | Multi-line report (see below) |
 | `help` | `help` | Print command usage list | `help` | Usage list (see below) |
 
-> **Note on Queries:** Commands that accept optional parameters (`t`, `tcurve`, `stall`, `kfree`, `blink`, `odr`, `epr`, `spr`, `kp`, `kff`) return the current value when issued with no arguments (e.g. typing `t` replies `t 0\r\n`, typing `odr` replies `odr 1000\r\n`).
+> **Note on Queries:** Commands that accept optional parameters (`t`, `tcurve`, `stall`, `kfree`, `blank`, `blink`, `odr`, `epr`, `spr`, `kp`, `kff`) return the current value when issued with no arguments (e.g. typing `t` replies `t 0\r\n`, typing `odr` replies `odr 1000\r\n`).
 
 ### Full State Report (`r` command)
 
@@ -256,6 +257,7 @@ epr 4000
 spr 1000
 kp 0.1000
 kff 1.0000
+blank 3.5000
 lim1 0
 lim2 0
 t 0
