@@ -40,20 +40,51 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
   }
 
   int32_t error = req->commanded_pos - req->planned_encoder_pos;
-  float target_velocity = req->cfg->kff * input_rate + req->cfg->kp * (float) error;
+  float eff_error = (float) error;
+
+  // Soft-knee error profile during active step pulse streaming:
+  // When pulses are streaming (input_rate != 0), normal discrete pulse arrivals cause
+  // error to fluctuate within 1 step (epr / spr counts). Attenuating this small-signal
+  // ripple quadratically eliminates oscilloscope phase jitter, while preserving full
+  // restoring gain (Kp) for large errors (> 1 step) to snap into phase lock immediately.
+  if (input_rate != 0.0f && req->cfg->spr > 0) {
+    float step_counts = (float) req->cfg->epr / (float) req->cfg->spr;
+    if (step_counts > 0.0f) {
+      float abs_err = fabsf(eff_error);
+      if (abs_err <= step_counts) {
+        eff_error = (eff_error * abs_err) / step_counts;
+      }
+    }
+  }
+
+  float target_velocity = req->cfg->kff * input_rate + req->cfg->kp * eff_error;
   res->target_velocity = target_velocity;
 
-  if (error != 0) {
-    int dir = (error > 0) ? 1 : -1;
+  if (error != 0 || input_rate != 0.0f) {
+    int dir = 0;
+    if (target_velocity > 0.0f) {
+      dir = 1;
+    } else if (target_velocity < 0.0f) {
+      dir = -1;
+    } else if (error != 0) {
+      dir = (error > 0) ? 1 : -1;
+    }
+
     float speed_hz = fabsf(target_velocity) * 1000.0f;
     int32_t t_motor = CalcMotorTorqueConfig(req->cfg, speed_hz);
     int32_t t_net = CalcNetTorque(t_motor, dir, req->load_tension);
 
     if (t_net >= 0) {
       // Sufficient torque: motor drives normally toward target
-      int32_t abs_error = (error > 0) ? error : -error;
       res->dir = dir;
-      res->count_to_emit = (abs_error < (int32_t) chunk_sz) ? (uint16_t) abs_error : chunk_sz;
+      if (dir == 0) {
+        res->count_to_emit = 0;
+      } else if (input_rate != 0.0f) {
+        res->count_to_emit = chunk_sz;
+      } else {
+        int32_t abs_error = (error > 0) ? error : -error;
+        res->count_to_emit = (abs_error < (int32_t) chunk_sz) ? (uint16_t) abs_error : chunk_sz;
+      }
     } else {
       // Torque deficit: motor cannot advance in commanded direction
       float v_slip = CalcSlipVelocity(req->cfg, req->load_tension);
@@ -77,7 +108,7 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
       }
     }
   } else {
-    // error == 0: motor is at target
+    // error == 0 and input_rate == 0: motor is at target
     float v_slip = CalcSlipVelocity(req->cfg, req->load_tension);
     if (v_slip > 0.0f) {
       res->dir = (req->load_tension > 0) ? 1 : -1;

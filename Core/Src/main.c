@@ -82,6 +82,7 @@ static int8_t half_0_delta = 0;
 static int8_t half_1_delta = 0;
 static volatile bool motion_active = false;
 static volatile int32_t planned_encoder_pos = 0;
+static volatile uint8_t startup_sync_count = 0;
 
 
 #define usb_output_data UserTxBufferFS
@@ -530,6 +531,7 @@ void Motion_Start(void) {
   }
 
   motion_active = true;
+  startup_sync_count = 2;
   planned_encoder_pos = position.encoder_pos;
 
   FillQuadChunk(&quad_buffer[0], &half_0_delta);
@@ -537,6 +539,7 @@ void Motion_Start(void) {
 
   if (half_0_delta == 0 && half_1_delta == 0 && !stall_tripped && GetStepEnabled() && abs_tension <= config.torque_t0 && position.step_dcnt == 0 && commanded == position.encoder_pos) {
     motion_active = false;
+    startup_sync_count = 0;
     return;
   }
 
@@ -547,13 +550,44 @@ void Motion_Start(void) {
 
   TIM3->CNT = 0;
   TIM3->CR1 |= TIM_CR1_CEN;
+
+  if (GetStepEnabled()) {
+    TIM2->SR = ~TIM_SR_CC1IF;
+    TIM2->DIER |= TIM_DIER_CC1IE;
+  }
 }
 
 void Motion_Wakeup_Handler(void) {
   TIM2->SR = ~TIM_SR_CC1IF;
-  TIM2->DIER &= ~TIM_DIER_CC1IE;
 
   UpdatePositionCounters();
+
+  if (motion_active) {
+    if (startup_sync_count > 0) {
+      startup_sync_count--;
+      uint32_t captured_period = TIM2->CCR1;
+      if (captured_period > 0 && config.spr > 0) {
+        float in_rate = (48000.0f / (float) captured_period) * ((float) config.epr / (float) config.spr);
+        if (position.step_reverse) in_rate = -in_rate;
+        int32_t cmd = StepToEncoderPosition(position.step_pos);
+        int32_t err = cmd - planned_encoder_pos;
+        float v_target = config.kff * in_rate + config.kp * (float) err;
+        uint16_t psc = 0;
+        uint16_t arr = 0;
+        CalcTimerPacing(v_target, &psc, &arr);
+        TIM3->PSC = psc;
+        TIM3->ARR = arr;
+        if (TIM3->CNT >= arr) {
+          TIM3->CNT = 0;
+        }
+      }
+      if (startup_sync_count == 0) {
+        TIM2->DIER &= ~TIM_DIER_CC1IE;
+      }
+    }
+    return;
+  }
+
   int32_t commanded = StepToEncoderPosition(position.step_pos);
   int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
 
@@ -647,9 +681,6 @@ void UpdateTick(void) {
       should_start = (commanded != position.encoder_pos) || (step_cnt != position.step_cnt_prev) || (abs_tension > config.torque_t0);
     }
     if (should_start) {
-      if (GetStepEnabled()) {
-        TIM2->DIER &= ~TIM_DIER_CC1IE;
-      }
       Motion_Start();
     }
   }

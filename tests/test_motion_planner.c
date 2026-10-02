@@ -270,6 +270,62 @@ void test_planner_default_config_gains(void) {
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 10.0f, res.target_velocity); // default kp = 0.1 * 100 = 10.0
 }
 
+void test_planner_continuous_streaming_zero_error(void) {
+  // Input rate = 400.0 counts/ms, error = 0
+  MotionPlanRequest_t req = {
+      .cfg = &config,
+      .commanded_pos = 100,
+      .planned_encoder_pos = 100, // error = 0
+      .load_tension = 0,
+      .now = 100,
+      .last_step_time = 90,
+      .step_period_cnt = 480, // 400 counts/ms
+      .step_reverse = false,
+      .is_freewheeling = false,
+      .stall_tripped = false,
+      .chunk_size = 8
+  };
+  MotionPlanResult_t res;
+
+  PlanMotionStep(&req, &res);
+  TEST_ASSERT_EQUAL_INT(1, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(8, res.count_to_emit);
+  TEST_ASSERT_FLOAT_WITHIN(0.1f, 400.0f, res.target_velocity);
+}
+
+void test_planner_soft_knee_error_attenuation(void) {
+  // epr = 4000, spr = 1000 -> 1 step = 4 counts.
+  // When error = 2 (sub-step error <= 4): eff_error = (2 * 2) / 4.0 = 1.0.
+  // kp = 0.5 -> kp * eff_error = 0.5.
+  // target_velocity = 400.0 + 0.5 = 400.5
+  MotionPlanRequest_t req = {
+      .cfg = &config,
+      .commanded_pos = 102,
+      .planned_encoder_pos = 100, // error = 2
+      .load_tension = 0,
+      .now = 100,
+      .last_step_time = 90,
+      .step_period_cnt = 480, // 400 counts/ms
+      .step_reverse = false,
+      .is_freewheeling = false,
+      .stall_tripped = false,
+      .chunk_size = 8
+  };
+  MotionPlanResult_t res;
+
+  PlanMotionStep(&req, &res);
+  TEST_ASSERT_EQUAL_INT(1, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(8, res.count_to_emit);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 400.5f, res.target_velocity);
+
+  // When error = 20 (multi-step error > 4): eff_error = 20 (full gain).
+  // kp * eff_error = 0.5 * 20 = 10.0.
+  // target_velocity = 400.0 + 10.0 = 410.0
+  req.commanded_pos = 120;
+  PlanMotionStep(&req, &res);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 410.0f, res.target_velocity);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_planner_nominal_tracking_forward);
@@ -283,5 +339,7 @@ int main(void) {
   RUN_TEST(test_planner_at_target_zero_error_stable);
   RUN_TEST(test_planner_null_safety);
   RUN_TEST(test_planner_default_config_gains);
+  RUN_TEST(test_planner_continuous_streaming_zero_error);
+  RUN_TEST(test_planner_soft_knee_error_attenuation);
   return UNITY_END();
 }
