@@ -20,3 +20,16 @@ void RealignPositionCounters(PositionCounters_t* pos, int32_t target_encoder_pos
   pos->step_cnt_prev = current_hw_cnt;
   pos->step_dcnt = 0;
 }
+
+uint16_t FilterStepWithBlanking(uint32_t period, uint32_t min_blanking_ticks, uint32_t* accum_ticks, uint32_t* out_valid_period) {
+  if (!accum_ticks) return 0;
+  *accum_ticks += period;
+  if (*accum_ticks >= min_blanking_ticks) {
+    if (out_valid_period) {
+      *out_valid_period = *accum_ticks;
+    }
+    *accum_ticks = 0;
+    return 1;
+  }
+  return 0;
+}

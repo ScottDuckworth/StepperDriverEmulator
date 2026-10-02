@@ -157,6 +157,12 @@ int32_t GetEncoderPosition(void) { return mock_pos; }
 void SetEncoderPosition(int32_t pos) { mock_pos = pos; ReportEncoderPosition(); }
 void ReportEncoderPosition(void) { ReportI32("pos", GetEncoderPosition()); }
 
+static float mock_blank = 3.5f;
+
+float GetStepBlanking(void) { return mock_blank; }
+void SetStepBlanking(float blank_us) { mock_blank = blank_us; ReportStepBlanking(); }
+void ReportStepBlanking(void) { ReportFloat("blank", GetStepBlanking()); }
+
 bool SaveConfig(void) {
   return mock_save_success;
 }
@@ -182,12 +188,26 @@ void setUp(void) {
   mock_blink = false;
   mock_stall_trip = false;
   mock_save_success = true;
+  mock_blank = 3.5f;
   clear_output();
 }
 
 void tearDown(void) {}
 
 // --- Unit Tests ---
+
+void test_cmd_blank_set_and_query(void) {
+  send_cmd("blank 5.0\r\n");
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 5.0f, mock_blank);
+  TEST_ASSERT_EQUAL_STRING("blank 5.0000\r\n", captured_output);
+
+  send_cmd("blank 3.5\r\n");
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 3.5f, mock_blank);
+  TEST_ASSERT_EQUAL_STRING("blank 3.5000\r\n", captured_output);
+
+  send_cmd("blank\r\n");
+  TEST_ASSERT_EQUAL_STRING("blank 3.5000\r\n", captured_output);
+}
 
 void test_cmd_t_set_and_query(void) {
   send_cmd("t 500\r\n");
@@ -309,6 +329,7 @@ void test_cmd_r_state_report(void) {
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "spr 1000\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "kp 0.1000\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "kff 1.0000\r\n"));
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "blank 3.5000\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "tcurve 1000 1000 8000 200\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "stall 4000\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "kfree 0.0050\r\n"));
@@ -321,6 +342,7 @@ void test_cmd_help(void) {
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "t [int32]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "tcurve [T0] [V_knee] [V_max] [T_min]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "stall [uint32]"));
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "blank [float]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "zero"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "save"));
 }
@@ -368,6 +390,7 @@ void test_cmd_error_unknown_command(void) {
 
 int main(void) {
   UNITY_BEGIN();
+  RUN_TEST(test_cmd_blank_set_and_query);
   RUN_TEST(test_cmd_t_set_and_query);
   RUN_TEST(test_cmd_tcurve_set_and_query);
   RUN_TEST(test_cmd_stall_set_and_query);

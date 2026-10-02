@@ -139,6 +139,10 @@ float GetKfree(void);
 void SetKfree(float kfree);
 void ReportKfree(void);
 
+float GetStepBlanking(void);
+void SetStepBlanking(float blank_us);
+void ReportStepBlanking(void);
+
 int32_t CalcMotorTorqueConfig(const EmulatorConfig_t* cfg, float speed_abs);
 int32_t CalcMotorTorque(float speed_abs);
 

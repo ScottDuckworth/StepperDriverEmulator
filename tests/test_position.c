@@ -75,6 +75,58 @@ void test_realign_position_counters(void) {
   RealignPositionCounters(NULL, 1000, &config, 0);
 }
 
+void test_filter_step_blanking_normal_200khz(void) {
+  uint32_t accum = 0;
+  uint32_t out_period = 0;
+  // 200 kHz = 240 ticks @ 48 MHz. Threshold = 168 ticks (3.5 us).
+  for (int i = 0; i < 5; i++) {
+    uint16_t step = FilterStepWithBlanking(240, 168, &accum, &out_period);
+    TEST_ASSERT_EQUAL_UINT16(1, step);
+    TEST_ASSERT_EQUAL_UINT32(240, out_period);
+    TEST_ASSERT_EQUAL_UINT32(0, accum);
+  }
+}
+
+void test_filter_step_blanking_glitch_rejection_and_recovery(void) {
+  uint32_t accum = 0;
+  uint32_t out_period = 0;
+  const uint32_t threshold = 168; // 3.5 us
+
+  // Valid initial step at 200 kHz (240 ticks)
+  TEST_ASSERT_EQUAL_UINT16(1, FilterStepWithBlanking(240, threshold, &accum, &out_period));
+  TEST_ASSERT_EQUAL_UINT32(240, out_period);
+  TEST_ASSERT_EQUAL_UINT32(0, accum);
+
+  // Glitch 1: 30 ticks (0.625 us) later -> rejected!
+  TEST_ASSERT_EQUAL_UINT16(0, FilterStepWithBlanking(30, threshold, &accum, &out_period));
+  TEST_ASSERT_EQUAL_UINT32(30, accum);
+
+  // Glitch 2: 40 ticks (0.833 us) later -> rejected!
+  TEST_ASSERT_EQUAL_UINT16(0, FilterStepWithBlanking(40, threshold, &accum, &out_period));
+  TEST_ASSERT_EQUAL_UINT32(70, accum);
+
+  // Genuine step arriving 170 ticks after Glitch 2 (total 30 + 40 + 170 = 240 ticks from Step 1)
+  TEST_ASSERT_EQUAL_UINT16(1, FilterStepWithBlanking(170, threshold, &accum, &out_period));
+  TEST_ASSERT_EQUAL_UINT32(240, out_period);
+  TEST_ASSERT_EQUAL_UINT32(0, accum);
+}
+
+void test_filter_step_blanking_standstill_primed(void) {
+  uint32_t threshold = 168;
+  uint32_t accum = threshold; // Primed for standstill
+  uint32_t out_period = 0;
+
+  // First step from standstill should trigger immediately regardless of interval
+  TEST_ASSERT_EQUAL_UINT16(1, FilterStepWithBlanking(100, threshold, &accum, &out_period));
+  TEST_ASSERT_EQUAL_UINT32(268, out_period);
+  TEST_ASSERT_EQUAL_UINT32(0, accum);
+}
+
+void test_filter_step_blanking_null_safety(void) {
+  uint32_t out_period = 0;
+  TEST_ASSERT_EQUAL_UINT16(0, FilterStepWithBlanking(240, 168, NULL, &out_period));
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_step_delta_normal);
@@ -82,5 +134,9 @@ int main(void) {
   RUN_TEST(test_accumulate_step_position_forward);
   RUN_TEST(test_accumulate_step_position_reverse);
   RUN_TEST(test_realign_position_counters);
+  RUN_TEST(test_filter_step_blanking_normal_200khz);
+  RUN_TEST(test_filter_step_blanking_glitch_rejection_and_recovery);
+  RUN_TEST(test_filter_step_blanking_standstill_primed);
+  RUN_TEST(test_filter_step_blanking_null_safety);
   return UNITY_END();
 }

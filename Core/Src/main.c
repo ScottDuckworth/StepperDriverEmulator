@@ -67,7 +67,13 @@ static volatile uint32_t now;
 
 static PositionCounters_t position;
 
-static volatile uint32_t step_period_cnt;
+#define STEP_BUF_SIZE 32
+static volatile uint32_t step_period_buf[STEP_BUF_SIZE];
+static uint16_t step_buf_tail = 0;
+static uint32_t blanking_accum = 168; // Primed for standstill
+static float step_blank_us = 3.5f;    // Default 3.5 us blanking (supports up to 285 kHz)
+static uint32_t min_blanking_ticks = 168; // 3.5 us @ 48 MHz
+static volatile uint32_t step_period_cnt = 0;
 static volatile int32_t load_tension = 0;
 static volatile bool stall_tripped = false;
 static volatile bool blink_mode = false;
@@ -373,14 +379,51 @@ void ReportKff(void) {
   ReportFloat("kff", GetKff());
 }
 
+float GetStepBlanking(void) {
+  return step_blank_us;
+}
+
+void SetStepBlanking(float blank_us) {
+  if (blank_us < 0.5f) blank_us = 0.5f;
+  if (blank_us > 1000.0f) blank_us = 1000.0f;
+  step_blank_us = blank_us;
+  min_blanking_ticks = (uint32_t)(blank_us * 48.0f);
+  if (min_blanking_ticks < 24) min_blanking_ticks = 24;
+
+  // Adapt hardware timer filter IC1F/CKD to match blanking window
+  if (blank_us <= 5.0f) {
+    TIM2->CR1 &= ~TIM_CR1_CKD; // CKD = 0 (div 1)
+    TIM2->CCMR1 = (TIM2->CCMR1 & ~(TIM_CCMR1_IC1F | TIM_CCMR1_IC2F))
+                | (0b1000 << TIM_CCMR1_IC1F_Pos)  // 1.0 us filter (fDTS/8, N=6)
+                | (0b1000 << TIM_CCMR1_IC2F_Pos);
+  } else if (blank_us <= 15.0f) {
+    TIM2->CR1 &= ~TIM_CR1_CKD; // CKD = 0 (div 1)
+    TIM2->CCMR1 = (TIM2->CCMR1 & ~(TIM_CCMR1_IC1F | TIM_CCMR1_IC2F))
+                | (0b1111 << TIM_CCMR1_IC1F_Pos)  // 5.33 us filter (fDTS/32, N=8)
+                | (0b1111 << TIM_CCMR1_IC2F_Pos);
+  } else {
+    TIM2->CR1 |= TIM_CR1_CKD_1; // CKD = div4
+    TIM2->CCMR1 = (TIM2->CCMR1 & ~(TIM_CCMR1_IC1F | TIM_CCMR1_IC2F))
+                | (0b1111 << TIM_CCMR1_IC1F_Pos)  // 21.33 us filter (fDTS/32, N=8, CKD=4)
+                | (0b1111 << TIM_CCMR1_IC2F_Pos);
+  }
+  ReportStepBlanking();
+}
+
+void ReportStepBlanking(void) {
+  ReportFloat("blank", GetStepBlanking());
+}
+
 int32_t GetEncoderPosition(void) {
   return position.encoder_pos;
 }
 
 void SetEncoderPosition(int32_t pos) {
   __disable_irq();
-  uint16_t current_cnt = UINT16_MAX - (uint16_t) DMA1_Channel5->CNDTR;
-  RealignPositionCounters(&position, pos, &config, current_cnt);
+  uint16_t head = (STEP_BUF_SIZE - (uint16_t) DMA1_Channel5->CNDTR) & (STEP_BUF_SIZE - 1);
+  step_buf_tail = head;
+  blanking_accum = min_blanking_ticks;
+  RealignPositionCounters(&position, pos, &config, head);
   planned_encoder_pos = pos;
   half_0_delta = 0;
   half_1_delta = 0;
@@ -434,8 +477,10 @@ void UpdateStepEnabled(void) {
       stall_tripped = false;
       cleared_stall = true;
     }
-    uint16_t current_cnt = UINT16_MAX - (uint16_t) DMA1_Channel5->CNDTR;
-    RealignPositionCounters(&position, position.encoder_pos, &config, current_cnt);
+    uint16_t head = (STEP_BUF_SIZE - (uint16_t) DMA1_Channel5->CNDTR) & (STEP_BUF_SIZE - 1);
+    step_buf_tail = head;
+    blanking_accum = min_blanking_ticks;
+    RealignPositionCounters(&position, position.encoder_pos, &config, head);
     planned_encoder_pos = position.encoder_pos;
   } else {
     TIM2->CR1 &= ~TIM_CR1_CEN;
@@ -455,14 +500,25 @@ void UpdateStepEnabled(void) {
 }
 
 static void UpdatePositionCounters(void) {
-  uint16_t step_cnt = UINT16_MAX - (uint16_t) DMA1_Channel5->CNDTR;
-  uint16_t step_dcnt = CalcStepDelta(step_cnt, position.step_cnt_prev);
-  position.step_cnt_prev = step_cnt;
-  position.step_dcnt = step_dcnt;
-  if (step_dcnt != 0) {
+  uint16_t head = (STEP_BUF_SIZE - (uint16_t) DMA1_Channel5->CNDTR) & (STEP_BUF_SIZE - 1);
+  uint16_t valid_steps = 0;
+
+  while (step_buf_tail != head) {
+    uint32_t period = step_period_buf[step_buf_tail];
+    step_buf_tail = (step_buf_tail + 1) & (STEP_BUF_SIZE - 1);
+
+    uint32_t valid_period = 0;
+    if (FilterStepWithBlanking(period, min_blanking_ticks, &blanking_accum, &valid_period)) {
+      valid_steps++;
+      step_period_cnt = valid_period;
+    }
+  }
+
+  position.step_dcnt = valid_steps;
+  if (valid_steps != 0) {
     last_step_time = now;
   }
-  position.step_pos = AccumulateStepPosition(position.step_pos, step_dcnt, position.step_reverse);
+  position.step_pos = AccumulateStepPosition(position.step_pos, valid_steps, position.step_reverse);
 }
 
 void UpdateStepDirection(void) {
@@ -593,8 +649,8 @@ void Motion_Wakeup_Handler(void) {
 
     if (startup_sync_count > 0) {
       startup_sync_count--;
-      uint32_t captured_period = TIM2->CCR1;
-      if (captured_period >= 480 && config.spr > 0) {
+      uint32_t captured_period = step_period_cnt;
+      if (captured_period >= 240 && config.spr > 0) {
         float in_rate = (48000.0f / (float) captured_period) * ((float) config.epr / (float) config.spr);
         if (position.step_reverse) in_rate = -in_rate;
         int32_t cmd = StepToEncoderPosition(position.step_pos);
@@ -828,12 +884,13 @@ static void InitPeripherals(void) {
   SYSCFG->EXTICR[0] = 0;  // EXTI0-3 from PORTA (ENA on EXTI3)
   SYSCFG->EXTICR[1] = 0;  // EXTI4-7 from PORTA (DIR on EXTI4)
 
-  // DMA1 Channel 5: Transfers TIM2->CCR1 captured period to step_period_cnt
+  // DMA1 Channel 5: Transfers TIM2->CCR1 captured period to step_period_buf circular ring
   DMA1_Channel5->CPAR = (uint32_t) &TIM2->CCR1;
-  DMA1_Channel5->CMAR = (uint32_t) &step_period_cnt;
-  DMA1_Channel5->CNDTR = UINT16_MAX;
+  DMA1_Channel5->CMAR = (uint32_t) step_period_buf;
+  DMA1_Channel5->CNDTR = STEP_BUF_SIZE;
   DMA1_Channel5->CCR = (0b10 << DMA_CCR_MSIZE_Pos)  // 32-bit memory
                      | (0b10 << DMA_CCR_PSIZE_Pos)  // 32-bit peripheral
+                     | DMA_CCR_MINC                 // Increment memory pointer
                      | DMA_CCR_CIRC                 // Circular mode
                      | DMA_CCR_EN;                  // Start DMA
 
@@ -842,15 +899,15 @@ static void InitPeripherals(void) {
   TIM2->ARR = UINT32_MAX;
   TIM2->CCMR1 = (0b01 << TIM_CCMR1_CC1S_Pos)   // CC1 channel is configured as input, IC1 is mapped on TI1
               | (0b10 << TIM_CCMR1_CC2S_Pos)   // CC2 channel is configured as input, IC2 is mapped on TI1.
-              | (0b1111 << TIM_CCMR1_IC1F_Pos) // Hardware digital filter: fDTS/32, N=8 (21.33 us filter)
-              | (0b1111 << TIM_CCMR1_IC2F_Pos);// Hardware digital filter: fDTS/32, N=8 (21.33 us filter)
+              | (0b1000 << TIM_CCMR1_IC1F_Pos) // Hardware digital filter: fDTS/8, N=6 (1.0 us filter)
+              | (0b1000 << TIM_CCMR1_IC2F_Pos);// Hardware digital filter: fDTS/8, N=6 (1.0 us filter)
   TIM2->CCER = TIM_CCER_CC1P                   // Invert polarity
              | TIM_CCER_CC1E                   // Period captured in CCR1
              | TIM_CCER_CC2E;                  // Pulse width captured in CCR2
   TIM2->SMCR = (0b101 << TIM_SMCR_TS_Pos)      // Filtered Timer Input 1 (TI1FP1)
              | (0b100 << TIM_SMCR_SMS_Pos);    // Reset mode
   TIM2->DIER = TIM_DIER_CC1DE | TIM_DIER_CC1IE;// Link DMA to CCR1 + arm CC1 interrupt for wakeup
-  TIM2->CR1 = TIM_CR1_CEN | TIM_CR1_CKD_1;     // Enable counter with CKD=div4 for 21.33 us digital filter
+  TIM2->CR1 = TIM_CR1_CEN;                      // Enable counter (CKD=div1 for 1.0 us filter)
 
   // TIM3 acts as periodic heartbeat triggering DMA1 Channel 3 on Update Events
   TIM3->PSC = 0;

@@ -32,7 +32,7 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
   }
 
   float input_rate = 0.0f;
-  if ((req->now - req->last_step_time) <= 50 && req->step_period_cnt >= 480 && req->cfg->spr > 0) {
+  if ((req->now - req->last_step_time) <= 50 && req->step_period_cnt >= 240 && req->cfg->spr > 0) {
     input_rate = (48000.0f / (float) req->step_period_cnt) * ((float) req->cfg->epr / (float) req->cfg->spr);
     if (req->step_reverse) {
       input_rate = -input_rate;

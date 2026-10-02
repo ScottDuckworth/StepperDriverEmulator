@@ -235,6 +235,17 @@ static void Cmd_kff(const Command_t* self) {
   SetKff(value);
 }
 
+static void Cmd_blank(const Command_t* self) {
+  if (argc == 1) {
+    ReportStepBlanking();
+    return;
+  }
+  if (argc != 2) { InvalidUsage(self->usage); return; }
+  float value;
+  if (!StrToFloat(argv[1], &value)) { InvalidValue("float", argv[1]); return; }
+  SetStepBlanking(value);
+}
+
 static void Cmd_r(const Command_t* self) {
   if (argc != 1) { InvalidUsage(self->usage); return; }
   ReportOdr();
@@ -242,6 +253,7 @@ static void Cmd_r(const Command_t* self) {
   ReportSpr();
   ReportKp();
   ReportKff();
+  ReportStepBlanking();
   ReportLimit1();
   ReportLimit2();
   ReportTension();
@@ -273,6 +285,7 @@ static const Command_t commands[] = {
     {"tcurve", "tcurve [T0] [V_knee] [V_max] [T_min]", Cmd_tcurve},
     {"stall", "stall [uint32]", Cmd_stall},
     {"kfree", "kfree [float]", Cmd_kfree},
+    {"blank", "blank [float]", Cmd_blank},
     {"zero", "zero", Cmd_zero},
     {"blink", "blink [0|1]", Cmd_blink},
     {"odr", "odr <uint16>", Cmd_odr},
