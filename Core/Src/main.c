@@ -480,6 +480,8 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
   bool is_freewheeling = stall_tripped || !GetStepEnabled();
   int32_t commanded_pos = StepToEncoderPosition(position.step_pos);
 
+  uint32_t period_cnt = (startup_sync_count > 0) ? 0 : step_period_cnt;
+
   MotionPlanRequest_t req = {
       .cfg = &config,
       .commanded_pos = commanded_pos,
@@ -487,7 +489,7 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
       .load_tension = load_tension,
       .now = now,
       .last_step_time = last_step_time,
-      .step_period_cnt = step_period_cnt,
+      .step_period_cnt = period_cnt,
       .step_reverse = position.step_reverse,
       .is_freewheeling = is_freewheeling,
       .stall_tripped = stall_tripped,
@@ -517,10 +519,7 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
     }
   } else if (startup_sync_count > 0 && config.spr > 0) {
     float step_rate_nominal = ((float) config.epr / (float) config.spr);
-    float abs_v = (pace_velocity >= 0.0f) ? pace_velocity : -pace_velocity;
-    if (abs_v < step_rate_nominal) {
-      pace_velocity = (res.dir >= 0) ? step_rate_nominal : -step_rate_nominal;
-    }
+    pace_velocity = (res.dir >= 0) ? step_rate_nominal : -step_rate_nominal;
   }
 
   uint16_t psc = 0;
@@ -843,8 +842,8 @@ static void InitPeripherals(void) {
   TIM2->ARR = UINT32_MAX;
   TIM2->CCMR1 = (0b01 << TIM_CCMR1_CC1S_Pos)   // CC1 channel is configured as input, IC1 is mapped on TI1
               | (0b10 << TIM_CCMR1_CC2S_Pos)   // CC2 channel is configured as input, IC2 is mapped on TI1.
-              | (0b0011 << TIM_CCMR1_IC1F_Pos) // Hardware digital filter: 8 samples at 48MHz (167 ns)
-              | (0b0011 << TIM_CCMR1_IC2F_Pos);// Hardware digital filter: 8 samples at 48MHz (167 ns)
+              | (0b1000 << TIM_CCMR1_IC1F_Pos) // Hardware digital filter: fDTS/8, N=6 (1.0 us filter)
+              | (0b1000 << TIM_CCMR1_IC2F_Pos);// Hardware digital filter: fDTS/8, N=6 (1.0 us filter)
   TIM2->CCER = TIM_CCER_CC1P                   // Invert polarity
              | TIM_CCER_CC1E                   // Period captured in CCR1
              | TIM_CCER_CC2E;                  // Pulse width captured in CCR2
