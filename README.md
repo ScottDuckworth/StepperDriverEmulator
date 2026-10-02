@@ -85,17 +85,62 @@ T_{\text{motor}}(v) = T_{\text{min}}, & v \ge V_{\text{max}}
 
 ### Load Tension & Net Torque (`t`)
 
-* $\tau_{\text{tension}} > 0$: Pulls in forward (+) direction.
-* $\tau_{\text{tension}} < 0$: Pulls in reverse (-) direction.
-* In commanded travel direction $\text{dir} \in \{+1, -1\}$:
-  $$T_{\text{net}} = T_{\text{motor}}(v) + (\text{dir} \cdot \tau_{\text{tension}})$$
+The `t` parameter models an external directional force or torque vector $\tau_{\text{tension}}$ acting continually along the axis in the emulator's coordinate frame.
 
-* **$T_{\text{net}} \ge 0$:** Motor drives normally, tracking commanded steps.
-* **$T_{\text{net}} < 0$:**
-  * Motor cannot advance.
-  * If $|\tau_{\text{tension}}| > T_0$: Opposing load exceeds holding torque; rotor is pulled backward by the load.
-  * If $|\tau_{\text{tension}}| \le T_0$: Rotor stalls in place.
-  * Rotor position lag accumulates: $\text{lag} = |\text{StepToEncoderPosition}(\text{step\_pos}) - \text{planned\_encoder\_pos}|$.
+#### Coordinate Direction Conventions
+
+* **Forward (+ / $+1$):**
+  * `DIR` input pin (PA4) is HIGH (`rev 0`).
+  * Commanded step position increases ($+\Delta \text{step\_pos}$).
+  * Encoder position increases ($+\Delta \text{pos}$); quadrature output streams Phase A leading Phase B.
+* **Reverse (- / $-1$):**
+  * `DIR` input pin (PA4) is LOW (`rev 1`).
+  * Commanded step position decreases ($-\Delta \text{step\_pos}$).
+  * Encoder position decreases ($-\Delta \text{pos}$); quadrature output streams Phase B leading Phase A.
+
+#### Sign of Load Tension (`t`)
+
+* **$\tau_{\text{tension}} > 0$ (Positive Tension):**
+  * Exerts an external force/torque pulling continuously in the **positive direction** (+ counts / forward).
+  * **Assists** forward motion; **opposes** reverse motion.
+  * Pulls the rotor in the $+C$ direction during freewheeling or slip.
+* **$\tau_{\text{tension}} < 0$ (Negative Tension):**
+  * Exerts an external force/torque pulling continuously in the **negative direction** (- counts / reverse).
+  * **Opposes** forward motion; **assists** reverse motion.
+  * Pulls the rotor in the $-C$ direction during freewheeling or slip.
+* **$\tau_{\text{tension}} = 0$:**
+  * Free unloaded shaft; zero external force.
+
+#### Directional Interaction Matrix & Net Torque
+
+In the commanded travel direction $\text{dir} \in \{+1, -1\}$ (where $\text{dir} = \operatorname{sgn}(\text{commanded\_pos} - \text{planned\_encoder\_pos})$):
+$$T_{\text{net}} = T_{\text{motor}}(v) + (\text{dir} \cdot \tau_{\text{tension}})$$
+
+| Commanded Travel (`dir`) | `DIR` Pin (PA4) | Tension Sign (`t`) | Force Vector Direction | Effect on Motor | Net Torque ($T_{\text{net}}$) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Forward** (`+1`) | HIGH | **Positive** (`t > 0`) | Pulls forward (+ counts) | **Assists / Aids** motor | $T_{\text{motor}}(v) + \|t\|$ |
+| **Forward** (`+1`) | HIGH | **Negative** (`t < 0`) | Pulls backward (- counts) | **Resists / Opposes** motor | $T_{\text{motor}}(v) - \|t\|$ |
+| **Reverse** (`-1`) | LOW | **Positive** (`t > 0`) | Pulls forward (+ counts) | **Resists / Opposes** motor | $T_{\text{motor}}(v) - \|t\|$ |
+| **Reverse** (`-1`) | LOW | **Negative** (`t < 0`) | Pulls backward (- counts) | **Assists / Aids** motor | $T_{\text{motor}}(v) + \|t\|$ |
+
+#### Motor Response Regimes
+
+* **$T_{\text{net}} \ge 0$ (Sufficient Torque):**
+  * Motor drives normally toward commanded position, tracking input step pulses.
+* **$T_{\text{net}} < 0$ (Torque Deficit):**
+  * Opposing load exceeds current motor torque capability ($|t| > T_{\text{motor}}(v)$); motor cannot advance in the commanded direction.
+  * **Slip / Back-driving ($|t| > T_0$):** If the opposing load exceeds static holding torque $T_0$, the load overpowers the motor and back-drives the rotor in the direction of the load at slip speed:
+    $$V_{\text{slip}} = (|t| - T_0) \cdot K_{\text{free}} \quad [C/s]$$
+    Direction of slip matches the sign of `t` (`t > 0` slips in $+C$, `t < 0` slips in $-C$).
+  * **Static Stall ($|t| \le T_0$):** If the opposing load does not exceed holding torque, the rotor locks in place ($V = 0$).
+  * In both cases, rotor lag accumulates against commanded steps:
+    $$\text{lag} = |\text{StepToEncoderPosition}(\text{step\_pos}) - \text{planned\_encoder\_pos}|$$
+
+#### Testing Quick-Reference (Common Scenarios)
+
+* **Opposing load against forward travel:** Use **negative** tension (e.g. `t -1200` opposes forward motion, stalling if $|-1200| > T_0$).
+* **Opposing load against reverse travel:** Use **positive** tension (e.g. `t 1200` opposes reverse motion, stalling if $|1200| > T_0$).
+* **Vertical / Gravity load (pulling downward in negative direction):** Use **negative** tension (e.g. `t -500`). Moving up (+ counts) requires overcoming load; moving down (- counts) is assisted; disabling the drive (`ENA` low) causes downward freewheeling.
 
 ### Stall Fault Trip (`stall`)
 
@@ -109,8 +154,11 @@ When engaged and $\text{lag} \ge \text{stall\_threshold}$:
 ### Disengaged Freewheeling (`kfree`)
 
 Active whenever the motor is disengaged (either `stall_tripped == true` or `ENA` is disabled):
-$$V_{\text{freewheel}} = \tau_{\text{tension}} \cdot K_{\text{free}}$$
-(clamped to $\pm V_{\text{max}}$). The DMA continuously streams quadrature pulses corresponding to this shaft rotation.
+$$V_{\text{freewheel}} = \tau_{\text{tension}} \cdot K_{\text{free}} \quad [C/s]$$
+(clamped to $\pm V_{\text{max}}$). The DMA continuously streams quadrature pulses corresponding to this shaft rotation:
+* $\tau_{\text{tension}} > 0$: Freewheels in the forward (+ counts) direction ($+V_{\text{freewheel}}$).
+* $\tau_{\text{tension}} < 0$: Freewheels in the reverse (- counts) direction ($-V_{\text{freewheel}}$).
+* $\tau_{\text{tension}} = 0$: Shaft remains stationary ($V = 0$).
 
 ### Dimensional Analysis & Unit Relationships
 
@@ -132,7 +180,7 @@ The firmware uses a generalized, dimensionless coordinate system that models phy
 | $T_{\text{min}}$ | `tcurve` | torque units | $[T]$ | Residual pull-out torque at high speeds $v \ge V_{\text{max}}$ |
 | $V_{\text{knee}}$ | `tcurve` | counts / sec | $[C / s]$ | Knee speed below which torque is flat: $\omega_{\text{knee}} = \frac{V_{\text{knee}}}{\text{epr}}\text{ rev/s}$ |
 | $V_{\text{max}}$ | `tcurve` | counts / sec | $[C / s]$ | Cutoff speed where torque drops to $T_{\text{min}}$: $\omega_{\text{max}} = \frac{V_{\text{max}}}{\text{epr}}\text{ rev/s}$ |
-| $\tau_{\text{tension}}$ | `t` | torque units | $[T]$ | External load torque or tension (signed: $+1$ forward, $-1$ reverse) |
+| $\tau_{\text{tension}}$ | `t` | torque units | $[T]$ | External load torque or tension (signed: `+` pulls forward in $+C$, `-` pulls reverse in $-C$) |
 | $\text{stall\_threshold}$ | `stall` | counts | $[C]$ | Permissible rotor position lag: $\Delta \theta_{\text{lag}} = \frac{\text{stall}}{\text{epr}}\text{ rev} = \text{stall} \cdot \Delta x$ |
 | $K_{\text{free}}$ | `kfree` | $\frac{\text{counts/s}}{\text{torque unit}}$ | $[C \cdot s^{-1} \cdot T^{-1}]$ | Viscous freewheel mobility coefficient (inverse damping $1/b$) |
 
@@ -179,7 +227,7 @@ Commands are sent via the USB Virtual COM Port (terminated with `\r` or `\n`).
 
 | Command | Syntax | Description | Example Command | Serial Response |
 | :--- | :--- | :--- | :--- | :--- |
-| `t` | `t [int32]` | Query or set load tension/torque | `t -1200` | `t -1200\r\n` |
+| `t` | `t [int32]` | Query or set load tension/torque (signed: `+` pulls forward, `-` pulls reverse; e.g. `t -1200` opposes forward motion) | `t -1200` | `t -1200\r\n` |
 | `tcurve` | `tcurve [T0] [V_knee] [V_max] [T_min]` | Query or set torque-speed parameters | `tcurve 1000 1000 8000 200` | `tcurve 1000 1000 8000 200\r\n` |
 | `stall` | `stall [uint32]` | Query or set stall threshold (`0` = disable) | `stall 4000` | `stall 4000\r\n` |
 | `kfree` | `kfree [float]` | Query or set viscous freewheel coefficient | `kfree 0.005` | `kfree 0.0050\r\n` |
