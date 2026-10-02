@@ -39,8 +39,9 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
     }
   }
 
-  int32_t error = req->commanded_pos - req->planned_encoder_pos;
-  float eff_error = (float) error;
+  int64_t error = req->commanded_pos - req->planned_encoder_pos;
+  int32_t clamped_err = (error > 2000000000LL) ? 2000000000 : ((error < -2000000000LL) ? -2000000000 : (int32_t) error);
+  float eff_error = (float) clamped_err;
 
   // Soft-knee error profile during active step pulse streaming:
   // When pulses are streaming (input_rate != 0), normal discrete pulse arrivals cause
@@ -82,8 +83,8 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
       } else if (input_rate != 0.0f) {
         res->count_to_emit = chunk_sz;
       } else {
-        int32_t abs_error = (error > 0) ? error : -error;
-        res->count_to_emit = (abs_error < (int32_t) chunk_sz) ? (uint16_t) abs_error : chunk_sz;
+        uint64_t abs_error = (error >= 0) ? (uint64_t) error : (uint64_t)(-(error + 1)) + 1ULL;
+        res->count_to_emit = (abs_error < (uint64_t) chunk_sz) ? (uint16_t) abs_error : chunk_sz;
       }
     } else {
       // Torque deficit: motor cannot advance in commanded direction
@@ -98,8 +99,8 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
       }
 
       // Under torque deficit, motor stalls and accumulates lag against commanded steps
-      uint32_t lag = (error >= 0) ? (uint32_t) error : (uint32_t)(-error);
-      if (req->cfg->stall_threshold > 0 && lag >= req->cfg->stall_threshold) {
+      uint64_t lag = (error >= 0) ? (uint64_t) error : (uint64_t)(-(error + 1)) + 1ULL;
+      if (req->cfg->stall_threshold > 0 && lag >= (uint64_t) req->cfg->stall_threshold) {
         if (!req->stall_tripped) {
           res->stall_trip_event = true;
         }

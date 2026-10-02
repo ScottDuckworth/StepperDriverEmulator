@@ -104,8 +104,9 @@ uint16_t GetSpr(void);
 void SetSpr(uint16_t spr);
 void ReportSpr(void);
 
-int32_t GetEncoderPosition(void);
-void SetEncoderPosition(int32_t pos);
+int64_t GetEncoderPosition(void);
+void SetEncoderPosition(int64_t pos);
+int64_t GetStepPosition(void);
 
 bool GetStepReverse(void);
 bool GetStepEnabled(void);
@@ -154,6 +155,7 @@ bool SaveConfig(void);
 uint16_t WriteData(const uint8_t* data, uint16_t size);
 uint16_t WriteString(const char* text);
 void ReportString(const char* var, const char* value);
+void ReportI64(const char* var, int64_t value);
 void ReportI32(const char* var, int32_t value);
 void ReportU32(const char* var, uint32_t value);
 void ReportU16(const char* var, uint16_t value);

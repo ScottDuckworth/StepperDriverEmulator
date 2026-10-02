@@ -32,17 +32,23 @@ void test_step_delta_rollover_16bit(void) {
 }
 
 void test_accumulate_step_position_forward(void) {
-  TEST_ASSERT_EQUAL_INT32(110, AccumulateStepPosition(100, 10, false));
-  TEST_ASSERT_EQUAL_INT32(-25, AccumulateStepPosition(-50, 25, false));
-  TEST_ASSERT_EQUAL_INT32(0, AccumulateStepPosition(0, 0, false));
-  TEST_ASSERT_EQUAL_INT32(1000000, AccumulateStepPosition(999900, 100, false));
+  TEST_ASSERT_EQUAL_INT64(110, AccumulateStepPosition(100, 10, false));
+  TEST_ASSERT_EQUAL_INT64(-25, AccumulateStepPosition(-50, 25, false));
+  TEST_ASSERT_EQUAL_INT64(0, AccumulateStepPosition(0, 0, false));
+  TEST_ASSERT_EQUAL_INT64(1000000, AccumulateStepPosition(999900, 100, false));
+  // 64-bit coordinates exceeding 32-bit integer limits (> 2^31 - 1)
+  TEST_ASSERT_EQUAL_INT64(5000000010LL, AccumulateStepPosition(5000000000LL, 10, false));
+  TEST_ASSERT_EQUAL_INT64(-4999999990LL, AccumulateStepPosition(-5000000000LL, 10, false));
 }
 
 void test_accumulate_step_position_reverse(void) {
-  TEST_ASSERT_EQUAL_INT32(90, AccumulateStepPosition(100, 10, true));
-  TEST_ASSERT_EQUAL_INT32(-75, AccumulateStepPosition(-50, 25, true));
-  TEST_ASSERT_EQUAL_INT32(0, AccumulateStepPosition(0, 0, true));
-  TEST_ASSERT_EQUAL_INT32(999800, AccumulateStepPosition(999900, 100, true));
+  TEST_ASSERT_EQUAL_INT64(90, AccumulateStepPosition(100, 10, true));
+  TEST_ASSERT_EQUAL_INT64(-75, AccumulateStepPosition(-50, 25, true));
+  TEST_ASSERT_EQUAL_INT64(0, AccumulateStepPosition(0, 0, true));
+  TEST_ASSERT_EQUAL_INT64(999800, AccumulateStepPosition(999900, 100, true));
+  // 64-bit coordinates exceeding 32-bit integer limits (< -2^31)
+  TEST_ASSERT_EQUAL_INT64(4999999990LL, AccumulateStepPosition(5000000000LL, 10, true));
+  TEST_ASSERT_EQUAL_INT64(-5000000010LL, AccumulateStepPosition(-5000000000LL, 10, true));
 }
 
 void test_realign_position_counters(void) {
@@ -59,17 +65,27 @@ void test_realign_position_counters(void) {
 
   // Realign to encoder position 4000 (1 rev = 1000 steps)
   RealignPositionCounters(&pos, 4000, &config, 5000);
-  TEST_ASSERT_EQUAL_INT32(4000, pos.encoder_pos);
-  TEST_ASSERT_EQUAL_INT32(1000, pos.step_pos);
+  TEST_ASSERT_EQUAL_INT64(4000, pos.encoder_pos);
+  TEST_ASSERT_EQUAL_INT64(1000, pos.step_pos);
   TEST_ASSERT_EQUAL_UINT16(5000, pos.step_cnt_prev);
   TEST_ASSERT_EQUAL_UINT16(0, pos.step_dcnt);
 
   // Negative encoder position (-2000 counts = -500 steps)
   RealignPositionCounters(&pos, -2000, &config, 1000);
-  TEST_ASSERT_EQUAL_INT32(-2000, pos.encoder_pos);
-  TEST_ASSERT_EQUAL_INT32(-500, pos.step_pos);
+  TEST_ASSERT_EQUAL_INT64(-2000, pos.encoder_pos);
+  TEST_ASSERT_EQUAL_INT64(-500, pos.step_pos);
   TEST_ASSERT_EQUAL_UINT16(1000, pos.step_cnt_prev);
   TEST_ASSERT_EQUAL_UINT16(0, pos.step_dcnt);
+
+  // Realign to large 64-bit position (8 billion counts = 2 billion steps)
+  RealignPositionCounters(&pos, 8000000000LL, &config, 2000);
+  TEST_ASSERT_EQUAL_INT64(8000000000LL, pos.encoder_pos);
+  TEST_ASSERT_EQUAL_INT64(2000000000LL, pos.step_pos);
+
+  // Realign to large negative 64-bit position (-12 billion counts = -3 billion steps)
+  RealignPositionCounters(&pos, -12000000000LL, &config, 3000);
+  TEST_ASSERT_EQUAL_INT64(-12000000000LL, pos.encoder_pos);
+  TEST_ASSERT_EQUAL_INT64(-3000000000LL, pos.step_pos);
 
   // Null safety
   RealignPositionCounters(NULL, 1000, &config, 0);

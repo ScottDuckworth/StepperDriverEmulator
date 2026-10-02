@@ -11,8 +11,8 @@ extern "C" {
 
 typedef struct {
   const EmulatorConfig_t* cfg;
-  int32_t commanded_pos;
-  int32_t planned_encoder_pos;
+  int64_t commanded_pos;
+  int64_t planned_encoder_pos;
   int32_t load_tension;
   uint32_t now;
   uint32_t last_step_time;

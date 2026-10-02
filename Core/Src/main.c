@@ -87,7 +87,7 @@ static uint8_t current_quad_state = 0;
 static int8_t half_0_delta = 0;
 static int8_t half_1_delta = 0;
 static volatile bool motion_active = false;
-static volatile int32_t planned_encoder_pos = 0;
+static volatile int64_t planned_encoder_pos = 0;
 static volatile uint8_t startup_sync_count = 0;
 
 
@@ -157,6 +157,46 @@ void ReportString(const char* var, const char* value) {
   WriteString(" ");
   WriteString(value);
   WriteString("\r\n");
+}
+
+void ReportI64(const char* var, int64_t value) {
+  char buf[32];
+  char* p = buf;
+  *p++ = ' ';
+  uint64_t mag;
+  if (value < 0) {
+    *p++ = '-';
+    mag = (uint64_t)(-(value + 1)) + 1ULL;
+  } else {
+    mag = (uint64_t) value;
+  }
+  char digits[24];
+  int d_cnt = 0;
+  if (mag == 0) {
+    digits[d_cnt++] = '0';
+  } else {
+    uint16_t w[4];
+    w[0] = (uint16_t)(mag & 0xFFFFULL);
+    w[1] = (uint16_t)((mag >> 16) & 0xFFFFULL);
+    w[2] = (uint16_t)((mag >> 32) & 0xFFFFULL);
+    w[3] = (uint16_t)((mag >> 48) & 0xFFFFULL);
+    while (w[0] | w[1] | w[2] | w[3]) {
+      uint32_t rem = 0;
+      for (int i = 3; i >= 0; i--) {
+        uint32_t cur = (rem << 16) | w[i];
+        w[i] = (uint16_t)(cur / 10);
+        rem = cur % 10;
+      }
+      digits[d_cnt++] = (char)('0' + rem);
+    }
+  }
+  while (d_cnt > 0) {
+    *p++ = digits[--d_cnt];
+  }
+  *p++ = '\r';
+  *p++ = '\n';
+  WriteString(var);
+  WriteData((uint8_t*) buf, (uint16_t)(p - buf));
 }
 
 void ReportI32(const char* var, int32_t value) {
@@ -414,11 +454,14 @@ void ReportStepBlanking(void) {
   ReportFloat("blank", GetStepBlanking());
 }
 
-int32_t GetEncoderPosition(void) {
-  return position.encoder_pos;
+int64_t GetEncoderPosition(void) {
+  __disable_irq();
+  int64_t pos = position.encoder_pos;
+  __enable_irq();
+  return pos;
 }
 
-void SetEncoderPosition(int32_t pos) {
+void SetEncoderPosition(int64_t pos) {
   __disable_irq();
   uint16_t head = (STEP_BUF_SIZE - (uint16_t) DMA1_Channel5->CNDTR) & (STEP_BUF_SIZE - 1);
   step_buf_tail = head;
@@ -440,11 +483,14 @@ void SetEncoderPosition(int32_t pos) {
 }
 
 void ReportEncoderPosition(void) {
-  ReportI32("pos", GetEncoderPosition());
+  ReportI64("pos", GetEncoderPosition());
 }
 
-int32_t GetStepPosition(void) {
-  return position.step_pos;
+int64_t GetStepPosition(void) {
+  __disable_irq();
+  int64_t pos = position.step_pos;
+  __enable_irq();
+  return pos;
 }
 
 bool GetStepReverse(void) {
@@ -463,7 +509,7 @@ void ReportStepEnabled(void) {
   ReportU8("ena", GetStepEnabled());
 }
 
-static inline int32_t StepToEncoderPosition(int32_t step_position) {
+static inline int64_t StepToEncoderPosition(int64_t step_position) {
   return StepToEncoderPositionConfig(&config, step_position);
 }
 
@@ -534,7 +580,7 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
   UpdatePositionCounters();
 
   bool is_freewheeling = stall_tripped || !GetStepEnabled();
-  int32_t commanded_pos = StepToEncoderPosition(position.step_pos);
+  int64_t commanded_pos = StepToEncoderPosition(position.step_pos);
 
   uint32_t period_cnt = (startup_sync_count > 0) ? 0 : step_period_cnt;
 
@@ -589,7 +635,7 @@ void Motion_Start(void) {
   if (motion_active) return;
 
   UpdatePositionCounters();
-  int32_t commanded = StepToEncoderPosition(position.step_pos);
+  int64_t commanded = StepToEncoderPosition(position.step_pos);
   int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
 
   bool should_start = false;
@@ -653,9 +699,10 @@ void Motion_Wakeup_Handler(void) {
       if (captured_period >= 240 && config.spr > 0) {
         float in_rate = (48000.0f / (float) captured_period) * ((float) config.epr / (float) config.spr);
         if (position.step_reverse) in_rate = -in_rate;
-        int32_t cmd = StepToEncoderPosition(position.step_pos);
-        int32_t err = cmd - planned_encoder_pos;
-        float v_target = config.kff * in_rate + config.kp * (float) err;
+        int64_t cmd = StepToEncoderPosition(position.step_pos);
+        int64_t err = cmd - planned_encoder_pos;
+        int32_t clamped_err = (err > 2000000000LL) ? 2000000000 : ((err < -2000000000LL) ? -2000000000 : (int32_t) err);
+        float v_target = config.kff * in_rate + config.kp * (float) clamped_err;
         uint16_t psc = 0;
         uint16_t arr = 0;
         CalcTimerPacing(v_target, &psc, &arr);
@@ -677,7 +724,7 @@ void Motion_Wakeup_Handler(void) {
     return;
   }
 
-  int32_t commanded = StepToEncoderPosition(position.step_pos);
+  int64_t commanded = StepToEncoderPosition(position.step_pos);
   int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
 
   bool should_start = false;
@@ -711,7 +758,7 @@ static void CheckMotionIdle(void) {
       }
       return;
     }
-    int32_t commanded = StepToEncoderPosition(position.step_pos);
+    int64_t commanded = StepToEncoderPosition(position.step_pos);
     int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
     if (commanded == position.encoder_pos && position.encoder_pos == planned_encoder_pos && position.step_dcnt == 0 && abs_tension <= config.torque_t0) {
       TIM3->CR1 &= ~TIM_CR1_CEN;
@@ -766,7 +813,7 @@ void UpdateTick(void) {
     if (stall_tripped || !GetStepEnabled()) {
       should_start = (load_tension != 0);
     } else {
-      int32_t commanded = StepToEncoderPosition(position.step_pos);
+      int64_t commanded = StepToEncoderPosition(position.step_pos);
       should_start = (commanded != position.encoder_pos) || (step_cnt != position.step_cnt_prev) || (abs_tension > config.torque_t0);
     }
     if (should_start) {

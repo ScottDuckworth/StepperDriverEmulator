@@ -8,7 +8,7 @@
 // --- Mock Hardware / State Environment ---
 static EmulatorConfig_t mock_config;
 static int32_t mock_tension;
-static int32_t mock_pos;
+static int64_t mock_pos;
 static bool mock_lim1;
 static bool mock_lim2;
 static bool mock_blink;
@@ -38,6 +38,47 @@ void ReportString(const char* var, const char* value) {
   WriteString(" ");
   WriteString(value);
   WriteString("\r\n");
+}
+
+void ReportI64(const char* var, int64_t value) {
+  char buf[48];
+  char* p = buf;
+  WriteString(var);
+  *p++ = ' ';
+  uint64_t mag;
+  if (value < 0) {
+    *p++ = '-';
+    mag = (uint64_t)(-(value + 1)) + 1ULL;
+  } else {
+    mag = (uint64_t) value;
+  }
+  char digits[24];
+  int d_cnt = 0;
+  if (mag == 0) {
+    digits[d_cnt++] = '0';
+  } else {
+    uint16_t w[4];
+    w[0] = (uint16_t)(mag & 0xFFFFULL);
+    w[1] = (uint16_t)((mag >> 16) & 0xFFFFULL);
+    w[2] = (uint16_t)((mag >> 32) & 0xFFFFULL);
+    w[3] = (uint16_t)((mag >> 48) & 0xFFFFULL);
+    while (w[0] | w[1] | w[2] | w[3]) {
+      uint32_t rem = 0;
+      for (int i = 3; i >= 0; i--) {
+        uint32_t cur = (rem << 16) | w[i];
+        w[i] = (uint16_t)(cur / 10);
+        rem = cur % 10;
+      }
+      digits[d_cnt++] = (char)('0' + rem);
+    }
+  }
+  while (d_cnt > 0) {
+    *p++ = digits[--d_cnt];
+  }
+  *p++ = '\r';
+  *p++ = '\n';
+  *p = '\0';
+  WriteString(buf);
 }
 
 void ReportI32(const char* var, int32_t value) {
@@ -153,9 +194,9 @@ void ReportStepReverse(void) { ReportU8("rev", GetStepReverse()); }
 bool GetStepEnabled(void) { return true; }
 void ReportStepEnabled(void) { ReportU8("ena", GetStepEnabled()); }
 
-int32_t GetEncoderPosition(void) { return mock_pos; }
-void SetEncoderPosition(int32_t pos) { mock_pos = pos; ReportEncoderPosition(); }
-void ReportEncoderPosition(void) { ReportI32("pos", GetEncoderPosition()); }
+int64_t GetEncoderPosition(void) { return mock_pos; }
+void SetEncoderPosition(int64_t pos) { mock_pos = pos; ReportEncoderPosition(); }
+void ReportEncoderPosition(void) { ReportI64("pos", GetEncoderPosition()); }
 
 static float mock_blank = 3.5f;
 
@@ -316,10 +357,57 @@ void test_cmd_lim1_lim2(void) {
 }
 
 void test_cmd_zero(void) {
-  mock_pos = 12345;
+  mock_pos = 123456789012LL;
   send_cmd("zero\r\n");
-  TEST_ASSERT_EQUAL_INT32(0, mock_pos);
+  TEST_ASSERT_EQUAL_INT64(0, mock_pos);
   TEST_ASSERT_EQUAL_STRING("pos 0\r\n", captured_output);
+}
+
+void test_cmd_pos_report_int64(void) {
+  captured_len = 0;
+  captured_output[0] = '\0';
+  ReportI64("pos", 0LL);
+  TEST_ASSERT_EQUAL_STRING("pos 0\r\n", captured_output);
+
+  captured_len = 0;
+  captured_output[0] = '\0';
+  ReportI64("pos", 42LL);
+  TEST_ASSERT_EQUAL_STRING("pos 42\r\n", captured_output);
+
+  captured_len = 0;
+  captured_output[0] = '\0';
+  ReportI64("pos", -42LL);
+  TEST_ASSERT_EQUAL_STRING("pos -42\r\n", captured_output);
+
+  captured_len = 0;
+  captured_output[0] = '\0';
+  ReportI64("pos", 2147483647LL);
+  TEST_ASSERT_EQUAL_STRING("pos 2147483647\r\n", captured_output);
+
+  captured_len = 0;
+  captured_output[0] = '\0';
+  ReportI64("pos", -2147483648LL);
+  TEST_ASSERT_EQUAL_STRING("pos -2147483648\r\n", captured_output);
+
+  captured_len = 0;
+  captured_output[0] = '\0';
+  ReportI64("pos", 5000000000000LL);
+  TEST_ASSERT_EQUAL_STRING("pos 5000000000000\r\n", captured_output);
+
+  captured_len = 0;
+  captured_output[0] = '\0';
+  ReportI64("pos", -5000000000000LL);
+  TEST_ASSERT_EQUAL_STRING("pos -5000000000000\r\n", captured_output);
+
+  captured_len = 0;
+  captured_output[0] = '\0';
+  ReportI64("pos", 9223372036854775807LL);
+  TEST_ASSERT_EQUAL_STRING("pos 9223372036854775807\r\n", captured_output);
+
+  captured_len = 0;
+  captured_output[0] = '\0';
+  ReportI64("pos", -9223372036854775807LL - 1LL);
+  TEST_ASSERT_EQUAL_STRING("pos -9223372036854775808\r\n", captured_output);
 }
 
 void test_cmd_r_state_report(void) {
@@ -400,6 +488,7 @@ int main(void) {
   RUN_TEST(test_cmd_kp_kff_set_and_query);
   RUN_TEST(test_cmd_lim1_lim2);
   RUN_TEST(test_cmd_zero);
+  RUN_TEST(test_cmd_pos_report_int64);
   RUN_TEST(test_cmd_r_state_report);
   RUN_TEST(test_cmd_help);
   RUN_TEST(test_cmd_save_success);

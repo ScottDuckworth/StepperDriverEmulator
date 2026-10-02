@@ -1,14 +1,14 @@
 #include "motion_math.h"
 #include <stdint.h>
 
-int32_t StepToEncoderPositionConfig(const EmulatorConfig_t* cfg, int32_t step_position) {
+int64_t StepToEncoderPositionConfig(const EmulatorConfig_t* cfg, int64_t step_position) {
   if (!cfg || cfg->spr == 0) return 0;
-  return (int32_t)(((int64_t) step_position * cfg->epr) / cfg->spr);
+  return (step_position * (int64_t) cfg->epr) / (int64_t) cfg->spr;
 }
 
-int32_t EncoderToStepPositionConfig(const EmulatorConfig_t* cfg, int32_t encoder_position) {
+int64_t EncoderToStepPositionConfig(const EmulatorConfig_t* cfg, int64_t encoder_position) {
   if (!cfg || cfg->epr == 0) return 0;
-  return (int32_t)(((int64_t) encoder_position * cfg->spr) / cfg->epr);
+  return (encoder_position * (int64_t) cfg->spr) / (int64_t) cfg->epr;
 }
 
 int32_t CalcMotorTorqueConfig(const EmulatorConfig_t* cfg, float speed_abs) {

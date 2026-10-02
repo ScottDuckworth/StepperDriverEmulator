@@ -311,7 +311,7 @@ The emulator transmits asynchronous notifications over the Virtual COM Port as p
 * `stall_trip <0|1>\r\n`: Emitted when entering (`1`) or leaving (`0`) the stall trip fault state.
 * `ena <0|1>\r\n`: Emitted when the `ENA` pin (PA3) transitions (`1` = enabled, `0` = disabled).
 * `rev <0|1>\r\n`: Emitted when the `DIR` pin (PA4) transitions (`1` = reverse, `0` = forward).
-* `pos <int32>\r\n`: Emitted periodically at the configured `odr` interval (e.g. `pos 4000\r\n`).
+* `pos <int64>\r\n`: Emitted periodically at the configured `odr` interval (e.g. `pos 4000\r\n`).
 
 ---
 

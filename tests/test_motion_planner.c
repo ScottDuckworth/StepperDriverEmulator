@@ -326,6 +326,30 @@ void test_planner_soft_knee_error_attenuation(void) {
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 410.0f, res.target_velocity);
 }
 
+void test_planner_large_64bit_coordinates(void) {
+  MotionPlanRequest_t req = {
+      .cfg = &config,
+      .commanded_pos = 10000000005LL,
+      .planned_encoder_pos = 10000000000LL, // error = 5 counts at 10 billion
+      .load_tension = 0,
+      .now = 1000,
+      .last_step_time = 0,
+      .step_period_cnt = 0,
+      .step_reverse = false,
+      .is_freewheeling = false,
+      .stall_tripped = false,
+      .chunk_size = 8
+  };
+  MotionPlanResult_t res;
+
+  PlanMotionStep(&req, &res);
+
+  // Error = 5 < chunk_size 8: emit exactly 5 steps
+  TEST_ASSERT_EQUAL_INT(1, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(5, res.count_to_emit);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 2.5f, res.target_velocity); // kp = 0.5 * 5 = 2.5
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_planner_nominal_tracking_forward);
@@ -341,5 +365,6 @@ int main(void) {
   RUN_TEST(test_planner_default_config_gains);
   RUN_TEST(test_planner_continuous_streaming_zero_error);
   RUN_TEST(test_planner_soft_knee_error_attenuation);
+  RUN_TEST(test_planner_large_64bit_coordinates);
   return UNITY_END();
 }
