@@ -31,8 +31,8 @@ It monitors standard stepper controller signals (**Step/PUL**, **Direction/DIR**
   * **Blink Yellow (4 Hz):** Device identify / locate mode (`blink 1`).
   * **Blink Red (4 Hz):** Motor stalled / fault tripped.
   * **Off:** Motor driver disabled (`ENA` low).
-  * **Blink Green (4 Hz):** Enabled and actively receiving step pulses ($< 200\text{ ms}$).
-  * **Solid Green:** Enabled and idle ($\ge 200\text{ ms}$).
+  * **Blink Green (4 Hz):** Enabled and actively receiving step pulses (< 200 ms).
+  * **Solid Green:** Enabled and idle (≥ 200 ms).
 * **USB CDC Virtual COM Port:**
   * Full-speed USB (crystal-less via HSI48 internal oscillator and clock recovery system).
   * Interactive serial CLI supporting configuration, monitoring, and real-time control.
@@ -77,11 +77,13 @@ T_min|               \___________
   0             V_knee      V_max
 ```
 
-$$\begin{cases}
+$$
+\begin{cases}
 T_{\text{motor}}(v) = T_0, & v \le V_{\text{knee}} \\
-T_{\text{motor}}(v) = T_0 - \frac{T_0 - T_{\text{min}}}{V_{\text{max}} - V_{\text{knee}}} \cdot (v - V_{\text{knee}}), & V_{\text{knee}} < v < V_{\text{max}} \\
+T_{\text{motor}}(v) = T_0 - \frac{T_0 - T_{\text{min}}}{V_{\text{max}} - V_{\text{knee}}} \cdot (v - V_{\text{knee}}), & V_{\text{knee}} \lt v \lt V_{\text{max}} \\
 T_{\text{motor}}(v) = T_{\text{min}}, & v \ge V_{\text{max}}
-\end{cases}$$
+\end{cases}
+$$
 
 ### Load Tension & Net Torque (`t`)
 
@@ -100,11 +102,11 @@ The `t` parameter models an external directional force or torque vector $\tau_{\
 
 #### Sign of Load Tension (`t`)
 
-* **$\tau_{\text{tension}} > 0$ (Positive Tension):**
+* **$\tau_{\text{tension}} \gt 0$ (Positive Tension):**
   * Exerts an external force/torque pulling continuously in the **positive direction** (+ counts / forward).
   * **Assists** forward motion; **opposes** reverse motion.
   * Pulls the rotor in the $+C$ direction during freewheeling or slip.
-* **$\tau_{\text{tension}} < 0$ (Negative Tension):**
+* **$\tau_{\text{tension}} \lt 0$ (Negative Tension):**
   * Exerts an external force/torque pulling continuously in the **negative direction** (- counts / reverse).
   * **Opposes** forward motion; **assists** reverse motion.
   * Pulls the rotor in the $-C$ direction during freewheeling or slip.
@@ -114,32 +116,32 @@ The `t` parameter models an external directional force or torque vector $\tau_{\
 #### Directional Interaction Matrix & Net Torque
 
 In the commanded travel direction $\text{dir} \in \{+1, -1\}$ (where $\text{dir} = \operatorname{sgn}(P_{\text{cmd}} - P_{\text{enc}})$):
-$$T_{\text{net}} = T_{\text{motor}}(v) + (\text{dir} \cdot \tau_{\text{tension}})$$
+
+$$
+T_{\text{net}} = T_{\text{motor}}(v) + (\text{dir} \cdot \tau_{\text{tension}})
+$$
 
 | Commanded Travel (`dir`) | `DIR` Pin (PA4) | Tension Sign (`t`) | Force Vector Direction | Effect on Motor | Net Torque ($T_{\text{net}}$) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Forward** (`+1`) | HIGH | **Positive** (`t > 0`) | Pulls forward (+ counts) | **Assists / Aids** motor | $T_{\text{motor}}(v) + \|t\|$ |
-| **Forward** (`+1`) | HIGH | **Negative** (`t < 0`) | Pulls backward (- counts) | **Resists / Opposes** motor | $T_{\text{motor}}(v) - \|t\|$ |
-| **Reverse** (`-1`) | LOW | **Positive** (`t > 0`) | Pulls forward (+ counts) | **Resists / Opposes** motor | $T_{\text{motor}}(v) - \|t\|$ |
-| **Reverse** (`-1`) | LOW | **Negative** (`t < 0`) | Pulls backward (- counts) | **Assists / Aids** motor | $T_{\text{motor}}(v) + \|t\|$ |
+| **Forward** (`+1`) | HIGH | **Positive** (`t > 0`) | Pulls forward (+ counts) | **Assists / Aids** motor | $T_{\text{motor}}(v) + \lvert t \rvert$ |
+| **Forward** (`+1`) | HIGH | **Negative** (`t < 0`) | Pulls backward (- counts) | **Resists / Opposes** motor | $T_{\text{motor}}(v) - \lvert t \rvert$ |
+| **Reverse** (`-1`) | LOW | **Positive** (`t > 0`) | Pulls forward (+ counts) | **Resists / Opposes** motor | $T_{\text{motor}}(v) - \lvert t \rvert$ |
+| **Reverse** (`-1`) | LOW | **Negative** (`t < 0`) | Pulls backward (- counts) | **Assists / Aids** motor | $T_{\text{motor}}(v) + \lvert t \rvert$ |
 
 #### Motor Response Regimes
 
 * **$T_{\text{net}} \ge 0$ (Sufficient Torque):**
   * Motor drives normally toward commanded position, tracking input step pulses.
-* **$T_{\text{net}} < 0$ (Torque Deficit):**
-  * Opposing load exceeds current motor torque capability ($|t| > T_{\text{motor}}(v)$); motor cannot advance in the commanded direction.
-  * **Slip / Back-driving ($|t| > T_0$):** If the opposing load exceeds static holding torque $T_0$, the load overpowers the motor and back-drives the rotor in the direction of the load at slip speed:
-    $$V_{\text{slip}} = (|t| - T_0) \cdot K_{\text{free}} \quad [C/s]$$
-    Direction of slip matches the sign of `t` (`t > 0` slips in $+C$, `t < 0` slips in $-C$).
+* **$T_{\text{net}} \lt 0$ (Torque Deficit):**
+  * Opposing load exceeds current motor torque capability ($|t| \gt T_{\text{motor}}(v)$); motor cannot advance in the commanded direction.
+  * **Slip / Back-driving ($|t| \gt T_0$):** If the opposing load exceeds static holding torque $T_0$, the load overpowers the motor and back-drives the rotor in the direction of the load at slip speed: $V_{\text{slip}} = (|t| - T_0) \cdot K_{\text{free}} \quad [C/s]$. Direction of slip matches the sign of `t` (`t > 0` slips in $+C$, `t < 0` slips in $-C$).
   * **Static Stall ($|t| \le T_0$):** If the opposing load does not exceed holding torque, the rotor locks in place ($V = 0$).
-  * In both cases, rotor lag accumulates against commanded steps:
-    $$\text{lag} = |P_{\text{cmd}} - P_{\text{enc}}|$$
+  * In both cases, rotor lag accumulates against commanded steps: $\text{lag} = |P_{\text{cmd}} - P_{\text{enc}}|$.
 
 #### Testing Quick-Reference (Common Scenarios)
 
-* **Opposing load against forward travel:** Use **negative** tension (e.g. `t -1200` opposes forward motion, stalling if $|-1200| > T_0$).
-* **Opposing load against reverse travel:** Use **positive** tension (e.g. `t 1200` opposes reverse motion, stalling if $|1200| > T_0$).
+* **Opposing load against forward travel:** Use **negative** tension (e.g. `t -1200` opposes forward motion, stalling if $|-1200| \gt T_0$).
+* **Opposing load against reverse travel:** Use **positive** tension (e.g. `t 1200` opposes reverse motion, stalling if $|1200| \gt T_0$).
 * **Vertical / Gravity load (pulling downward in negative direction):** Use **negative** tension (e.g. `t -500`). Moving up (+ counts) requires overcoming load; moving down (- counts) is assisted; disabling the drive (`ENA` low) causes downward freewheeling.
 
 ### Stall Fault Trip (`stall`)
@@ -154,10 +156,14 @@ When engaged and $\text{lag} \ge \text{stall}$ (where $\text{stall}$ is the conf
 ### Disengaged Freewheeling (`kfree`)
 
 Active whenever the motor is disengaged (either `stall_tripped == true` or `ENA` is disabled):
-$$V_{\text{freewheel}} = \tau_{\text{tension}} \cdot K_{\text{free}} \quad [C/s]$$
+
+$$
+V_{\text{freewheel}} = \tau_{\text{tension}} \cdot K_{\text{free}} \quad [C/s]
+$$
+
 (clamped to $\pm V_{\text{max}}$). The DMA continuously streams quadrature pulses corresponding to this shaft rotation:
-* $\tau_{\text{tension}} > 0$: Freewheels in the forward (+ counts) direction ($+V_{\text{freewheel}}$).
-* $\tau_{\text{tension}} < 0$: Freewheels in the reverse (- counts) direction ($-V_{\text{freewheel}}$).
+* $\tau_{\text{tension}} \gt 0$: Freewheels in the forward (+ counts) direction ($+V_{\text{freewheel}}$).
+* $\tau_{\text{tension}} \lt 0$: Freewheels in the reverse (- counts) direction ($-V_{\text{freewheel}}$).
 * $\tau_{\text{tension}} = 0$: Shaft remains stationary ($V = 0$).
 
 ### Dimensional Analysis & Unit Relationships
@@ -186,19 +192,39 @@ The firmware uses a generalized, dimensionless coordinate system that models phy
 
 #### Core Governing Equations
 
-1. **Torque Homogeneity Requirement:**
-   $$T_{\text{net}} = T_{\text{motor}}(v) + \text{dir} \cdot \tau_{\text{tension}} \quad [T]$$
-   Because $T_{\text{motor}}(v)$ and $\tau_{\text{tension}}$ are algebraically summed to determine torque deficit, $T_0$, $T_{\text{min}}$, and $\tau_{\text{tension}}$ **must share the exact same torque unit** $[T]$.
+##### 1. Torque Homogeneity Requirement
 
-2. **Viscous Terminal Velocity & Slip Compliance:**
-   $$V_{\text{freewheel}} = \tau_{\text{tension}} \cdot K_{\text{free}} \quad [C / s]$$
-   $$V_{\text{slip}} = (|\tau_{\text{tension}}| - T_0) \cdot K_{\text{free}} \quad [C / s]$$
-   $K_{\text{free}}$ converts torque deficit or freewheeling load directly into rotor velocity. In classical mechanics with viscous damping torque $\tau = b \cdot \omega$, where $\omega = \frac{2\pi}{\text{epr}} V$:
-   $$K_{\text{free}} = \frac{\text{epr}}{2\pi \cdot b_{\text{angular}}} \quad\text{or for linear actuators:}\quad K_{\text{free}} = \frac{1}{\Delta x \cdot b_{\text{linear}}}$$
+$$
+T_{\text{net}} = T_{\text{motor}}(v) + \text{dir} \cdot \tau_{\text{tension}} \quad [T]
+$$
 
-3. **Stall Threshold to Physical Motion:**
-   $$\text{lag} = |P_{\text{cmd}} - P_{\text{enc}}| \quad [C]$$
-   $$\text{Angular Error} = \frac{\text{lag}}{\text{epr}} \times 360^\circ, \qquad \text{Linear Error} = \text{lag} \times \Delta x$$
+Because $T_{\text{motor}}(v)$ and $\tau_{\text{tension}}$ are algebraically summed to determine torque deficit, $T_0$, $T_{\text{min}}$, and $\tau_{\text{tension}}$ **must share the exact same torque unit** $[T]$.
+
+##### 2. Viscous Terminal Velocity & Slip Compliance
+
+$$
+V_{\text{freewheel}} = \tau_{\text{tension}} \cdot K_{\text{free}} \quad [C / s]
+$$
+
+$$
+V_{\text{slip}} = (|\tau_{\text{tension}}| - T_0) \cdot K_{\text{free}} \quad [C / s]
+$$
+
+$K_{\text{free}}$ converts torque deficit or freewheeling load directly into rotor velocity. In classical mechanics with viscous damping torque $\tau = b \cdot \omega$, where $\omega = \frac{2\pi}{\text{epr}} V$:
+
+$$
+K_{\text{free}} = \frac{\text{epr}}{2\pi \cdot b_{\text{angular}}} \quad\text{or for linear actuators:}\quad K_{\text{free}} = \frac{1}{\Delta x \cdot b_{\text{linear}}}
+$$
+
+##### 3. Stall Threshold to Physical Motion
+
+$$
+\text{lag} = |P_{\text{cmd}} - P_{\text{enc}}| \quad [C]
+$$
+
+$$
+\text{Angular Error} = \frac{\text{lag}}{\text{epr}} \times 360^\circ, \qquad \text{Linear Error} = \text{lag} \times \Delta x
+$$
 
 #### Parameter Sizing & Calibration Recipe
 
@@ -208,13 +234,11 @@ To configure consistent parameters for any target motor and mechanism:
    * Pick an integer scale where $T_0$ represents nominal holding torque (e.g., $T_0 = 1000$).
    * Scale external load commands (`t`) to match this unit (e.g. if the motor holds $1.0\text{ N}\cdot\text{m}$, setting $T_0 = 1000$ means $1\text{ unit} = 1\text{ mN}\cdot\text{m}$, so a $0.5\text{ N}\cdot\text{m}$ load is `t 500`).
 2. **Set Velocity Range $[C/s]$:**
-   * Given desired knee speed $\text{RPM}_{\text{knee}}$: $V_{\text{knee}} = \frac{\text{RPM}_{\text{knee}} \cdot \text{epr}}{60}$.
-   * Given maximum speed $\text{RPM}_{\text{max}}$: $V_{\text{max}} = \frac{\text{RPM}_{\text{max}} \cdot \text{epr}}{60}$.
+   * Desired knee speed (RPM): $V_{\text{knee}} = \frac{\mathrm{RPM}_{\text{knee}} \cdot \text{epr}}{60}$.
+   * Maximum speed (RPM): $V_{\text{max}} = \frac{\mathrm{RPM}_{\text{max}} \cdot \text{epr}}{60}$.
 3. **Tune Freewheel Mobility $K_{\text{free}}$:**
-   * Decide the terminal freewheel velocity $V_{\text{target}}$ $[C/s]$ when subjected to a nominal load $\tau_{\text{test}}$ $[T]$:
-     $$K_{\text{free}} = \frac{V_{\text{target}}}{\tau_{\text{test}}}$$
-   * Example: If an external load of $1000\text{ units}$ should free-wheel the motor at $5\text{ rev/s}$ ($20{,}000\text{ counts/s}$ with $\text{epr} = 4000$):
-     $$K_{\text{free}} = \frac{20000}{1000} = 20.0$$
+   * Decide the terminal freewheel velocity $V_{\text{target}}$ $[C/s]$ when subjected to a nominal load $\tau_{\text{test}}$ $[T]$: $K_{\text{free}} = \frac{V_{\text{target}}}{\tau_{\text{test}}}$.
+   * Example: If an external load of $1000\text{ units}$ should free-wheel the motor at $5\text{ rev/s}$ ($20{,}000\text{ counts/s}$ with $\text{epr} = 4000$): $K_{\text{free}} = \frac{20000}{1000} = 20.0$.
 4. **Set Stall Trip Sensitivity:**
    * To trip after $\Phi$ revolutions of slip: $\text{stall} = \Phi \cdot \text{epr}$.
    * Example: To trip after a half-rotation of slip with $\text{epr} = 4000$: $\text{stall} = 0.5 \times 4000 = 2000$.
