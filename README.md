@@ -115,7 +115,7 @@ The `t` parameter models an external directional force or torque vector $\tau_{\
 
 #### Directional Interaction Matrix & Net Torque
 
-In the commanded travel direction $`\text{dir} \in \{+1, -1\}`$ (where $`\text{dir} = \operatorname{sgn}(P_{\text{cmd}} - P_{\text{enc}})`$):
+In the commanded travel direction $`\text{dir} \in \{+1, -1\}`$ (where $`\text{dir} = \mathrm{sgn}(P_{\text{cmd}} - P_{\text{enc}})`$):
 
 $$
 T_{\text{net}} = T_{\text{motor}}(v) + (\text{dir} \cdot \tau_{\text{tension}})
