@@ -214,8 +214,8 @@ void DMA1_Channel2_3_IRQHandler(void)
   */
 void TIM2_IRQHandler(void)
 {
-  TIM2->SR = 0;
   Motion_Wakeup_Handler();
+  TIM2->SR = 0;
 }
 
 /* USER CODE END 1 */

@@ -588,10 +588,14 @@ void Motion_Wakeup_Handler(void) {
   UpdatePositionCounters();
 
   if (motion_active) {
+    if (position.step_dcnt == 0) {
+      return;
+    }
+
     if (startup_sync_count > 0) {
       startup_sync_count--;
       uint32_t captured_period = TIM2->CCR1;
-      if (captured_period > 0 && config.spr > 0) {
+      if (captured_period >= 480 && config.spr > 0) {
         float in_rate = (48000.0f / (float) captured_period) * ((float) config.epr / (float) config.spr);
         if (position.step_reverse) in_rate = -in_rate;
         int32_t cmd = StepToEncoderPosition(position.step_pos);
@@ -838,7 +842,9 @@ static void InitPeripherals(void) {
   TIM2->PSC = 0;
   TIM2->ARR = UINT32_MAX;
   TIM2->CCMR1 = (0b01 << TIM_CCMR1_CC1S_Pos)   // CC1 channel is configured as input, IC1 is mapped on TI1
-              | (0b10 << TIM_CCMR1_CC2S_Pos);  // CC2 channel is configured as input, IC2 is mapped on TI1.
+              | (0b10 << TIM_CCMR1_CC2S_Pos)   // CC2 channel is configured as input, IC2 is mapped on TI1.
+              | (0b0011 << TIM_CCMR1_IC1F_Pos) // Hardware digital filter: 8 samples at 48MHz (167 ns)
+              | (0b0011 << TIM_CCMR1_IC2F_Pos);// Hardware digital filter: 8 samples at 48MHz (167 ns)
   TIM2->CCER = TIM_CCER_CC1P                   // Invert polarity
              | TIM_CCER_CC1E                   // Period captured in CCR1
              | TIM_CCER_CC2E;                  // Pulse width captured in CCR2
