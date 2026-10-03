@@ -92,7 +92,7 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
     if (v_free != 0.0f) {
       res->dir = (v_free > 0.0f) ? 1 : -1;
       res->count_to_emit = chunk_sz;
-      res->target_velocity = v_free / 1000.0f;
+      res->target_velocity = v_free * 0.001f;
     } else {
       res->dir = 0;
       res->count_to_emit = 0;
@@ -102,13 +102,13 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
   }
 
   float step_counts = cfg->counts_per_step;
-  float rate_scale = 48000.0f * step_counts;
 
   uint32_t step_timeout_ms = Motion_CalcStepTimeoutMs(req->step_period_cnt);
 
   float input_rate = 0.0f;
-  if ((req->now - req->last_step_time) <= step_timeout_ms && req->step_period_cnt >= 240 && cfg->ratio_spr > 0) {
-    input_rate = rate_scale / (float) req->step_period_cnt;
+  if ((req->now - req->last_step_time) <= step_timeout_ms && req->step_period_cnt >= 160 && cfg->ratio_spr > 0) {
+    uint32_t step_hz_q4 = 768000000U / req->step_period_cnt;
+    input_rate = (float) step_hz_q4 * (step_counts * 0.0000625f);
     if (req->step_reverse) {
       input_rate = -input_rate;
     }
@@ -208,7 +208,7 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
       if (v_slip > 0.0f) {
         res->dir = (req->load_tension > 0) ? 1 : -1;
         res->count_to_emit = chunk_sz;
-        res->target_velocity = (res->dir > 0) ? (v_slip / 1000.0f) : -(v_slip / 1000.0f);
+        res->target_velocity = (res->dir > 0) ? (v_slip * 0.001f) : -(v_slip * 0.001f);
       } else {
         res->dir = 0;
         res->count_to_emit = 0;
@@ -229,7 +229,7 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
     if (v_slip > 0.0f) {
       res->dir = (req->load_tension > 0) ? 1 : -1;
       res->count_to_emit = chunk_sz;
-      res->target_velocity = (res->dir > 0) ? (v_slip / 1000.0f) : -(v_slip / 1000.0f);
+      res->target_velocity = (res->dir > 0) ? (v_slip * 0.001f) : -(v_slip * 0.001f);
     } else {
       res->dir = 0;
       res->count_to_emit = 0;

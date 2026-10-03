@@ -284,14 +284,22 @@ void ReportOdr(void) {
   ReportU16("odr", GetOdr());
 }
 
+static float CalcRatioFloat(uint16_t num, uint16_t den) {
+  if (den == 0) return 0.0f;
+  uint32_t q = ((uint32_t) num << 16) / den;
+  uint32_t rem = ((uint32_t) num << 16) % den;
+  uint32_t frac = ((uint32_t) rem << 16) / den;
+  return (float) q * (1.0f / 65536.0f) + (float) frac * (1.0f / 4294967296.0f);
+}
+
 bool SetRatio(uint16_t spr, uint16_t epr) {
   if (spr == 0 || epr == 0) return false;
   uint16_t g = CalcGCD(spr, epr);
   __disable_irq();
   config.ratio_spr = spr / g;
   config.ratio_epr = epr / g;
-  config.counts_per_step = (float) config.ratio_epr / (float) config.ratio_spr;
-  config.inv_counts_per_step = (float) config.ratio_spr / (float) config.ratio_epr;
+  config.counts_per_step = CalcRatioFloat(config.ratio_epr, config.ratio_spr);
+  config.inv_counts_per_step = CalcRatioFloat(config.ratio_spr, config.ratio_epr);
   position.step_rem = 0;
   __enable_irq();
   ReportRatio();
@@ -1032,8 +1040,8 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   ConfigStore_Load(ConfigStore_GetStm32FlashDriver(), CONFIG_FLASH_PAGE_ADDR, &config);
-  config.counts_per_step = (config.ratio_spr > 0) ? ((float) config.ratio_epr / (float) config.ratio_spr) : 4.0f;
-  config.inv_counts_per_step = (config.ratio_epr > 0) ? ((float) config.ratio_spr / (float) config.ratio_epr) : 0.25f;
+  config.counts_per_step = (config.ratio_spr > 0) ? CalcRatioFloat(config.ratio_epr, config.ratio_spr) : 4.0f;
+  config.inv_counts_per_step = (config.ratio_epr > 0) ? CalcRatioFloat(config.ratio_spr, config.ratio_epr) : 0.25f;
 
   UpdatePositionCounters();
   position.commanded_pos = 0;

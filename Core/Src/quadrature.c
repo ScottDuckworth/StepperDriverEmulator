@@ -46,13 +46,17 @@ void CalcTimerPacing(float target_velocity_counts_per_ms, uint16_t* out_psc, uin
   if (abs_rate < 0.001f) {
     abs_rate = 0.001f;
   }
-  if (abs_rate > 100.0f) {
-    abs_rate = 100.0f;
+  if (abs_rate > 300.0f) {
+    abs_rate = 300.0f;
   }
 
-  uint32_t ticks = (uint32_t)(48000.0f / abs_rate);
-  if (ticks < 480) {
-    ticks = 480; // max 100 kHz
+  uint32_t counts_per_sec = (uint32_t)(abs_rate * 1000.0f);
+  if (counts_per_sec < 1) {
+    counts_per_sec = 1;
+  }
+  uint32_t ticks = 48000000U / counts_per_sec;
+  if (ticks < 160) {
+    ticks = 160; // max 300 kHz
   }
 
   uint32_t psc = 0;

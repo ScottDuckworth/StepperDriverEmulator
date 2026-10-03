@@ -264,10 +264,20 @@ void test_calc_timer_pacing_ceiling_and_floor(void) {
   uint16_t psc = 999;
   uint16_t arr = 999;
 
-  // Ceiling: > 100 kHz clamped to 100 kHz (480 ticks, ARR=479)
+  // Ceiling: > 300 kHz clamped to 300 kHz (160 ticks, ARR=159)
+  CalcTimerPacing(350.0f, &psc, &arr);
+  TEST_ASSERT_EQUAL_UINT16(0, psc);
+  TEST_ASSERT_EQUAL_UINT16(159, arr);
+
+  // 200 kHz (200.0 counts/ms) -> 48000 / 200 = 240 ticks, ARR=239 (3000 RPM @ 4000 CPR)
+  CalcTimerPacing(200.0f, &psc, &arr);
+  TEST_ASSERT_EQUAL_UINT16(0, psc);
+  TEST_ASSERT_EQUAL_UINT16(239, arr);
+
+  // 150 kHz (150.0 counts/ms) -> 48000 / 150 = 320 ticks, ARR=319
   CalcTimerPacing(150.0f, &psc, &arr);
   TEST_ASSERT_EQUAL_UINT16(0, psc);
-  TEST_ASSERT_EQUAL_UINT16(479, arr);
+  TEST_ASSERT_EQUAL_UINT16(319, arr);
 
   // 20 Hz step rate: 48 MHz / 600,000 ticks -> 0.08 counts/ms (80 Hz quad rate)
   // psc = 600000 >> 16 = 9. ticks = 600000 / 10 = 60000. arr = 59999.

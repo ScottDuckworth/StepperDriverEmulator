@@ -53,7 +53,7 @@ typedef void TIM_HandleTypeDef;
 /* Exported constants --------------------------------------------------------*/
 /* USER CODE BEGIN EC */
 
-#define CHUNK_SIZE 4
+#define CHUNK_SIZE 8
 #define TOTAL_BUFFER_SIZE (2 * CHUNK_SIZE)
 
 /* USER CODE END EC */

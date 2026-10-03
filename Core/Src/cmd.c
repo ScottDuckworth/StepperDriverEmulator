@@ -72,10 +72,10 @@ static bool StrToFloat(const char* str, float* dst) {
   }
   if (*str == '.') {
     str++;
-    float div = 10.0f;
+    float scale = 0.1f;
     while (*str >= '0' && *str <= '9') {
-      val += (float)(*str - '0') / div;
-      div *= 10.0f;
+      val += (float)(*str - '0') * scale;
+      scale *= 0.1f;
       str++;
       has_digits = true;
     }
