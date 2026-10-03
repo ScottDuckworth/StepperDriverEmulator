@@ -565,57 +565,6 @@ void UpdateStepDirection(void) {
   ReportStepReverse();
 }
 
-/*
- * FillQuadChunk:
- * Service routine invoked by DMA half-transfer and transfer-complete interrupts.
- * Updates position tracking, delegates chunk calculation and pattern rendering
- * to Motion_PlanAndEmitChunk, updates TIM3 pacing registers for the next chunk,
- * and returns the emitted delta counts.
- */
-static int8_t FillQuadChunk(uint32_t* chunk) {
-  UpdatePositionCounters();
-
-  bool is_freewheeling = stall_tripped || !GetStepEnabled();
-  uint32_t period_cnt = (startup_sync_count > 0) ? 0 : step_period_cnt;
-
-  MotionPlanRequest_t plan_req = {
-      .commanded_pos = position.commanded_pos,
-      .planned_encoder_pos = planned_encoder_pos,
-      .load_tension = load_tension,
-      .now = now,
-      .last_step_time = last_step_time,
-      .step_period_cnt = period_cnt,
-      .step_reverse = position.step_reverse,
-      .is_freewheeling = is_freewheeling,
-      .stall_tripped = stall_tripped,
-      .chunk_size = CHUNK_SIZE
-  };
-
-  MotionChunkRequest_t chunk_req = {
-      .chunk = chunk,
-      .inout_quad_state = &current_quad_state
-  };
-
-  MotionChunkResult_t res = {0};
-  Motion_PlanAndEmitChunk(&config, &plan_req, &chunk_req, &res);
-  planned_encoder_pos += res.delta;
-
-  if (res.stall_trip_event) {
-    stall_tripped = true;
-    ReportStallTrip();
-  }
-
-  TIM3->PSC = res.psc;
-  TIM3->ARR = res.arr;
-
-  if (step_period_cnt >= 48000 && GetStepEnabled()) {
-    TIM2->SR = 0;
-    TIM2->DIER |= TIM_DIER_CC1IE;
-  }
-
-  return res.delta;
-}
-
 void Motion_Start(void) {
   if (motion_active) return;
 
@@ -740,6 +689,57 @@ void Motion_Wakeup_Handler(void) {
       TIM2->DIER |= TIM_DIER_CC1IE;
     }
   }
+}
+
+/*
+ * FillQuadChunk:
+ * Service routine invoked by DMA half-transfer and transfer-complete interrupts.
+ * Updates position tracking, delegates chunk calculation and pattern rendering
+ * to Motion_PlanAndEmitChunk, updates TIM3 pacing registers for the next chunk,
+ * and returns the emitted delta counts.
+ */
+static int8_t FillQuadChunk(uint32_t* chunk) {
+  UpdatePositionCounters();
+
+  bool is_freewheeling = stall_tripped || !GetStepEnabled();
+  uint32_t period_cnt = (startup_sync_count > 0) ? 0 : step_period_cnt;
+
+  MotionPlanRequest_t plan_req = {
+      .commanded_pos = position.commanded_pos,
+      .planned_encoder_pos = planned_encoder_pos,
+      .load_tension = load_tension,
+      .now = now,
+      .last_step_time = last_step_time,
+      .step_period_cnt = period_cnt,
+      .step_reverse = position.step_reverse,
+      .is_freewheeling = is_freewheeling,
+      .stall_tripped = stall_tripped,
+      .chunk_size = CHUNK_SIZE
+  };
+
+  MotionChunkRequest_t chunk_req = {
+      .chunk = chunk,
+      .inout_quad_state = &current_quad_state
+  };
+
+  MotionChunkResult_t res = {0};
+  Motion_PlanAndEmitChunk(&config, &plan_req, &chunk_req, &res);
+  planned_encoder_pos += res.delta;
+
+  if (res.stall_trip_event) {
+    stall_tripped = true;
+    ReportStallTrip();
+  }
+
+  TIM3->PSC = res.psc;
+  TIM3->ARR = res.arr;
+
+  if (step_period_cnt >= 48000 && GetStepEnabled()) {
+    TIM2->SR = 0;
+    TIM2->DIER |= TIM_DIER_CC1IE;
+  }
+
+  return res.delta;
 }
 
 static void CheckMotionIdle(void) {
