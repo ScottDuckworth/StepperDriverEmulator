@@ -43,8 +43,8 @@ int8_t GenerateQuadChunk(uint32_t* chunk, uint16_t chunk_size, uint8_t* inout_st
 
 void CalcTimerPacing(float target_velocity_counts_per_ms, uint16_t* out_psc, uint16_t* out_arr) {
   float abs_rate = target_velocity_counts_per_ms >= 0.0f ? target_velocity_counts_per_ms : -target_velocity_counts_per_ms;
-  if (abs_rate < 0.1f) {
-    abs_rate = 0.1f;
+  if (abs_rate < 0.001f) {
+    abs_rate = 0.001f;
   }
   if (abs_rate > 100.0f) {
     abs_rate = 100.0f;

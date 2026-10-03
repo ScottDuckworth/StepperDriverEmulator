@@ -272,6 +272,7 @@ void test_planner_default_config_gains(void) {
 
 void test_planner_continuous_streaming_zero_error(void) {
   // Input rate = 400.0 counts/ms, error = 0
+  // Pacing velocity matches input rate, but count_to_emit = 0 so motor does not overshoot
   MotionPlanRequest_t req = {
       .cfg = &config,
       .commanded_pos = 100,
@@ -288,8 +289,7 @@ void test_planner_continuous_streaming_zero_error(void) {
   MotionPlanResult_t res;
 
   PlanMotionStep(&req, &res);
-  TEST_ASSERT_EQUAL_INT(1, res.dir);
-  TEST_ASSERT_EQUAL_UINT16(8, res.count_to_emit);
+  TEST_ASSERT_EQUAL_UINT16(0, res.count_to_emit);
   TEST_ASSERT_FLOAT_WITHIN(0.1f, 400.0f, res.target_velocity);
 }
 
@@ -315,7 +315,7 @@ void test_planner_soft_knee_error_attenuation(void) {
 
   PlanMotionStep(&req, &res);
   TEST_ASSERT_EQUAL_INT(1, res.dir);
-  TEST_ASSERT_EQUAL_UINT16(8, res.count_to_emit);
+  TEST_ASSERT_EQUAL_UINT16(2, res.count_to_emit);
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 400.5f, res.target_velocity);
 
   // When error = 20 (multi-step error > 4): eff_error = 20 (full gain).
@@ -353,11 +353,12 @@ void test_planner_large_64bit_coordinates(void) {
 void test_planner_low_frequency_feedforward_50hz(void) {
   // 48 MHz / 960,000 ticks = 50 Hz steps
   // 4000 epr / 1000 spr = 4.0 ratio -> input_rate = 50 * 4 = 200 counts/sec = 0.2 counts/ms
-  // With kff = 1.0, target_velocity = 0.2 counts/ms (takes 20 ms for 4 counts)
+  // With kff = 1.0, kp = 0.0, target_velocity = 0.2 counts/ms (takes 20 ms for 4 counts)
+  config.kp = 0.0f;
   MotionPlanRequest_t req = {
       .cfg = &config,
-      .commanded_pos = 100,
-      .planned_encoder_pos = 100, // zero error
+      .commanded_pos = 104,
+      .planned_encoder_pos = 100, // 4 counts error (1 step)
       .load_tension = 0,
       .now = 120,
       .last_step_time = 100, // 20 ms gap <= 50 ms timeout
@@ -373,16 +374,23 @@ void test_planner_low_frequency_feedforward_50hz(void) {
   TEST_ASSERT_EQUAL_INT(1, res.dir);
   TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.2f, res.target_velocity);
+
+  // When error reaches 0, no counts emitted to prevent overshoot
+  req.commanded_pos = 100;
+  PlanMotionStep(&req, &res);
+  TEST_ASSERT_EQUAL_UINT16(0, res.count_to_emit);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.2f, res.target_velocity);
 }
 
 void test_planner_low_frequency_timeout_extension(void) {
   // 20 Hz step rate: 48 MHz / 2,400,000 ticks = 50 ms period
   // dynamic timeout = 50 + 25 + 10 = 85 ms
   // input_rate = (48000 / 2400000) * 4.0 = 0.08 counts/ms
+  config.kp = 0.0f;
   MotionPlanRequest_t req = {
       .cfg = &config,
-      .commanded_pos = 100,
-      .planned_encoder_pos = 100,
+      .commanded_pos = 104,
+      .planned_encoder_pos = 100, // 4 counts error
       .load_tension = 0,
       .now = 170,
       .last_step_time = 100, // 70 ms gap: > 50 ms old limit, but <= 85 ms dynamic timeout
@@ -395,13 +403,22 @@ void test_planner_low_frequency_timeout_extension(void) {
   MotionPlanResult_t res;
 
   PlanMotionStep(&req, &res);
-  // Pacing remains active across 70 ms gap
+  // Pacing remains active across 70 ms gap with exactly 4 counts
+  TEST_ASSERT_EQUAL_INT(1, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.08f, res.target_velocity);
 
   // If time exceeds 85 ms dynamic timeout (e.g. 90 ms gap), input_rate drops to 0
+  config.kp = 0.5f;
   req.now = 190;
   PlanMotionStep(&req, &res);
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, res.target_velocity);
+  // With input_rate = 0, target_velocity is kp * 4 = 0.5 * 4 = 2.0 counts/ms
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 2.0f, res.target_velocity);
+  TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
+
+  // When error reaches 0 after timeout, 0 counts are emitted
+  req.commanded_pos = 100;
+  PlanMotionStep(&req, &res);
   TEST_ASSERT_EQUAL_UINT16(0, res.count_to_emit);
 }
 

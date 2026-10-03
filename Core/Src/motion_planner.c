@@ -89,8 +89,10 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
       res->dir = dir;
       if (dir == 0) {
         res->count_to_emit = 0;
-      } else if (input_rate != 0.0f) {
-        res->count_to_emit = chunk_sz;
+      } else if (dir > 0 && error <= 0) {
+        res->count_to_emit = 0;
+      } else if (dir < 0 && error >= 0) {
+        res->count_to_emit = 0;
       } else {
         uint64_t abs_error = (error >= 0) ? (uint64_t) error : (uint64_t)(-(error + 1)) + 1ULL;
         res->count_to_emit = (abs_error < (uint64_t) chunk_sz) ? (uint16_t) abs_error : chunk_sz;

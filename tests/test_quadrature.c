@@ -269,23 +269,29 @@ void test_calc_timer_pacing_ceiling_and_floor(void) {
   TEST_ASSERT_EQUAL_UINT16(0, psc);
   TEST_ASSERT_EQUAL_UINT16(479, arr);
 
-  // Floor: 0.1 counts/ms (100 Hz)
-  // 48000 / 0.1 = 480000 ticks.
-  // psc = 480000 >> 16 = 7.
-  // ticks = 480000 / (7 + 1) = 60000.
-  // arr = 59999.
-  CalcTimerPacing(0.1f, &psc, &arr);
-  TEST_ASSERT_EQUAL_UINT16(7, psc);
+  // 20 Hz step rate: 48 MHz / 600,000 ticks -> 0.08 counts/ms (80 Hz quad rate)
+  // psc = 600000 >> 16 = 9. ticks = 600000 / 10 = 60000. arr = 59999.
+  CalcTimerPacing(0.08f, &psc, &arr);
+  TEST_ASSERT_EQUAL_UINT16(9, psc);
   TEST_ASSERT_EQUAL_UINT16(59999, arr);
 
-  // Below floor (0.01 counts/ms or 0.0) is clamped to 0.1 floor
-  CalcTimerPacing(0.01f, &psc, &arr);
-  TEST_ASSERT_EQUAL_UINT16(7, psc);
-  TEST_ASSERT_EQUAL_UINT16(59999, arr);
+  // Floor: 0.001 counts/ms (1 Hz)
+  // 48000 / 0.001 = 48000000 ticks.
+  // psc = 48000000 >> 16 = 732.
+  // ticks = 48000000 / (732 + 1) = 65484.
+  // arr = 65483.
+  CalcTimerPacing(0.001f, &psc, &arr);
+  TEST_ASSERT_EQUAL_UINT16(732, psc);
+  TEST_ASSERT_EQUAL_UINT16(65483, arr);
+
+  // Below floor (0.0001 counts/ms or 0.0) is clamped to 0.001 floor
+  CalcTimerPacing(0.0001f, &psc, &arr);
+  TEST_ASSERT_EQUAL_UINT16(732, psc);
+  TEST_ASSERT_EQUAL_UINT16(65483, arr);
 
   CalcTimerPacing(0.0f, &psc, &arr);
-  TEST_ASSERT_EQUAL_UINT16(7, psc);
-  TEST_ASSERT_EQUAL_UINT16(59999, arr);
+  TEST_ASSERT_EQUAL_UINT16(732, psc);
+  TEST_ASSERT_EQUAL_UINT16(65483, arr);
 }
 
 void test_calc_timer_pacing_negative_velocity(void) {
@@ -297,9 +303,11 @@ void test_calc_timer_pacing_negative_velocity(void) {
   TEST_ASSERT_EQUAL_UINT16(0, psc);
   TEST_ASSERT_EQUAL_UINT16(4799, arr);
 
+  // -0.05 counts/ms -> abs = 0.05 (50 Hz quad rate)
+  // 48000 / 0.05 = 960000 ticks. psc = 960000 >> 16 = 14. ticks = 960000 / 15 = 64000. arr = 63999.
   CalcTimerPacing(-0.05f, &psc, &arr);
-  TEST_ASSERT_EQUAL_UINT16(7, psc);
-  TEST_ASSERT_EQUAL_UINT16(59999, arr);
+  TEST_ASSERT_EQUAL_UINT16(14, psc);
+  TEST_ASSERT_EQUAL_UINT16(63999, arr);
 }
 
 void test_calc_timer_pacing_null_pointers(void) {
