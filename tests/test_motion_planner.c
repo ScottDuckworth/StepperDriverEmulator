@@ -556,6 +556,98 @@ void test_planner_streaming_clamps_excessive_catchup_velocity(void) {
   TEST_ASSERT_TRUE(res.target_velocity > -40.0f);
 }
 
+void test_calc_step_timeout_ms(void) {
+  // High frequency / small period: default 50 ms
+  TEST_ASSERT_EQUAL_UINT32(50, CalcStepTimeoutMs(0));
+  TEST_ASSERT_EQUAL_UINT32(50, CalcStepTimeoutMs(240));
+  TEST_ASSERT_EQUAL_UINT32(50, CalcStepTimeoutMs(47999));
+
+  // 1 kHz (period 48000 ticks = 1 ms): dynamic timeout 1 + 0 + 10 = 11 <= 50 -> 50 ms
+  TEST_ASSERT_EQUAL_UINT32(50, CalcStepTimeoutMs(48000));
+
+  // 20 Hz (period 2400000 ticks = 50 ms): 50 + 25 + 10 = 85 ms
+  TEST_ASSERT_EQUAL_UINT32(85, CalcStepTimeoutMs(2400000));
+
+  // 10 Hz (period 4800000 ticks = 100 ms): 100 + 50 + 10 = 160 -> clamped to 150 ms
+  TEST_ASSERT_EQUAL_UINT32(150, CalcStepTimeoutMs(4800000));
+}
+
+void test_motion_should_start(void) {
+  // Normal state, at rest, no load
+  TEST_ASSERT_FALSE(Motion_ShouldStart(100, 100, 0, 0, 1000, false));
+
+  // Position error
+  TEST_ASSERT_TRUE(Motion_ShouldStart(104, 100, 0, 0, 1000, false));
+  TEST_ASSERT_TRUE(Motion_ShouldStart(96, 100, 0, 0, 1000, false));
+
+  // New step arrived (dcnt != 0)
+  TEST_ASSERT_TRUE(Motion_ShouldStart(100, 100, 1, 0, 1000, false));
+
+  // External load exceeding holding torque
+  TEST_ASSERT_TRUE(Motion_ShouldStart(100, 100, 0, 1200, 1000, false));
+  TEST_ASSERT_TRUE(Motion_ShouldStart(100, 100, 0, -1200, 1000, false));
+  TEST_ASSERT_FALSE(Motion_ShouldStart(100, 100, 0, 800, 1000, false));
+
+  // Freewheeling under load vs zero load
+  TEST_ASSERT_TRUE(Motion_ShouldStart(100, 100, 0, 500, 1000, true));
+  TEST_ASSERT_FALSE(Motion_ShouldStart(100, 100, 0, 0, 1000, true));
+}
+
+void test_motion_should_stop(void) {
+  EmulatorConfig_t test_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
+  test_cfg.torque_t0 = 1000;
+
+  MotionIdleCheckRequest_t req = {
+      .commanded_pos = 100,
+      .encoder_pos = 100,
+      .planned_encoder_pos = 100,
+      .step_dcnt = 0,
+      .load_tension = 0,
+      .time_since_last_step_ms = 60,
+      .step_timeout_ms = 50,
+      .is_freewheeling = false
+  };
+
+  // Normal complete stop
+  TEST_ASSERT_TRUE(Motion_ShouldStop(&test_cfg, &req));
+
+  // Timeout not reached
+  req.time_since_last_step_ms = 40;
+  TEST_ASSERT_FALSE(Motion_ShouldStop(&test_cfg, &req));
+  req.time_since_last_step_ms = 60;
+
+  // Unfinished commanded position
+  req.commanded_pos = 104;
+  TEST_ASSERT_FALSE(Motion_ShouldStop(&test_cfg, &req));
+  req.commanded_pos = 100;
+
+  // DMA buffer still emitting
+  req.planned_encoder_pos = 104;
+  TEST_ASSERT_FALSE(Motion_ShouldStop(&test_cfg, &req));
+  req.planned_encoder_pos = 100;
+
+  // Step pulses still active
+  req.step_dcnt = 2;
+  TEST_ASSERT_FALSE(Motion_ShouldStop(&test_cfg, &req));
+  req.step_dcnt = 0;
+
+  // Load tension exceeding holding torque
+  req.load_tension = 1200;
+  TEST_ASSERT_FALSE(Motion_ShouldStop(&test_cfg, &req));
+  req.load_tension = 0;
+
+  // Freewheeling stopping condition
+  req.is_freewheeling = true;
+  req.load_tension = 0;
+  TEST_ASSERT_TRUE(Motion_ShouldStop(&test_cfg, &req));
+  req.load_tension = 500;
+  TEST_ASSERT_FALSE(Motion_ShouldStop(&test_cfg, &req));
+
+  // NULL safety
+  TEST_ASSERT_FALSE(Motion_ShouldStop(NULL, &req));
+  TEST_ASSERT_FALSE(Motion_ShouldStop(&test_cfg, NULL));
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_planner_nominal_tracking_forward);
@@ -578,5 +670,8 @@ int main(void) {
   RUN_TEST(test_planner_prevents_reversals_during_streaming);
   RUN_TEST(test_planner_streaming_7khz);
   RUN_TEST(test_planner_streaming_clamps_excessive_catchup_velocity);
+  RUN_TEST(test_calc_step_timeout_ms);
+  RUN_TEST(test_motion_should_start);
+  RUN_TEST(test_motion_should_stop);
   return UNITY_END();
 }

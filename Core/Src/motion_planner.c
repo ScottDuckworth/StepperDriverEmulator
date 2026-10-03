@@ -32,14 +32,7 @@ void PlanMotionStep(const EmulatorConfig_t* cfg, const MotionPlanRequest_t* req,
   float step_counts = cfg->counts_per_step;
   float rate_scale = 48000.0f * step_counts;
 
-  uint32_t step_timeout_ms = 50;
-  if (req->step_period_cnt >= 48000) {
-    uint32_t period_ms = req->step_period_cnt / 48000;
-    uint32_t dynamic_timeout = period_ms + (period_ms >> 1) + 10;
-    if (dynamic_timeout > step_timeout_ms) {
-      step_timeout_ms = (dynamic_timeout < 150) ? dynamic_timeout : 150;
-    }
-  }
+  uint32_t step_timeout_ms = CalcStepTimeoutMs(req->step_period_cnt);
 
   float input_rate = 0.0f;
   if ((req->now - req->last_step_time) <= step_timeout_ms && req->step_period_cnt >= 240 && cfg->ratio_spr > 0) {
@@ -170,4 +163,39 @@ void PlanMotionStep(const EmulatorConfig_t* cfg, const MotionPlanRequest_t* req,
       res->count_to_emit = 0;
     }
   }
+}
+
+uint32_t CalcStepTimeoutMs(uint32_t step_period_cnt) {
+  uint32_t step_timeout_ms = 50;
+  if (step_period_cnt >= 48000) {
+    uint32_t period_ms = step_period_cnt / 48000;
+    uint32_t dynamic_timeout = period_ms + (period_ms >> 1) + 10;
+    if (dynamic_timeout > step_timeout_ms) {
+      step_timeout_ms = (dynamic_timeout < 150) ? dynamic_timeout : 150;
+    }
+  }
+  return step_timeout_ms;
+}
+
+bool Motion_ShouldStart(int64_t commanded_pos, int64_t encoder_pos, uint16_t step_dcnt, int32_t load_tension, int32_t torque_t0, bool is_freewheeling) {
+  if (is_freewheeling) {
+    return (load_tension != 0);
+  }
+  int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
+  return (commanded_pos != encoder_pos) || (step_dcnt != 0) || (abs_tension > torque_t0);
+}
+
+bool Motion_ShouldStop(const EmulatorConfig_t* cfg, const MotionIdleCheckRequest_t* req) {
+  if (!cfg || !req) return false;
+  if (req->is_freewheeling) {
+    return (req->load_tension == 0);
+  }
+  if (req->time_since_last_step_ms < req->step_timeout_ms) {
+    return false;
+  }
+  int32_t abs_tension = (req->load_tension >= 0) ? req->load_tension : -req->load_tension;
+  return (req->commanded_pos == req->encoder_pos &&
+          req->encoder_pos == req->planned_encoder_pos &&
+          req->step_dcnt == 0 &&
+          abs_tension <= cfg->torque_t0);
 }

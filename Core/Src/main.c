@@ -618,17 +618,8 @@ void Motion_Start(void) {
   if (motion_active) return;
 
   UpdatePositionCounters();
-  int64_t commanded = position.commanded_pos;
-  int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
-
-  bool should_start = false;
-  if (stall_tripped || !GetStepEnabled()) {
-    should_start = (load_tension != 0);
-  } else {
-    should_start = (commanded != position.encoder_pos) || (position.step_dcnt != 0) || (abs_tension > config.torque_t0);
-  }
-
-  if (!should_start) {
+  bool is_freewheeling = stall_tripped || !GetStepEnabled();
+  if (!Motion_ShouldStart(position.commanded_pos, position.encoder_pos, position.step_dcnt, load_tension, config.torque_t0, is_freewheeling)) {
     return;
   }
 
@@ -646,7 +637,7 @@ void Motion_Start(void) {
   TIM3->PSC = chunk0_psc;
   TIM3->ARR = chunk0_arr;
 
-  if (half_0_delta == 0 && half_1_delta == 0 && !stall_tripped && GetStepEnabled() && abs_tension <= config.torque_t0 && position.step_dcnt == 0 && commanded == position.encoder_pos) {
+  if (half_0_delta == 0 && half_1_delta == 0 && !Motion_ShouldStart(position.commanded_pos, position.encoder_pos, position.step_dcnt, load_tension, config.torque_t0, is_freewheeling)) {
     motion_active = false;
     startup_sync_count = 0;
     return;
@@ -681,88 +672,55 @@ void Motion_Wakeup_Handler(void) {
       startup_sync_count--;
     }
 
-    uint32_t captured_period = step_period_cnt;
-    if (captured_period >= 240 && config.ratio_spr > 0) {
-      float step_counts = config.counts_per_step;
-      float rate_scale = 48000.0f * step_counts;
-      float in_rate = rate_scale / (float) captured_period;
-      if (position.step_reverse) in_rate = -in_rate;
-      int64_t cmd = position.commanded_pos;
-      int64_t d = cmd - planned_encoder_pos;
-      int32_t err = (d > INT32_MAX) ? INT32_MAX : ((d < INT32_MIN) ? INT32_MIN : (int32_t) d);
-      float eff_err = (float) err;
-      float ff_window = config.kff * step_counts;
-
-      if (in_rate > 0.0f) {
-        if (eff_err > ff_window) {
-          eff_err -= ff_window;
-        } else if (eff_err >= 0.0f) {
-          eff_err = 0.0f;
-        }
-      } else if (in_rate < 0.0f) {
-        if (eff_err < -ff_window) {
-          eff_err += ff_window;
-        } else if (eff_err <= 0.0f) {
-          eff_err = 0.0f;
-        }
-      }
-
-      float abs_err = fabsf(eff_err);
-      if (abs_err <= step_counts) {
-        eff_err = (eff_err * abs_err) * config.inv_counts_per_step;
-      }
-      float v_target = config.kff * in_rate + config.kp * eff_err;
-      if (in_rate > 0.0f) {
-        if (v_target < 0.0f) {
-          v_target = 0.0f;
-        } else {
-          float max_v = in_rate * 1.25f + config.kp * step_counts;
-          if (v_target > max_v) v_target = max_v;
-        }
-      } else if (in_rate < 0.0f) {
-        if (v_target > 0.0f) {
-          v_target = 0.0f;
-        } else {
-          float min_v = -(fabsf(in_rate) * 1.25f + config.kp * step_counts);
-          if (v_target < min_v) v_target = min_v;
-        }
-      }
-      uint16_t psc = 0;
-      uint16_t arr = 0;
-      CalcTimerPacing(v_target, &psc, &arr);
-      TIM3->PSC = psc;
-      TIM3->ARR = arr;
-      TIM3->EGR = TIM_EGR_UG;
-    }
-
     uint32_t cndtr = DMA1_Channel3->CNDTR;
-    if (cndtr > CHUNK_SIZE) {
-      if (half_1_delta == 0) {
-        FillQuadChunk(&quad_buffer[CHUNK_SIZE], &half_1_delta);
-      }
-    } else {
-      if (half_0_delta == 0) {
-        FillQuadChunk(&quad_buffer[0], &half_0_delta);
-      }
+    uint32_t* chunk = (cndtr > CHUNK_SIZE) ? &quad_buffer[CHUNK_SIZE] : &quad_buffer[0];
+    int8_t* out_delta = (cndtr > CHUNK_SIZE) ? &half_1_delta : &half_0_delta;
+
+    uint32_t period_cnt = (startup_sync_count > 0) ? 0 : step_period_cnt;
+    MotionPlanRequest_t req = {
+        .commanded_pos = position.commanded_pos,
+        .planned_encoder_pos = planned_encoder_pos,
+        .load_tension = load_tension,
+        .now = HAL_GetTick(),
+        .last_step_time = last_step_time,
+        .step_period_cnt = period_cnt,
+        .step_reverse = position.step_reverse,
+        .is_freewheeling = stall_tripped || !GetStepEnabled(),
+        .stall_tripped = stall_tripped,
+        .chunk_size = CHUNK_SIZE
+    };
+    MotionPlanResult_t res;
+    PlanMotionStep(&config, &req, &res);
+
+    if (res.stall_trip_event) {
+      stall_tripped = true;
+      ReportStallTrip();
     }
 
-    if (captured_period > 0 && captured_period < 48000 && startup_sync_count == 0) {
+    if (*out_delta == 0) {
+      *out_delta = GenerateQuadChunk(chunk, CHUNK_SIZE, &current_quad_state, res.dir, res.count_to_emit);
+      planned_encoder_pos += *out_delta;
+    }
+
+    float pace_velocity = res.target_velocity;
+    if (pace_velocity == 0.0f) {
+      pace_velocity = config.counts_per_step;
+    }
+    uint16_t psc = 0;
+    uint16_t arr = 0;
+    CalcTimerPacing(pace_velocity, &psc, &arr);
+    TIM3->PSC = psc;
+    TIM3->ARR = arr;
+    TIM3->EGR = TIM_EGR_UG;
+
+    if (period_cnt > 0 && period_cnt < 48000 && startup_sync_count == 0) {
       TIM2->DIER &= ~TIM_DIER_CC1IE;
     }
     return;
   }
 
-  int64_t commanded = position.commanded_pos;
-  int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
-
-  bool should_start = false;
-  if (stall_tripped || !GetStepEnabled()) {
-    should_start = (load_tension != 0);
-  } else {
-    should_start = (commanded != planned_encoder_pos) || (position.step_dcnt != 0) || (abs_tension > config.torque_t0);
-  }
-
-  if (should_start) {
+  bool is_freewheeling = stall_tripped || !GetStepEnabled();
+  if (Motion_ShouldStart(position.commanded_pos, planned_encoder_pos, position.step_dcnt, load_tension, config.torque_t0, is_freewheeling)) {
     Motion_Start();
   } else {
     if (GetStepEnabled()) {
@@ -774,41 +732,29 @@ void Motion_Wakeup_Handler(void) {
 
 static void CheckMotionIdle(void) {
   if (half_0_delta == 0 && half_1_delta == 0) {
-    if (stall_tripped || !GetStepEnabled()) {
-      if (load_tension == 0) {
-        TIM3->CR1 &= ~TIM_CR1_CEN;
-        DMA1_Channel3->CCR &= ~DMA_CCR_EN;
-        motion_active = false;
-        startup_sync_count = 0;
-        step_period_cnt = 0;
-        if (GetStepEnabled()) {
-          TIM2->SR = 0;
-          TIM2->DIER |= TIM_DIER_CC1IE;
-        }
-      }
-      return;
-    }
-    uint32_t step_timeout_ms = 50;
-    if (startup_sync_count == 0 && step_period_cnt >= 240) {
-      uint32_t period_ms = step_period_cnt / 48000;
-      uint32_t dynamic_timeout = period_ms + (period_ms >> 1) + 10;
-      if (dynamic_timeout > step_timeout_ms) {
-        step_timeout_ms = (dynamic_timeout < 150) ? dynamic_timeout : 150;
-      }
-    }
-    if ((now - last_step_time) < step_timeout_ms) {
-      return;
-    }
-    int64_t commanded = position.commanded_pos;
-    int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
-    if (commanded == position.encoder_pos && position.encoder_pos == planned_encoder_pos && position.step_dcnt == 0 && abs_tension <= config.torque_t0) {
+    uint32_t step_timeout_ms = (startup_sync_count == 0 && step_period_cnt >= 240) ? CalcStepTimeoutMs(step_period_cnt) : 50;
+    bool is_freewheeling = stall_tripped || !GetStepEnabled();
+    MotionIdleCheckRequest_t req = {
+        .commanded_pos = position.commanded_pos,
+        .encoder_pos = position.encoder_pos,
+        .planned_encoder_pos = planned_encoder_pos,
+        .step_dcnt = position.step_dcnt,
+        .load_tension = load_tension,
+        .time_since_last_step_ms = (now - last_step_time),
+        .step_timeout_ms = step_timeout_ms,
+        .is_freewheeling = is_freewheeling
+    };
+
+    if (Motion_ShouldStop(&config, &req)) {
       TIM3->CR1 &= ~TIM_CR1_CEN;
       DMA1_Channel3->CCR &= ~DMA_CCR_EN;
       motion_active = false;
       startup_sync_count = 0;
       step_period_cnt = 0;
-      TIM2->SR = 0;
-      TIM2->DIER |= TIM_DIER_CC1IE;
+      if (GetStepEnabled()) {
+        TIM2->SR = 0;
+        TIM2->DIER |= TIM_DIER_CC1IE;
+      }
     }
   }
 }
@@ -853,15 +799,9 @@ void UpdateTick(void) {
 
   if (!motion_active) {
     uint16_t step_cnt = UINT16_MAX - (uint16_t) DMA1_Channel5->CNDTR;
-    int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
-    bool should_start = false;
-    if (stall_tripped || !GetStepEnabled()) {
-      should_start = (load_tension != 0);
-    } else {
-      int64_t commanded = position.commanded_pos;
-      should_start = (commanded != position.encoder_pos) || (step_cnt != position.step_cnt_prev) || (abs_tension > config.torque_t0);
-    }
-    if (should_start) {
+    uint16_t step_dcnt = (step_cnt != position.step_cnt_prev) ? 1 : 0;
+    bool is_freewheeling = stall_tripped || !GetStepEnabled();
+    if (Motion_ShouldStart(position.commanded_pos, position.encoder_pos, step_dcnt, load_tension, config.torque_t0, is_freewheeling)) {
       Motion_Start();
     }
   }
