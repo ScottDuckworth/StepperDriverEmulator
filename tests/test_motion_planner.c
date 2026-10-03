@@ -501,6 +501,80 @@ void test_planner_prevents_reversals_during_streaming(void) {
   TEST_ASSERT_EQUAL_UINT16(0, res.count_to_emit);
 }
 
+void test_planner_streaming_7khz(void) {
+  EmulatorConfig_t test_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
+  // 7 kHz step rate: 48 MHz / 6857 ticks = 7000.14 Hz
+  // input_rate = (48000 / 6857) * 4.0 = 28.0006 counts/ms
+  MotionPlanRequest_t req = {
+      .cfg = &test_cfg,
+      .commanded_pos = 4,
+      .planned_encoder_pos = 0,
+      .load_tension = 0,
+      .now = 100,
+      .last_step_time = 100,
+      .step_period_cnt = 6857,
+      .step_reverse = false,
+      .is_freewheeling = false,
+      .stall_tripped = false,
+      .chunk_size = 4
+  };
+  MotionPlanResult_t res;
+
+  // Step 1 arrives
+  PlanMotionStep(&req, &res);
+  TEST_ASSERT_EQUAL_INT(1, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
+  // Velocity should be 28.0 counts/ms
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 28.0f, res.target_velocity);
+
+  // Suppose chunk of 4 counts was emitted
+  req.planned_encoder_pos = 4;
+  // Next step arrives: commanded_pos = 8
+  req.commanded_pos = 8;
+  PlanMotionStep(&req, &res);
+  TEST_ASSERT_EQUAL_INT(1, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 28.0f, res.target_velocity);
+}
+
+void test_planner_streaming_clamps_excessive_catchup_velocity(void) {
+  EmulatorConfig_t test_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
+  // 7 kHz step rate: input_rate = 28.0 counts/ms
+  // If an accumulated lag of 280 counts (70 steps) occurs:
+  // Unclamped Kp * eff_error would add 28.0 counts/ms, resulting in 56.0 counts/ms (14 kHz 2x runaway).
+  // Clamping must restrict catchup authority during active streaming to <= 1.25 * input_rate + kp * step_counts = 35.4 counts/ms.
+  MotionPlanRequest_t req = {
+      .cfg = &test_cfg,
+      .commanded_pos = 300,
+      .planned_encoder_pos = 20, // 280 counts of lag
+      .load_tension = 0,
+      .now = 100,
+      .last_step_time = 100,
+      .step_period_cnt = 6857,
+      .step_reverse = false,
+      .is_freewheeling = false,
+      .stall_tripped = false,
+      .chunk_size = 4
+  };
+  MotionPlanResult_t res;
+
+  PlanMotionStep(&req, &res);
+  TEST_ASSERT_EQUAL_INT(1, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 35.4f, res.target_velocity);
+  TEST_ASSERT_TRUE(res.target_velocity < 40.0f); // Guaranteed well below 56.0 counts/ms runaway
+
+  // Reverse streaming:
+  req.step_reverse = true;
+  req.commanded_pos = -300;
+  req.planned_encoder_pos = -20; // -280 counts of lag in reverse
+  PlanMotionStep(&req, &res);
+  TEST_ASSERT_EQUAL_INT(-1, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, -35.4f, res.target_velocity);
+  TEST_ASSERT_TRUE(res.target_velocity > -40.0f);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_planner_nominal_tracking_forward);
@@ -521,5 +595,7 @@ int main(void) {
   RUN_TEST(test_planner_low_frequency_timeout_extension);
   RUN_TEST(test_planner_standstill_single_step_kp_pacing);
   RUN_TEST(test_planner_prevents_reversals_during_streaming);
+  RUN_TEST(test_planner_streaming_7khz);
+  RUN_TEST(test_planner_streaming_clamps_excessive_catchup_velocity);
   return UNITY_END();
 }

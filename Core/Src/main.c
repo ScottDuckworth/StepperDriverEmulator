@@ -79,9 +79,6 @@ static volatile bool stall_tripped = false;
 static volatile bool blink_mode = false;
 static volatile uint32_t last_step_time = 0;
 
-#define CHUNK_SIZE 4
-#define TOTAL_BUFFER_SIZE (2 * CHUNK_SIZE)
-
 static uint32_t quad_buffer[TOTAL_BUFFER_SIZE];
 static uint8_t current_quad_state = 0;
 static int8_t half_0_delta = 0;
@@ -614,7 +611,11 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
   float pace_velocity = res.target_velocity;
   if (pace_velocity == 0.0f) {
     if (config.spr > 0) {
-      pace_velocity = ((float) config.epr / (float) config.spr);
+      if ((config.epr % config.spr) == 0) {
+        pace_velocity = (float)(config.epr / config.spr);
+      } else {
+        pace_velocity = ((float) config.epr / (float) config.spr);
+      }
     } else {
       pace_velocity = 4.0f;
     }
@@ -677,6 +678,7 @@ void Motion_Start(void) {
 
   TIM3->CNT = 0;
   TIM3->CR1 |= TIM_CR1_CEN;
+  TIM3->EGR = TIM_EGR_UG;
 
   if (GetStepEnabled()) {
     TIM2->SR = 0;
@@ -700,13 +702,18 @@ void Motion_Wakeup_Handler(void) {
 
     uint32_t captured_period = step_period_cnt;
     if (captured_period >= 240 && config.spr > 0) {
-      float in_rate = (48000.0f / (float) captured_period) * ((float) config.epr / (float) config.spr);
+      float step_counts = 4.0f;
+      float rate_scale = 192000.0f;
+      if (config.spr > 0) {
+        step_counts = (float) config.epr / (float) config.spr;
+        rate_scale = 48000.0f * step_counts;
+      }
+      float in_rate = rate_scale / (float) captured_period;
       if (position.step_reverse) in_rate = -in_rate;
       int64_t cmd = StepToEncoderPosition(position.step_pos);
       int64_t err = cmd - planned_encoder_pos;
       int32_t clamped_err = (err > 2000000000LL) ? 2000000000 : ((err < -2000000000LL) ? -2000000000 : (int32_t) err);
       float eff_err = (float) clamped_err;
-      float step_counts = (float) config.epr / (float) config.spr;
       float ff_window = config.kff * step_counts;
 
       if (in_rate > 0.0f) {
@@ -730,19 +737,27 @@ void Motion_Wakeup_Handler(void) {
         }
       }
       float v_target = config.kff * in_rate + config.kp * eff_err;
-      if (in_rate > 0.0f && v_target < 0.0f) {
-        v_target = 0.0f;
-      } else if (in_rate < 0.0f && v_target > 0.0f) {
-        v_target = 0.0f;
+      if (in_rate > 0.0f) {
+        if (v_target < 0.0f) {
+          v_target = 0.0f;
+        } else {
+          float max_v = in_rate * 1.25f + config.kp * step_counts;
+          if (v_target > max_v) v_target = max_v;
+        }
+      } else if (in_rate < 0.0f) {
+        if (v_target > 0.0f) {
+          v_target = 0.0f;
+        } else {
+          float min_v = -(fabsf(in_rate) * 1.25f + config.kp * step_counts);
+          if (v_target < min_v) v_target = min_v;
+        }
       }
       uint16_t psc = 0;
       uint16_t arr = 0;
       CalcTimerPacing(v_target, &psc, &arr);
       TIM3->PSC = psc;
       TIM3->ARR = arr;
-      if (TIM3->CNT >= arr) {
-        TIM3->CNT = 0;
-      }
+      TIM3->EGR = TIM_EGR_UG;
     }
 
     uint32_t cndtr = DMA1_Channel3->CNDTR;
@@ -1018,7 +1033,7 @@ static void InitPeripherals(void) {
   TIM3->CCER = 0;
   TIM3->DIER = TIM_DIER_UDE;                    // Trigger DMA on update event
   TIM3->CR2 = 0;
-  TIM3->CR1 = TIM_CR1_ARPE;                     // Auto-reload preload enabled, CEN=0 initially
+  TIM3->CR1 = TIM_CR1_ARPE | TIM_CR1_URS;       // Auto-reload preload enabled, only overflow/underflow generates DMA/interrupt
 
   // DMA1 Channel 3: Streams quad_buffer states to GPIOB->BSRR
   DMA1_Channel3->CPAR = (uint32_t) &GPIOB->BSRR;

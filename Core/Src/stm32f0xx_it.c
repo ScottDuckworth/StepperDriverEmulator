@@ -199,13 +199,22 @@ void USB_IRQHandler(void)
 void DMA1_Channel2_3_IRQHandler(void)
 {
   uint32_t isr = DMA1->ISR;
-  if (isr & DMA_ISR_HTIF3) {
-    DMA1->IFCR = DMA_IFCR_CHTIF3;
-    DMA_HalfTransfer_Handler();
-  }
-  if (isr & DMA_ISR_TCIF3) {
-    DMA1->IFCR = DMA_IFCR_CTCIF3;
-    DMA_TransferComplete_Handler();
+  if ((isr & (DMA_ISR_HTIF3 | DMA_ISR_TCIF3)) == (DMA_ISR_HTIF3 | DMA_ISR_TCIF3)) {
+    DMA1->IFCR = DMA_IFCR_CHTIF3 | DMA_IFCR_CTCIF3;
+    if (DMA1_Channel3->CNDTR > CHUNK_SIZE) {
+      DMA_TransferComplete_Handler();
+    } else {
+      DMA_HalfTransfer_Handler();
+    }
+  } else {
+    if (isr & DMA_ISR_HTIF3) {
+      DMA1->IFCR = DMA_IFCR_CHTIF3;
+      DMA_HalfTransfer_Handler();
+    }
+    if (isr & DMA_ISR_TCIF3) {
+      DMA1->IFCR = DMA_IFCR_CTCIF3;
+      DMA_TransferComplete_Handler();
+    }
   }
 }
 

@@ -31,8 +31,15 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
     return;
   }
 
+  float step_counts = 4.0f;
+  float rate_scale = 192000.0f;
+  if (req->cfg->spr > 0) {
+    step_counts = (float) req->cfg->epr / (float) req->cfg->spr;
+    rate_scale = 48000.0f * step_counts;
+  }
+
   uint32_t step_timeout_ms = 50;
-  if (req->step_period_cnt >= 240) {
+  if (req->step_period_cnt >= 48000) {
     uint32_t period_ms = req->step_period_cnt / 48000;
     uint32_t dynamic_timeout = period_ms + (period_ms >> 1) + 10;
     if (dynamic_timeout > step_timeout_ms) {
@@ -42,7 +49,7 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
 
   float input_rate = 0.0f;
   if ((req->now - req->last_step_time) <= step_timeout_ms && req->step_period_cnt >= 240 && req->cfg->spr > 0) {
-    input_rate = (48000.0f / (float) req->step_period_cnt) * ((float) req->cfg->epr / (float) req->cfg->spr);
+    input_rate = rate_scale / (float) req->step_period_cnt;
     if (req->step_reverse) {
       input_rate = -input_rate;
     }
@@ -60,7 +67,6 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
   // and prevents cyclic pacing frequency modulation across the phase, while restoring
   // gain (Kp) remains active for true tracking lag (> 1 step) or overshoot (< 0).
   if (input_rate != 0.0f && req->cfg->spr > 0) {
-    float step_counts = (float) req->cfg->epr / (float) req->cfg->spr;
     float ff_window = req->cfg->kff * step_counts;
 
     if (input_rate > 0.0f) {
@@ -86,10 +92,24 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
   }
 
   float target_velocity = req->cfg->kff * input_rate + req->cfg->kp * eff_error;
-  if (input_rate > 0.0f && target_velocity < 0.0f) {
-    target_velocity = 0.0f;
-  } else if (input_rate < 0.0f && target_velocity > 0.0f) {
-    target_velocity = 0.0f;
+  if (input_rate > 0.0f) {
+    if (target_velocity < 0.0f) {
+      target_velocity = 0.0f;
+    } else {
+      float max_v = fabsf(input_rate) * 1.25f + req->cfg->kp * step_counts;
+      if (target_velocity > max_v) {
+        target_velocity = max_v;
+      }
+    }
+  } else if (input_rate < 0.0f) {
+    if (target_velocity > 0.0f) {
+      target_velocity = 0.0f;
+    } else {
+      float min_v = -(fabsf(input_rate) * 1.25f + req->cfg->kp * step_counts);
+      if (target_velocity < min_v) {
+        target_velocity = min_v;
+      }
+    }
   }
   res->target_velocity = target_velocity;
 

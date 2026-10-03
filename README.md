@@ -226,6 +226,7 @@ where $\Delta P_{\text{step}} = \frac{\text{epr}}{\text{spr}}$ is the count equi
 
 * **Within feedforward window:** Output transitions pace with uniform frequency across the entire inter-step period governed by $K_{\text{ff}} \cdot V_{\text{in}}$, eliminating cyclic intra-step velocity modulation on the oscilloscope.
 * **Excess tracking errors ($|e_{\text{lag}}| \gt 0$):** The profile transitions smoothly to provide proportional stiffness ($K_{\text{p}}$) to eliminate accumulated lag during accelerations or torque disturbances.
+* **Streaming catch-up ceiling:** During active pulse streaming ($V_{\text{in}} \ne 0$), proportional catch-up authority is bounded to prevent transient lags from triggering positive-feedback interrupt saturation at high step frequencies ($> 6\text{ kHz}$).
 * **At rest ($V_{\text{in}} = 0$):** Feedforward windowing is automatically bypassed ($e_{\text{eff}} = e$), ensuring rapid, exact zero-error static settling.
 
 ### Dimensional Analysis & Unit Relationships
