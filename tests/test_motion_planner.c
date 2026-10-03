@@ -457,6 +457,43 @@ void test_planner_standstill_single_step_kp_pacing(void) {
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.4f, res.target_velocity);
 }
 
+void test_planner_prevents_reversals_during_streaming(void) {
+  // During forward streaming (input_rate = 0.08 counts/ms, 20 Hz):
+  // Even if kp * error is negative and large (e.g. kp = 0.5, error = -4 -> -2.0 counts/ms),
+  // target_velocity must NOT become negative and dir must remain positive (1).
+  config.kp = 0.5f;
+  config.kff = 1.0f;
+  MotionPlanRequest_t req = {
+      .cfg = &config,
+      .commanded_pos = 100,
+      .planned_encoder_pos = 104, // 4 counts ahead (error = -4)
+      .load_tension = 0,
+      .now = 120,
+      .last_step_time = 100,
+      .step_period_cnt = 2400000, // 20 Hz (input_rate = 0.08 counts/ms)
+      .step_reverse = false,
+      .is_freewheeling = false,
+      .stall_tripped = false,
+      .chunk_size = 4
+  };
+  MotionPlanResult_t res;
+
+  PlanMotionStep(&req, &res);
+  // Must maintain forward direction (dir = 1), clamped velocity = 0.0, and 0 counts emitted
+  TEST_ASSERT_EQUAL_INT(1, res.dir);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, res.target_velocity);
+  TEST_ASSERT_EQUAL_UINT16(0, res.count_to_emit);
+
+  // Similarly during reverse streaming:
+  req.step_reverse = true;
+  req.commanded_pos = 100;
+  req.planned_encoder_pos = 96; // 4 counts ahead in reverse (error = +4)
+  PlanMotionStep(&req, &res);
+  TEST_ASSERT_EQUAL_INT(-1, res.dir);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, res.target_velocity);
+  TEST_ASSERT_EQUAL_UINT16(0, res.count_to_emit);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_planner_nominal_tracking_forward);
@@ -476,5 +513,6 @@ int main(void) {
   RUN_TEST(test_planner_low_frequency_feedforward_50hz);
   RUN_TEST(test_planner_low_frequency_timeout_extension);
   RUN_TEST(test_planner_standstill_single_step_kp_pacing);
+  RUN_TEST(test_planner_prevents_reversals_during_streaming);
   return UNITY_END();
 }

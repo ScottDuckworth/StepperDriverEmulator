@@ -612,10 +612,7 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
 
   // Calculate pacing frequency
   float pace_velocity = res.target_velocity;
-  if (res.count_to_emit == 0) {
-    // When emitting static padding (waiting for steps or settling into idle),
-    // pace at nominal step rate so blank chunks flush quickly (in ~1 ms) rather
-    // than stalling the DMA pipeline at 100 counts/sec (which would delay subsequent pulse response by 40-80 ms).
+  if (pace_velocity == 0.0f) {
     if (config.spr > 0) {
       pace_velocity = ((float) config.epr / (float) config.spr);
     } else {
@@ -628,6 +625,11 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
   CalcTimerPacing(pace_velocity, &psc, &arr);
   TIM3->PSC = psc;
   TIM3->ARR = arr;
+
+  if (step_period_cnt >= 48000 && GetStepEnabled()) {
+    TIM2->SR = 0;
+    TIM2->DIER |= TIM_DIER_CC1IE;
+  }
 }
 
 void Motion_Start(void) {
@@ -694,46 +696,52 @@ void Motion_Wakeup_Handler(void) {
 
     if (startup_sync_count > 0) {
       startup_sync_count--;
-      uint32_t captured_period = step_period_cnt;
-      if (captured_period >= 240 && config.spr > 0) {
-        float in_rate = (48000.0f / (float) captured_period) * ((float) config.epr / (float) config.spr);
-        if (position.step_reverse) in_rate = -in_rate;
-        int64_t cmd = StepToEncoderPosition(position.step_pos);
-        int64_t err = cmd - planned_encoder_pos;
-        int32_t clamped_err = (err > 2000000000LL) ? 2000000000 : ((err < -2000000000LL) ? -2000000000 : (int32_t) err);
-        float eff_err = (float) clamped_err;
-        float step_counts = (float) config.epr / (float) config.spr;
-        if (step_counts > 0.0f) {
-          float abs_err = fabsf(eff_err);
-          if (abs_err <= step_counts) {
-            eff_err = (eff_err * abs_err) / step_counts;
-          }
-        }
-        float v_target = config.kff * in_rate + config.kp * eff_err;
-        uint16_t psc = 0;
-        uint16_t arr = 0;
-        CalcTimerPacing(v_target, &psc, &arr);
-        TIM3->PSC = psc;
-        TIM3->ARR = arr;
-        if (TIM3->CNT >= arr) {
-          TIM3->CNT = 0;
-        }
-      }
+    }
 
-      uint32_t cndtr = DMA1_Channel3->CNDTR;
-      if (cndtr > CHUNK_SIZE) {
-        if (half_1_delta == 0) {
-          FillQuadChunk(&quad_buffer[CHUNK_SIZE], &half_1_delta);
-        }
-      } else {
-        if (half_0_delta == 0) {
-          FillQuadChunk(&quad_buffer[0], &half_0_delta);
+    uint32_t captured_period = step_period_cnt;
+    if (captured_period >= 240 && config.spr > 0) {
+      float in_rate = (48000.0f / (float) captured_period) * ((float) config.epr / (float) config.spr);
+      if (position.step_reverse) in_rate = -in_rate;
+      int64_t cmd = StepToEncoderPosition(position.step_pos);
+      int64_t err = cmd - planned_encoder_pos;
+      int32_t clamped_err = (err > 2000000000LL) ? 2000000000 : ((err < -2000000000LL) ? -2000000000 : (int32_t) err);
+      float eff_err = (float) clamped_err;
+      float step_counts = (float) config.epr / (float) config.spr;
+      if (step_counts > 0.0f) {
+        float abs_err = fabsf(eff_err);
+        if (abs_err <= step_counts) {
+          eff_err = (eff_err * abs_err) / step_counts;
         }
       }
+      float v_target = config.kff * in_rate + config.kp * eff_err;
+      if (in_rate > 0.0f && v_target < 0.0f) {
+        v_target = 0.0f;
+      } else if (in_rate < 0.0f && v_target > 0.0f) {
+        v_target = 0.0f;
+      }
+      uint16_t psc = 0;
+      uint16_t arr = 0;
+      CalcTimerPacing(v_target, &psc, &arr);
+      TIM3->PSC = psc;
+      TIM3->ARR = arr;
+      if (TIM3->CNT >= arr) {
+        TIM3->CNT = 0;
+      }
+    }
 
-      if (startup_sync_count == 0) {
-        TIM2->DIER &= ~TIM_DIER_CC1IE;
+    uint32_t cndtr = DMA1_Channel3->CNDTR;
+    if (cndtr > CHUNK_SIZE) {
+      if (half_1_delta == 0) {
+        FillQuadChunk(&quad_buffer[CHUNK_SIZE], &half_1_delta);
       }
+    } else {
+      if (half_0_delta == 0) {
+        FillQuadChunk(&quad_buffer[0], &half_0_delta);
+      }
+    }
+
+    if (captured_period > 0 && captured_period < 48000 && startup_sync_count == 0) {
+      TIM2->DIER &= ~TIM_DIER_CC1IE;
     }
     return;
   }

@@ -68,11 +68,20 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
   }
 
   float target_velocity = req->cfg->kff * input_rate + req->cfg->kp * eff_error;
+  if (input_rate > 0.0f && target_velocity < 0.0f) {
+    target_velocity = 0.0f;
+  } else if (input_rate < 0.0f && target_velocity > 0.0f) {
+    target_velocity = 0.0f;
+  }
   res->target_velocity = target_velocity;
 
   if (error != 0 || input_rate != 0.0f) {
     int dir = 0;
-    if (target_velocity > 0.0f) {
+    if (input_rate > 0.0f) {
+      dir = 1;
+    } else if (input_rate < 0.0f) {
+      dir = -1;
+    } else if (target_velocity > 0.0f) {
       dir = 1;
     } else if (target_velocity < 0.0f) {
       dir = -1;
