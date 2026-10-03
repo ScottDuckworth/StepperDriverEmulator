@@ -28,6 +28,7 @@ typedef struct {
 
   // Pre-calculated Kinematic Conversions
   float counts_per_step;      // Pre-calculated ratio: (float) ratio_epr / (float) ratio_spr
+  float inv_counts_per_step;  // Pre-calculated inverse ratio: (float) ratio_spr / (float) ratio_epr
 } EmulatorConfig_t;
 
 #define DEFAULT_EMULATOR_CONFIG { \
@@ -43,6 +44,7 @@ typedef struct {
   .kff = 1.0f, \
   .kfree = 0.005f, \
   .counts_per_step = 4.0f, \
+  .inv_counts_per_step = 0.25f, \
 }
 
 #ifdef __cplusplus

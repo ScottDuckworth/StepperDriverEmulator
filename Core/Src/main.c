@@ -293,6 +293,7 @@ bool SetRatio(uint16_t spr, uint16_t epr) {
   config.ratio_spr = spr / g;
   config.ratio_epr = epr / g;
   config.counts_per_step = (float) config.ratio_epr / (float) config.ratio_spr;
+  config.inv_counts_per_step = (float) config.ratio_spr / (float) config.ratio_epr;
   position.step_rem = 0;
   __enable_irq();
   ReportRatio();
@@ -687,9 +688,9 @@ void Motion_Wakeup_Handler(void) {
       float in_rate = rate_scale / (float) captured_period;
       if (position.step_reverse) in_rate = -in_rate;
       int64_t cmd = position.commanded_pos;
-      int64_t err = cmd - planned_encoder_pos;
-      int32_t clamped_err = (err > 2000000000LL) ? 2000000000 : ((err < -2000000000LL) ? -2000000000 : (int32_t) err);
-      float eff_err = (float) clamped_err;
+      int64_t d = cmd - planned_encoder_pos;
+      int32_t err = (d > INT32_MAX) ? INT32_MAX : ((d < INT32_MIN) ? INT32_MIN : (int32_t) d);
+      float eff_err = (float) err;
       float ff_window = config.kff * step_counts;
 
       if (in_rate > 0.0f) {
@@ -706,11 +707,9 @@ void Motion_Wakeup_Handler(void) {
         }
       }
 
-      if (step_counts > 0.0f) {
-        float abs_err = fabsf(eff_err);
-        if (abs_err <= step_counts) {
-          eff_err = (eff_err * abs_err) / step_counts;
-        }
+      float abs_err = fabsf(eff_err);
+      if (abs_err <= step_counts) {
+        eff_err = (eff_err * abs_err) * config.inv_counts_per_step;
       }
       float v_target = config.kff * in_rate + config.kp * eff_err;
       if (in_rate > 0.0f) {
@@ -1095,6 +1094,7 @@ int main(void)
 
   ConfigStore_Load(ConfigStore_GetStm32FlashDriver(), CONFIG_FLASH_PAGE_ADDR, &config);
   config.counts_per_step = (config.ratio_spr > 0) ? ((float) config.ratio_epr / (float) config.ratio_spr) : 4.0f;
+  config.inv_counts_per_step = (config.ratio_epr > 0) ? ((float) config.ratio_spr / (float) config.ratio_epr) : 0.25f;
 
   UpdatePositionCounters();
   position.commanded_pos = 0;

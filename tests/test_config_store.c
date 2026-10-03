@@ -82,6 +82,7 @@ void test_save_and_load_roundtrip(void) {
   original_cfg.kff = 0.95f;
   original_cfg.kfree = 0.008f;
   original_cfg.counts_per_step = 4.0f;
+  original_cfg.inv_counts_per_step = 0.25f;
 
   bool save_ok = ConfigStore_Save(&mock_flash_driver, MOCK_PAGE_ADDR, &original_cfg);
   TEST_ASSERT_TRUE(save_ok);
@@ -103,6 +104,7 @@ void test_save_and_load_roundtrip(void) {
   TEST_ASSERT_EQUAL_FLOAT(0.95f, loaded_cfg.kff);
   TEST_ASSERT_EQUAL_FLOAT(0.008f, loaded_cfg.kfree);
   TEST_ASSERT_EQUAL_FLOAT(4.0f, loaded_cfg.counts_per_step);
+  TEST_ASSERT_EQUAL_FLOAT(0.25f, loaded_cfg.inv_counts_per_step);
 }
 
 void test_crc_bitflip_detected(void) {

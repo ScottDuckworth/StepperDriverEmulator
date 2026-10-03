@@ -173,6 +173,7 @@ bool SetRatio(uint16_t spr, uint16_t epr) {
   mock_config.ratio_spr = spr / g;
   mock_config.ratio_epr = epr / g;
   mock_config.counts_per_step = (float) mock_config.ratio_epr / (float) mock_config.ratio_spr;
+  mock_config.inv_counts_per_step = (float) mock_config.ratio_spr / (float) mock_config.ratio_epr;
   ReportRatio();
   return true;
 }
@@ -336,6 +337,7 @@ void test_cmd_ratio_set_and_query(void) {
   TEST_ASSERT_EQUAL_UINT16(1, mock_config.ratio_spr);
   TEST_ASSERT_EQUAL_UINT16(4, mock_config.ratio_epr);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 4.0f, mock_config.counts_per_step);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.25f, mock_config.inv_counts_per_step);
   TEST_ASSERT_EQUAL_STRING("ratio 1 4\r\n", captured_output);
 
   // Set with ratio 200 1024 -> reduced to 25 128 (GCD 8)
@@ -343,6 +345,7 @@ void test_cmd_ratio_set_and_query(void) {
   TEST_ASSERT_EQUAL_UINT16(25, mock_config.ratio_spr);
   TEST_ASSERT_EQUAL_UINT16(128, mock_config.ratio_epr);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 5.12f, mock_config.counts_per_step);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 25.0f / 128.0f, mock_config.inv_counts_per_step);
   TEST_ASSERT_EQUAL_STRING("ratio 25 128\r\n", captured_output);
 
   // Query ratio

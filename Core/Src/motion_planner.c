@@ -49,9 +49,9 @@ void PlanMotionStep(const EmulatorConfig_t* cfg, const MotionPlanRequest_t* req,
     }
   }
 
-  int64_t error = req->commanded_pos - req->planned_encoder_pos;
-  int32_t clamped_err = (error > 2000000000LL) ? 2000000000 : ((error < -2000000000LL) ? -2000000000 : (int32_t) error);
-  float eff_error = (float) clamped_err;
+  int64_t d = req->commanded_pos - req->planned_encoder_pos;
+  int32_t error = (d > INT32_MAX) ? INT32_MAX : ((d < INT32_MIN) ? INT32_MIN : (int32_t) d);
+  float eff_error = (float) error;
 
   // Soft-knee error profile during active step pulse streaming:
   // When pulses are streaming (input_rate != 0), normal discrete pulse arrivals cause
@@ -79,7 +79,7 @@ void PlanMotionStep(const EmulatorConfig_t* cfg, const MotionPlanRequest_t* req,
 
     float abs_err = fabsf(eff_error);
     if (abs_err <= step_counts) {
-      eff_error = (eff_error * abs_err) / step_counts;
+      eff_error = (eff_error * abs_err) * cfg->inv_counts_per_step;
     }
   }
 
@@ -123,6 +123,8 @@ void PlanMotionStep(const EmulatorConfig_t* cfg, const MotionPlanRequest_t* req,
     int32_t t_motor = CalcMotorTorqueConfig(cfg, speed_hz);
     int32_t t_net = CalcNetTorque(t_motor, dir, req->load_tension);
 
+    uint32_t abs_error = (error < 0) ? (0U - (uint32_t) error) : (uint32_t) error;
+
     if (t_net >= 0) {
       // Sufficient torque: motor drives normally toward target
       res->dir = dir;
@@ -133,8 +135,7 @@ void PlanMotionStep(const EmulatorConfig_t* cfg, const MotionPlanRequest_t* req,
       } else if (dir < 0 && error >= 0) {
         res->count_to_emit = 0;
       } else {
-        uint64_t abs_error = (error >= 0) ? (uint64_t) error : (uint64_t)(-(error + 1)) + 1ULL;
-        res->count_to_emit = (abs_error < (uint64_t) chunk_sz) ? (uint16_t) abs_error : chunk_sz;
+        res->count_to_emit = (abs_error < (uint32_t) chunk_sz) ? (uint16_t) abs_error : chunk_sz;
       }
     } else {
       // Torque deficit: motor cannot advance in commanded direction
@@ -149,8 +150,7 @@ void PlanMotionStep(const EmulatorConfig_t* cfg, const MotionPlanRequest_t* req,
       }
 
       // Under torque deficit, motor stalls and accumulates lag against commanded steps
-      uint64_t lag = (error >= 0) ? (uint64_t) error : (uint64_t)(-(error + 1)) + 1ULL;
-      if (cfg->stall_threshold > 0 && lag >= (uint64_t) cfg->stall_threshold) {
+      if (cfg->stall_threshold > 0 && abs_error >= cfg->stall_threshold) {
         if (!req->stall_tripped) {
           res->stall_trip_event = true;
         }
