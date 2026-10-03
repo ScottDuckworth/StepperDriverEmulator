@@ -170,60 +170,7 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
   }
   res->target_velocity = target_velocity;
 
-  if (error != 0 || input_rate != 0.0f) {
-    int dir = 0;
-    if (input_rate > 0.0f) {
-      dir = 1;
-    } else if (input_rate < 0.0f) {
-      dir = -1;
-    } else if (target_velocity > 0.0f) {
-      dir = 1;
-    } else if (target_velocity < 0.0f) {
-      dir = -1;
-    } else if (error != 0) {
-      dir = (error > 0) ? 1 : -1;
-    }
-
-    float speed_hz = fabsf(target_velocity) * 1000.0f;
-    int32_t t_motor = CalcMotorTorqueConfig(cfg, speed_hz);
-    int32_t t_net = CalcNetTorque(t_motor, dir, req->load_tension);
-
-    uint32_t abs_error = (error < 0) ? (0U - (uint32_t) error) : (uint32_t) error;
-
-    if (t_net >= 0) {
-      // Sufficient torque: motor drives normally toward target
-      res->dir = dir;
-      if (dir == 0) {
-        res->count_to_emit = 0;
-      } else if (dir > 0 && error <= 0) {
-        res->count_to_emit = 0;
-      } else if (dir < 0 && error >= 0) {
-        res->count_to_emit = 0;
-      } else {
-        res->count_to_emit = (abs_error < (uint32_t) chunk_sz) ? (uint16_t) abs_error : chunk_sz;
-      }
-    } else {
-      // Torque deficit: motor cannot advance in commanded direction
-      float v_slip = CalcSlipVelocity(cfg, req->load_tension);
-      if (v_slip > 0.0f) {
-        res->dir = (req->load_tension > 0) ? 1 : -1;
-        res->count_to_emit = chunk_sz;
-        res->target_velocity = (res->dir > 0) ? (v_slip * 0.001f) : -(v_slip * 0.001f);
-      } else {
-        res->dir = 0;
-        res->count_to_emit = 0;
-      }
-
-      // Under torque deficit, motor stalls and accumulates lag against commanded steps
-      if (cfg->stall_threshold > 0 && abs_error >= cfg->stall_threshold) {
-        if (!req->stall_tripped) {
-          res->stall_trip_event = true;
-        }
-        res->stall_tripped = true;
-        res->is_freewheeling = true;
-      }
-    }
-  } else {
+  if (error == 0 && input_rate == 0.0f) {
     // error == 0 and input_rate == 0: motor is at target
     float v_slip = CalcSlipVelocity(cfg, req->load_tension);
     if (v_slip > 0.0f) {
@@ -234,6 +181,60 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
       res->dir = 0;
       res->count_to_emit = 0;
     }
+    return;
+  }
+
+  int dir = 0;
+  if (input_rate > 0.0f) {
+    dir = 1;
+  } else if (input_rate < 0.0f) {
+    dir = -1;
+  } else if (target_velocity > 0.0f) {
+    dir = 1;
+  } else if (target_velocity < 0.0f) {
+    dir = -1;
+  } else if (error != 0) {
+    dir = (error > 0) ? 1 : -1;
+  }
+
+  float speed_hz = fabsf(target_velocity) * 1000.0f;
+  int32_t t_motor = CalcMotorTorqueConfig(cfg, speed_hz);
+  int32_t t_net = CalcNetTorque(t_motor, dir, req->load_tension);
+  uint32_t abs_error = (error < 0) ? (0U - (uint32_t) error) : (uint32_t) error;
+
+  if (t_net >= 0) {
+    // Sufficient torque: motor drives normally toward target
+    res->dir = dir;
+    if (dir == 0) {
+      res->count_to_emit = 0;
+    } else if (dir > 0 && error <= 0) {
+      res->count_to_emit = 0;
+    } else if (dir < 0 && error >= 0) {
+      res->count_to_emit = 0;
+    } else {
+      res->count_to_emit = (abs_error < (uint32_t) chunk_sz) ? (uint16_t) abs_error : chunk_sz;
+    }
+    return;
+  }
+
+  // Torque deficit: motor cannot advance in commanded direction
+  float v_slip = CalcSlipVelocity(cfg, req->load_tension);
+  if (v_slip > 0.0f) {
+    res->dir = (req->load_tension > 0) ? 1 : -1;
+    res->count_to_emit = chunk_sz;
+    res->target_velocity = (res->dir > 0) ? (v_slip * 0.001f) : -(v_slip * 0.001f);
+  } else {
+    res->dir = 0;
+    res->count_to_emit = 0;
+  }
+
+  // Under torque deficit, motor stalls and accumulates lag against commanded steps
+  if (cfg->stall_threshold > 0 && abs_error >= cfg->stall_threshold) {
+    if (!req->stall_tripped) {
+      res->stall_trip_event = true;
+    }
+    res->stall_tripped = true;
+    res->is_freewheeling = true;
   }
 }
 
