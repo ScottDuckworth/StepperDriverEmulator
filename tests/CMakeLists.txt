@@ -18,7 +18,10 @@ target_include_directories(test_coordinates PRIVATE
 target_link_libraries(test_coordinates PRIVATE
     unity
 )
-add_test(NAME test_coordinates COMMAND test_coordinates)
+if(UNIX)
+    target_link_libraries(test_coordinates PRIVATE m)
+endif()
+add_test(NAME test_coordinates COMMAND $<TARGET_FILE:test_coordinates> WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
 # 2. Motor Physics & Dynamics Test
 add_executable(test_physics
@@ -31,7 +34,10 @@ target_include_directories(test_physics PRIVATE
 target_link_libraries(test_physics PRIVATE
     unity
 )
-add_test(NAME test_physics COMMAND test_physics)
+if(UNIX)
+    target_link_libraries(test_physics PRIVATE m)
+endif()
+add_test(NAME test_physics COMMAND $<TARGET_FILE:test_physics> WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
 # 3. Serial CLI Command Parser Test
 add_executable(test_cmd
@@ -47,7 +53,10 @@ target_include_directories(test_cmd PRIVATE
 target_link_libraries(test_cmd PRIVATE
     unity
 )
-add_test(NAME test_cmd COMMAND test_cmd)
+if(UNIX)
+    target_link_libraries(test_cmd PRIVATE m)
+endif()
+add_test(NAME test_cmd COMMAND $<TARGET_FILE:test_cmd> WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
 # 4. Quadrature Generation & Pacing Test
 add_executable(test_quadrature
@@ -60,7 +69,10 @@ target_include_directories(test_quadrature PRIVATE
 target_link_libraries(test_quadrature PRIVATE
     unity
 )
-add_test(NAME test_quadrature COMMAND test_quadrature)
+if(UNIX)
+    target_link_libraries(test_quadrature PRIVATE m)
+endif()
+add_test(NAME test_quadrature COMMAND $<TARGET_FILE:test_quadrature> WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
 # 5. Status LED & Priority Engine Test
 add_executable(test_led
@@ -73,7 +85,10 @@ target_include_directories(test_led PRIVATE
 target_link_libraries(test_led PRIVATE
     unity
 )
-add_test(NAME test_led COMMAND test_led)
+if(UNIX)
+    target_link_libraries(test_led PRIVATE m)
+endif()
+add_test(NAME test_led COMMAND $<TARGET_FILE:test_led> WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
 # 6. Position Tracking Math Test
 add_executable(test_position
@@ -87,7 +102,10 @@ target_include_directories(test_position PRIVATE
 target_link_libraries(test_position PRIVATE
     unity
 )
-add_test(NAME test_position COMMAND test_position)
+if(UNIX)
+    target_link_libraries(test_position PRIVATE m)
+endif()
+add_test(NAME test_position COMMAND $<TARGET_FILE:test_position> WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
 # 7. Motion Planning & Stall Engine Test
 add_executable(test_motion_planner
@@ -101,7 +119,10 @@ target_include_directories(test_motion_planner PRIVATE
 target_link_libraries(test_motion_planner PRIVATE
     unity
 )
-add_test(NAME test_motion_planner COMMAND test_motion_planner)
+if(UNIX)
+    target_link_libraries(test_motion_planner PRIVATE m)
+endif()
+add_test(NAME test_motion_planner COMMAND $<TARGET_FILE:test_motion_planner> WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
 # 8. Configuration Storage & Persistence Test
 add_executable(test_config_store
@@ -117,6 +138,9 @@ target_include_directories(test_config_store PRIVATE
 target_link_libraries(test_config_store PRIVATE
     unity
 )
-add_test(NAME test_config_store COMMAND test_config_store)
+if(UNIX)
+    target_link_libraries(test_config_store PRIVATE m)
+endif()
+add_test(NAME test_config_store COMMAND $<TARGET_FILE:test_config_store> WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
 
