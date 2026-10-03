@@ -428,3 +428,30 @@ ctest --preset host-test
 # Or run the test executable directly for verbose breakdown:
 ./build/host-test/tests/Debug/test_coordinates.exe
 ```
+
+---
+
+## Presubmit Checks & Git Hooks
+
+The repository includes automated presubmit checks for local development and continuous integration (CI):
+
+* **`pre-commit`**: Validates `README.md` (GitHub LaTeX compatibility, balanced math delimiters, and CLI command synchronization) and runs all host unit tests (`ctest`).
+* **`pre-push`**: Compiles the ARM Cortex-M0 Release firmware and validates flash and RAM sizing constraints against STM32F042 limits.
+* **GitHub Actions CI**: Executes both test and build suites on every push and pull request.
+
+To activate the repository's git hooks locally, configure your git path:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+You can also execute the validation scripts manually:
+
+```bash
+# Validate README.md formatting and CLI command table sync
+python scripts/validate_readme.py
+
+# Check firmware memory usage against STM32F042 flash limits
+python scripts/check_firmware_size.py build/Release/StepperDriverEmulator.elf
+```
+

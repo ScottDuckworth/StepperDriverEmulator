@@ -1,0 +1,21 @@
+#!/bin/sh
+# Git pre-commit hook: runs README validation and host unit tests.
+set -e
+
+echo "=== [PRE-COMMIT] Validating README.md ==="
+if command -v python3 >/dev/null 2>&1; then
+    PYTHON_CMD=python3
+elif command -v python >/dev/null 2>&1; then
+    PYTHON_CMD=python
+else
+    echo "[ERROR] Python not found in PATH"
+    exit 1
+fi
+
+$PYTHON_CMD scripts/validate_readme.py
+
+echo "=== [PRE-COMMIT] Building & Running Host Unit Tests ==="
+cmake --build --preset host-test
+ctest --preset host-test --output-on-failure
+
+echo "=== [PRE-COMMIT] All presubmit checks passed ==="

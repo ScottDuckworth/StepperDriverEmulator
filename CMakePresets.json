@@ -30,6 +30,16 @@
                 "ENABLE_TESTS": "ON",
                 "CMAKE_BUILD_TYPE": "Debug"
             }
+        },
+        {
+            "name": "host-test-ninja",
+            "displayName": "Host Unit Tests (Ninja)",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/host-test-ninja",
+            "cacheVariables": {
+                "ENABLE_TESTS": "ON",
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
         }
     ],
     "buildPresets": [
@@ -45,6 +55,10 @@
             "name": "host-test",
             "configurePreset": "host-test",
             "configuration": "Debug"
+        },
+        {
+            "name": "host-test-ninja",
+            "configurePreset": "host-test-ninja"
         }
     ],
     "testPresets": [
@@ -52,6 +66,10 @@
             "name": "host-test",
             "configurePreset": "host-test",
             "configuration": "Debug"
+        },
+        {
+            "name": "host-test-ninja",
+            "configurePreset": "host-test-ninja"
         }
     ]
 }
