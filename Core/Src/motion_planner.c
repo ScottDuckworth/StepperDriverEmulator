@@ -54,11 +54,29 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
 
   // Soft-knee error profile during active step pulse streaming:
   // When pulses are streaming (input_rate != 0), normal discrete pulse arrivals cause
-  // error to fluctuate within 1 step (epr / spr counts). Attenuating this small-signal
-  // ripple quadratically eliminates oscilloscope phase jitter, while preserving full
-  // restoring gain (Kp) for large errors (> 1 step) to snap into phase lock immediately.
+  // error to fluctuate within 1 step (epr / spr counts) as the current step is being
+  // paced across the inter-step interval by velocity feedforward (Kff * input_rate).
+  // Deducting the feedforward-managed step window eliminates double-counting the step
+  // and prevents cyclic pacing frequency modulation across the phase, while restoring
+  // gain (Kp) remains active for true tracking lag (> 1 step) or overshoot (< 0).
   if (input_rate != 0.0f && req->cfg->spr > 0) {
     float step_counts = (float) req->cfg->epr / (float) req->cfg->spr;
+    float ff_window = req->cfg->kff * step_counts;
+
+    if (input_rate > 0.0f) {
+      if (eff_error > ff_window) {
+        eff_error -= ff_window;
+      } else if (eff_error >= 0.0f) {
+        eff_error = 0.0f;
+      }
+    } else {
+      if (eff_error < -ff_window) {
+        eff_error += ff_window;
+      } else if (eff_error <= 0.0f) {
+        eff_error = 0.0f;
+      }
+    }
+
     if (step_counts > 0.0f) {
       float abs_err = fabsf(eff_error);
       if (abs_err <= step_counts) {

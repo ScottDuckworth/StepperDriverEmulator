@@ -707,6 +707,22 @@ void Motion_Wakeup_Handler(void) {
       int32_t clamped_err = (err > 2000000000LL) ? 2000000000 : ((err < -2000000000LL) ? -2000000000 : (int32_t) err);
       float eff_err = (float) clamped_err;
       float step_counts = (float) config.epr / (float) config.spr;
+      float ff_window = config.kff * step_counts;
+
+      if (in_rate > 0.0f) {
+        if (eff_err > ff_window) {
+          eff_err -= ff_window;
+        } else if (eff_err >= 0.0f) {
+          eff_err = 0.0f;
+        }
+      } else if (in_rate < 0.0f) {
+        if (eff_err < -ff_window) {
+          eff_err += ff_window;
+        } else if (eff_err <= 0.0f) {
+          eff_err = 0.0f;
+        }
+      }
+
       if (step_counts > 0.0f) {
         float abs_err = fabsf(eff_err);
         if (abs_err <= step_counts) {

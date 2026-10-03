@@ -200,24 +200,33 @@ Proportional feedback gain ($K_{\text{p}}$) acts as the restoring stiffness that
 
 #### Soft-Knee Small-Signal Attenuation
 
-Because incoming step pulses are discrete events arriving at finite intervals, the discrete error $e = P_{\text{cmd}} - P_{\text{enc}}$ inherently oscillates between $0$ and $\frac{\text{epr}}{\text{spr}}\text{ counts}$ (the count width of one input step) even during steady constant-velocity streaming.
+Because incoming step pulses are discrete events arriving at finite intervals, the discrete error $e = P_{\text{cmd}} - P_{\text{enc}}$ inherently fluctuates between $0$ and $\frac{\text{epr}}{\text{spr}}\text{ counts}$ (the count width of one input step) as the current step is actively being paced across the inter-step interval by velocity feedforward ($K_{\text{ff}} \cdot V_{\text{in}}$).
 
-Applying unfiltered proportional gain directly to this single-step discretization ripple causes cyclic pacing timer frequency modulation, manifesting as high-frequency phase jitter observable on an oscilloscope between the input step clock and output quadrature edges.
+Applying unfiltered proportional gain directly to this single-step execution window causes cyclic pacing timer frequency modulation across the phase, compressing quadrature edges into the first half of the step period.
 
-To eliminate this ripple while preserving full restoring authority for genuine tracking errors, the motion planner applies a quadratic soft-knee attenuation profile during active pulse streaming ($V_{\text{in}} \ne 0$):
+To eliminate this phase modulation while preserving full restoring authority for genuine tracking errors, the motion planner deducts the feedforward-managed step window ($W_{\text{ff}} = K_{\text{ff}} \cdot \Delta P_{\text{step}}$) during active pulse streaming ($V_{\text{in}} \ne 0$) and applies a quadratic soft-knee attenuation profile to any excess tracking lag:
+
+$$
+e_{\text{lag}} = \begin{cases}
+e - W_{\text{ff}}, & e \gt W_{\text{ff}} \text{ (forward streaming)} \\
+e + W_{\text{ff}}, & e \lt -W_{\text{ff}} \text{ (reverse streaming)} \\
+0, & \text{within feedforward window} \\
+e, & \text{overshoot / leading error}
+\end{cases}
+$$
 
 $$
 e_{\text{eff}} = \begin{cases}
-\frac{e \cdot |e|}{\Delta P_{\text{step}}}, & |e| \le \Delta P_{\text{step}} \\
-e, & |e| \gt \Delta P_{\text{step}}
+\frac{e_{\text{lag}} \cdot |e_{\text{lag}}|}{\Delta P_{\text{step}}}, & |e_{\text{lag}}| \le \Delta P_{\text{step}} \\
+e_{\text{lag}}, & |e_{\text{lag}}| \gt \Delta P_{\text{step}}
 \end{cases}
 $$
 
 where $\Delta P_{\text{step}} = \frac{\text{epr}}{\text{spr}}$ is the count equivalent of one input step.
 
-* **Sub-step errors ($|e| \le \Delta P_{\text{step}}$):** The quadratic response attenuates discrete quantization ripple smoothly to near-zero as error approaches zero, yielding clean, low-jitter quadrature waveforms.
-* **Macro errors ($|e| \gt \Delta P_{\text{step}}$):** The profile seamlessly transitions to full linear error ($e_{\text{eff}} = e$), providing full proportional stiffness ($K_{\text{p}}$) to immediately re-lock phase during accelerations or torque disturbances.
-* **At rest ($V_{\text{in}} = 0$):** Soft-knee filtering is automatically bypassed ($e_{\text{eff}} = e$), ensuring rapid, exact zero-error static settling.
+* **Within feedforward window:** Output transitions pace with uniform frequency across the entire inter-step period governed by $K_{\text{ff}} \cdot V_{\text{in}}$, eliminating cyclic intra-step velocity modulation on the oscilloscope.
+* **Excess tracking errors ($|e_{\text{lag}}| \gt 0$):** The profile transitions smoothly to provide proportional stiffness ($K_{\text{p}}$) to eliminate accumulated lag during accelerations or torque disturbances.
+* **At rest ($V_{\text{in}} = 0$):** Feedforward windowing is automatically bypassed ($e_{\text{eff}} = e$), ensuring rapid, exact zero-error static settling.
 
 ### Dimensional Analysis & Unit Relationships
 

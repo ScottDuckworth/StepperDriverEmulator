@@ -295,13 +295,11 @@ void test_planner_continuous_streaming_zero_error(void) {
 
 void test_planner_soft_knee_error_attenuation(void) {
   // epr = 4000, spr = 1000 -> 1 step = 4 counts.
-  // When error = 2 (sub-step error <= 4): eff_error = (2 * 2) / 4.0 = 1.0.
-  // kp = 0.5 -> kp * eff_error = 0.5.
-  // target_velocity = 400.0 + 0.5 = 400.5
+  // Within nominal 1-step feedforward window (error = 4): eff_error = 0.0 (pure feedforward 400.0 counts/ms).
   MotionPlanRequest_t req = {
       .cfg = &config,
-      .commanded_pos = 102,
-      .planned_encoder_pos = 100, // error = 2
+      .commanded_pos = 104,
+      .planned_encoder_pos = 100, // error = 4 (nominal 1-step streaming)
       .load_tension = 0,
       .now = 100,
       .last_step_time = 90,
@@ -315,13 +313,22 @@ void test_planner_soft_knee_error_attenuation(void) {
 
   PlanMotionStep(&req, &res);
   TEST_ASSERT_EQUAL_INT(1, res.dir);
-  TEST_ASSERT_EQUAL_UINT16(2, res.count_to_emit);
+  TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 400.0f, res.target_velocity); // 0 phase modulation at nominal 1 step
+
+  // When error = 6 (excess lag = 6 - 4 = 2 counts <= 4): eff_error = (2 * 2) / 4.0 = 1.0.
+  // kp = 0.5 -> kp * eff_error = 0.5.
+  // target_velocity = 400.0 + 0.5 = 400.5
+  req.commanded_pos = 106;
+  PlanMotionStep(&req, &res);
+  TEST_ASSERT_EQUAL_INT(1, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(6, res.count_to_emit);
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 400.5f, res.target_velocity);
 
-  // When error = 20 (multi-step error > 4): eff_error = 20 (full gain).
+  // When error = 24 (excess lag = 24 - 4 = 20 counts > 4): eff_error = 20 (full linear gain).
   // kp * eff_error = 0.5 * 20 = 10.0.
   // target_velocity = 400.0 + 10.0 = 410.0
-  req.commanded_pos = 120;
+  req.commanded_pos = 124;
   PlanMotionStep(&req, &res);
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 410.0f, res.target_velocity);
 }
@@ -353,8 +360,8 @@ void test_planner_large_64bit_coordinates(void) {
 void test_planner_low_frequency_feedforward_50hz(void) {
   // 48 MHz / 960,000 ticks = 50 Hz steps
   // 4000 epr / 1000 spr = 4.0 ratio -> input_rate = 50 * 4 = 200 counts/sec = 0.2 counts/ms
-  // With kff = 1.0, kp = 0.0, target_velocity = 0.2 counts/ms (takes 20 ms for 4 counts)
-  config.kp = 0.0f;
+  // With kff = 1.0, kp = 0.1, target_velocity remains 0.2 counts/ms across the 1-step window (takes 20 ms for 4 counts)
+  config.kp = 0.1f;
   MotionPlanRequest_t req = {
       .cfg = &config,
       .commanded_pos = 104,
@@ -386,7 +393,7 @@ void test_planner_low_frequency_timeout_extension(void) {
   // 20 Hz step rate: 48 MHz / 2,400,000 ticks = 50 ms period
   // dynamic timeout = 50 + 25 + 10 = 85 ms
   // input_rate = (48000 / 2400000) * 4.0 = 0.08 counts/ms
-  config.kp = 0.0f;
+  config.kp = 0.1f;
   MotionPlanRequest_t req = {
       .cfg = &config,
       .commanded_pos = 104,
