@@ -99,17 +99,12 @@ uint16_t GetOdr(void);
 void SetOdr(uint16_t odr);
 void ReportOdr(void);
 
-uint16_t GetEpr(void);
-void SetEpr(uint16_t epr);
-void ReportEpr(void);
-
-uint16_t GetSpr(void);
-void SetSpr(uint16_t spr);
-void ReportSpr(void);
+bool SetRatio(uint16_t spr, uint16_t epr);
+void GetRatio(uint16_t* out_spr, uint16_t* out_epr);
+void ReportRatio(void);
 
 int64_t GetEncoderPosition(void);
 void SetEncoderPosition(int64_t pos);
-int64_t GetStepPosition(void);
 
 bool GetStepReverse(void);
 bool GetStepEnabled(void);

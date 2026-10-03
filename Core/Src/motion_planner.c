@@ -31,12 +31,8 @@ void PlanMotionStep(const EmulatorConfig_t* cfg, const MotionPlanRequest_t* req,
     return;
   }
 
-  float step_counts = 4.0f;
-  float rate_scale = 192000.0f;
-  if (cfg->spr > 0) {
-    step_counts = (float) cfg->epr / (float) cfg->spr;
-    rate_scale = 48000.0f * step_counts;
-  }
+  float step_counts = (cfg->counts_per_step > 0.0f) ? cfg->counts_per_step : ((cfg->ratio_spr > 0) ? ((float) cfg->ratio_epr / (float) cfg->ratio_spr) : 4.0f);
+  float rate_scale = 48000.0f * step_counts;
 
   uint32_t step_timeout_ms = 50;
   if (req->step_period_cnt >= 48000) {
@@ -48,7 +44,7 @@ void PlanMotionStep(const EmulatorConfig_t* cfg, const MotionPlanRequest_t* req,
   }
 
   float input_rate = 0.0f;
-  if ((req->now - req->last_step_time) <= step_timeout_ms && req->step_period_cnt >= 240 && cfg->spr > 0) {
+  if ((req->now - req->last_step_time) <= step_timeout_ms && req->step_period_cnt >= 240 && cfg->ratio_spr > 0) {
     input_rate = rate_scale / (float) req->step_period_cnt;
     if (req->step_reverse) {
       input_rate = -input_rate;
@@ -66,7 +62,7 @@ void PlanMotionStep(const EmulatorConfig_t* cfg, const MotionPlanRequest_t* req,
   // Deducting the feedforward-managed step window eliminates double-counting the step
   // and prevents cyclic pacing frequency modulation across the phase, while restoring
   // gain (Kp) remains active for true tracking lag (> 1 step) or overshoot (< 0).
-  if (input_rate != 0.0f && cfg->spr > 0) {
+  if (input_rate != 0.0f && cfg->ratio_spr > 0) {
     float ff_window = cfg->kff * step_counts;
 
     if (input_rate > 0.0f) {

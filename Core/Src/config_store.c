@@ -15,7 +15,7 @@ uint32_t ConfigStore_CalcCRC32(const void* data, size_t length) {
 
 bool ConfigStore_Validate(const EmulatorConfig_t* cfg) {
   if (!cfg) return false;
-  if (cfg->spr == 0 || cfg->epr == 0) return false;
+  if (cfg->ratio_spr == 0 || cfg->ratio_epr == 0) return false;
   if (cfg->kp < 0.0f || cfg->kff < 0.0f || cfg->kfree < 0.0f) return false;
   if (cfg->torque_v_max < cfg->torque_v_knee) return false;
   return true;

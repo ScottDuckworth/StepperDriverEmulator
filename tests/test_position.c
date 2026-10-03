@@ -52,40 +52,46 @@ void test_accumulate_step_position_reverse(void) {
 }
 
 void test_realign_position_counters(void) {
-  config.spr = 1000;
-  config.epr = 4000;
+  config.ratio_spr = 1;
+  config.ratio_epr = 4;
 
   PositionCounters_t pos = {
-      .step_pos = 9999,
       .encoder_pos = 9999,
+      .commanded_pos = 9999,
+      .step_rem = 12,
       .step_cnt_prev = 123,
       .step_dcnt = 456,
       .step_reverse = false
   };
 
-  // Realign to encoder position 4000 (1 rev = 1000 steps)
+  // Realign to encoder position 4000
   RealignPositionCounters(&pos, 4000, &config, 5000);
   TEST_ASSERT_EQUAL_INT64(4000, pos.encoder_pos);
-  TEST_ASSERT_EQUAL_INT64(1000, pos.step_pos);
+  TEST_ASSERT_EQUAL_INT64(4000, pos.commanded_pos);
+  TEST_ASSERT_EQUAL_INT32(0, pos.step_rem);
   TEST_ASSERT_EQUAL_UINT16(5000, pos.step_cnt_prev);
   TEST_ASSERT_EQUAL_UINT16(0, pos.step_dcnt);
 
-  // Negative encoder position (-2000 counts = -500 steps)
+  // Negative encoder position (-2000 counts)
+  pos.step_rem = -5;
   RealignPositionCounters(&pos, -2000, &config, 1000);
   TEST_ASSERT_EQUAL_INT64(-2000, pos.encoder_pos);
-  TEST_ASSERT_EQUAL_INT64(-500, pos.step_pos);
+  TEST_ASSERT_EQUAL_INT64(-2000, pos.commanded_pos);
+  TEST_ASSERT_EQUAL_INT32(0, pos.step_rem);
   TEST_ASSERT_EQUAL_UINT16(1000, pos.step_cnt_prev);
   TEST_ASSERT_EQUAL_UINT16(0, pos.step_dcnt);
 
-  // Realign to large 64-bit position (8 billion counts = 2 billion steps)
+  // Realign to large 64-bit position
   RealignPositionCounters(&pos, 8000000000LL, &config, 2000);
   TEST_ASSERT_EQUAL_INT64(8000000000LL, pos.encoder_pos);
-  TEST_ASSERT_EQUAL_INT64(2000000000LL, pos.step_pos);
+  TEST_ASSERT_EQUAL_INT64(8000000000LL, pos.commanded_pos);
+  TEST_ASSERT_EQUAL_INT32(0, pos.step_rem);
 
-  // Realign to large negative 64-bit position (-12 billion counts = -3 billion steps)
+  // Realign to large negative 64-bit position
   RealignPositionCounters(&pos, -12000000000LL, &config, 3000);
   TEST_ASSERT_EQUAL_INT64(-12000000000LL, pos.encoder_pos);
-  TEST_ASSERT_EQUAL_INT64(-3000000000LL, pos.step_pos);
+  TEST_ASSERT_EQUAL_INT64(-12000000000LL, pos.commanded_pos);
+  TEST_ASSERT_EQUAL_INT32(0, pos.step_rem);
 
   // Null safety
   RealignPositionCounters(NULL, 1000, &config, 0);

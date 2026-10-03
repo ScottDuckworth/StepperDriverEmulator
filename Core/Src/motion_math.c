@@ -1,14 +1,25 @@
 #include "motion_math.h"
 #include <stdint.h>
 
-int64_t StepToEncoderPositionConfig(const EmulatorConfig_t* cfg, int64_t step_position) {
-  if (!cfg || cfg->spr == 0) return 0;
-  return (step_position * (int64_t) cfg->epr) / (int64_t) cfg->spr;
+uint16_t CalcGCD(uint16_t a, uint16_t b) {
+  while (b != 0) {
+    uint16_t t = b;
+    b = a % b;
+    a = t;
+  }
+  return a;
 }
 
-int64_t EncoderToStepPositionConfig(const EmulatorConfig_t* cfg, int64_t encoder_position) {
-  if (!cfg || cfg->epr == 0) return 0;
-  return (encoder_position * (int64_t) cfg->spr) / (int64_t) cfg->epr;
+int32_t ConvertStepDeltaToCounts(int32_t step_delta, uint16_t ratio_spr, uint16_t ratio_epr, int32_t* remainder) {
+  if (ratio_spr == 0) return 0;
+  int32_t rem = remainder ? *remainder : 0;
+  int32_t accum = rem + step_delta * (int32_t) ratio_epr;
+  int32_t counts = accum / (int32_t) ratio_spr;
+  rem = accum % (int32_t) ratio_spr;
+  if (remainder) {
+    *remainder = rem;
+  }
+  return counts;
 }
 
 int32_t CalcMotorTorqueConfig(const EmulatorConfig_t* cfg, float speed_abs) {
@@ -20,9 +31,9 @@ int32_t CalcMotorTorqueConfig(const EmulatorConfig_t* cfg, float speed_abs) {
   if (v >= cfg->torque_v_max || cfg->torque_v_max <= cfg->torque_v_knee) {
     return cfg->torque_t_min;
   }
-  int64_t num = (int64_t)(cfg->torque_t0 - cfg->torque_t_min) * (v - cfg->torque_v_knee);
-  int64_t den = (int64_t)(cfg->torque_v_max - cfg->torque_v_knee);
-  return (int32_t)(cfg->torque_t0 - (num / den));
+  int32_t num = (cfg->torque_t0 - cfg->torque_t_min) * (int32_t)(v - cfg->torque_v_knee);
+  int32_t den = (int32_t)(cfg->torque_v_max - cfg->torque_v_knee);
+  return (den > 0) ? (cfg->torque_t0 - (num / den)) : cfg->torque_t_min;
 }
 
 int32_t CalcNetTorque(int32_t t_motor, int dir, int32_t load_tension) {

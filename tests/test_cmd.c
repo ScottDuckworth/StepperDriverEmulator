@@ -1,6 +1,7 @@
 #include "unity.h"
 #include "cmd.h"
 #include "main.h"
+#include "motion_math.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -166,13 +167,26 @@ uint16_t GetOdr(void) { return mock_config.odr; }
 void SetOdr(uint16_t odr) { mock_config.odr = odr; ReportOdr(); }
 void ReportOdr(void) { ReportU16("odr", GetOdr()); }
 
-uint16_t GetEpr(void) { return mock_config.epr; }
-void SetEpr(uint16_t epr) { mock_config.epr = epr; ReportEpr(); }
-void ReportEpr(void) { ReportU16("epr", GetEpr()); }
+bool SetRatio(uint16_t spr, uint16_t epr) {
+  if (spr == 0 || epr == 0) return false;
+  uint16_t g = CalcGCD(spr, epr);
+  mock_config.ratio_spr = spr / g;
+  mock_config.ratio_epr = epr / g;
+  mock_config.counts_per_step = (float) mock_config.ratio_epr / (float) mock_config.ratio_spr;
+  ReportRatio();
+  return true;
+}
 
-uint16_t GetSpr(void) { return mock_config.spr; }
-void SetSpr(uint16_t spr) { mock_config.spr = spr; ReportSpr(); }
-void ReportSpr(void) { ReportU16("spr", GetSpr()); }
+void GetRatio(uint16_t* out_spr, uint16_t* out_epr) {
+  if (out_spr) *out_spr = mock_config.ratio_spr;
+  if (out_epr) *out_epr = mock_config.ratio_epr;
+}
+
+void ReportRatio(void) {
+  char buf[32];
+  int size = snprintf(buf, sizeof(buf), "ratio %u %u\r\n", mock_config.ratio_spr, mock_config.ratio_epr);
+  if (size > 0) WriteData((const uint8_t*) buf, (uint16_t) size);
+}
 
 float GetKp(void) { return mock_config.kp; }
 void SetKp(float kp) { mock_config.kp = kp; ReportKp(); }
@@ -307,25 +321,44 @@ void test_cmd_blink_set_and_query(void) {
   TEST_ASSERT_EQUAL_STRING("blink 0\r\n", captured_output);
 }
 
-void test_cmd_odr_epr_spr_set_and_query(void) {
+void test_cmd_odr_set_and_query(void) {
   send_cmd("odr 250\r\n");
   TEST_ASSERT_EQUAL_UINT16(250, mock_config.odr);
   TEST_ASSERT_EQUAL_STRING("odr 250\r\n", captured_output);
 
-  send_cmd("epr 2048\r\n");
-  TEST_ASSERT_EQUAL_UINT16(2048, mock_config.epr);
-  TEST_ASSERT_EQUAL_STRING("epr 2048\r\n", captured_output);
-
-  send_cmd("spr 400\r\n");
-  TEST_ASSERT_EQUAL_UINT16(400, mock_config.spr);
-  TEST_ASSERT_EQUAL_STRING("spr 400\r\n", captured_output);
-
   send_cmd("odr\r\n");
   TEST_ASSERT_EQUAL_STRING("odr 250\r\n", captured_output);
-  send_cmd("epr\r\n");
-  TEST_ASSERT_EQUAL_STRING("epr 2048\r\n", captured_output);
-  send_cmd("spr\r\n");
-  TEST_ASSERT_EQUAL_STRING("spr 400\r\n", captured_output);
+}
+
+void test_cmd_ratio_set_and_query(void) {
+  // Set with ratio 1000 4000 -> reduced to 1 4
+  send_cmd("ratio 1000 4000\r\n");
+  TEST_ASSERT_EQUAL_UINT16(1, mock_config.ratio_spr);
+  TEST_ASSERT_EQUAL_UINT16(4, mock_config.ratio_epr);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 4.0f, mock_config.counts_per_step);
+  TEST_ASSERT_EQUAL_STRING("ratio 1 4\r\n", captured_output);
+
+  // Set with ratio 200 1024 -> reduced to 25 128 (GCD 8)
+  send_cmd("ratio 200 1024\r\n");
+  TEST_ASSERT_EQUAL_UINT16(25, mock_config.ratio_spr);
+  TEST_ASSERT_EQUAL_UINT16(128, mock_config.ratio_epr);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 5.12f, mock_config.counts_per_step);
+  TEST_ASSERT_EQUAL_STRING("ratio 25 128\r\n", captured_output);
+
+  // Query ratio
+  send_cmd("ratio\r\n");
+  TEST_ASSERT_EQUAL_STRING("ratio 25 128\r\n", captured_output);
+
+  // Error handling: ratio with 1 arg -> invalid usage
+  send_cmd("ratio 100\r\n");
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid usage: ratio [spr] [epr]\r\n"));
+
+  // Error handling: ratio with 0 value -> invalid uint16 > 0
+  send_cmd("ratio 0 100\r\n");
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid uint16 > 0: 0\r\n"));
+
+  send_cmd("ratio 100 0\r\n");
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid uint16 > 0: 0\r\n"));
 }
 
 void test_cmd_kp_kff_set_and_query(void) {
@@ -414,8 +447,7 @@ void test_cmd_pos_report_int64(void) {
 void test_cmd_r_state_report(void) {
   send_cmd("r\r\n");
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "odr 1000\r\n"));
-  TEST_ASSERT_NOT_NULL(strstr(captured_output, "epr 4000\r\n"));
-  TEST_ASSERT_NOT_NULL(strstr(captured_output, "spr 1000\r\n"));
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "ratio 1 4\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "kp 0.1000\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "kff 1.0000\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "blank 3.5000\r\n"));
@@ -433,6 +465,7 @@ void test_cmd_help(void) {
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "stall [uint32]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "blank [float]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "zero"));
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "ratio [spr] [epr]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "save"));
 }
 
@@ -485,7 +518,8 @@ int main(void) {
   RUN_TEST(test_cmd_stall_set_and_query);
   RUN_TEST(test_cmd_kfree_set_and_query);
   RUN_TEST(test_cmd_blink_set_and_query);
-  RUN_TEST(test_cmd_odr_epr_spr_set_and_query);
+  RUN_TEST(test_cmd_odr_set_and_query);
+  RUN_TEST(test_cmd_ratio_set_and_query);
   RUN_TEST(test_cmd_kp_kff_set_and_query);
   RUN_TEST(test_cmd_lim1_lim2);
   RUN_TEST(test_cmd_zero);

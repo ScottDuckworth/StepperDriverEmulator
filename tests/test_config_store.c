@@ -70,8 +70,8 @@ void test_fresh_erased_flash_fails_to_load(void) {
 
 void test_save_and_load_roundtrip(void) {
   EmulatorConfig_t original_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
-  original_cfg.spr = 800;
-  original_cfg.epr = 3200;
+  original_cfg.ratio_spr = 1;
+  original_cfg.ratio_epr = 4;
   original_cfg.odr = 250;
   original_cfg.torque_t0 = 1200;
   original_cfg.torque_v_knee = 1500;
@@ -81,6 +81,7 @@ void test_save_and_load_roundtrip(void) {
   original_cfg.kp = 0.25f;
   original_cfg.kff = 0.95f;
   original_cfg.kfree = 0.008f;
+  original_cfg.counts_per_step = 4.0f;
 
   bool save_ok = ConfigStore_Save(&mock_flash_driver, MOCK_PAGE_ADDR, &original_cfg);
   TEST_ASSERT_TRUE(save_ok);
@@ -90,8 +91,8 @@ void test_save_and_load_roundtrip(void) {
   TEST_ASSERT_TRUE(load_ok);
 
   // Assert exact match of all fields
-  TEST_ASSERT_EQUAL_UINT16(800, loaded_cfg.spr);
-  TEST_ASSERT_EQUAL_UINT16(3200, loaded_cfg.epr);
+  TEST_ASSERT_EQUAL_UINT16(1, loaded_cfg.ratio_spr);
+  TEST_ASSERT_EQUAL_UINT16(4, loaded_cfg.ratio_epr);
   TEST_ASSERT_EQUAL_UINT16(250, loaded_cfg.odr);
   TEST_ASSERT_EQUAL_INT32(1200, loaded_cfg.torque_t0);
   TEST_ASSERT_EQUAL_UINT32(1500, loaded_cfg.torque_v_knee);
@@ -101,6 +102,7 @@ void test_save_and_load_roundtrip(void) {
   TEST_ASSERT_EQUAL_FLOAT(0.25f, loaded_cfg.kp);
   TEST_ASSERT_EQUAL_FLOAT(0.95f, loaded_cfg.kff);
   TEST_ASSERT_EQUAL_FLOAT(0.008f, loaded_cfg.kfree);
+  TEST_ASSERT_EQUAL_FLOAT(4.0f, loaded_cfg.counts_per_step);
 }
 
 void test_crc_bitflip_detected(void) {
@@ -142,12 +144,12 @@ void test_bad_version_detected(void) {
 void test_validation_rejects_invalid_config(void) {
   EmulatorConfig_t bad_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
 
-  bad_cfg.spr = 0;
+  bad_cfg.ratio_spr = 0;
   TEST_ASSERT_FALSE(ConfigStore_Validate(&bad_cfg));
   TEST_ASSERT_FALSE(ConfigStore_Save(&mock_flash_driver, MOCK_PAGE_ADDR, &bad_cfg));
 
   bad_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
-  bad_cfg.epr = 0;
+  bad_cfg.ratio_epr = 0;
   TEST_ASSERT_FALSE(ConfigStore_Validate(&bad_cfg));
 
   bad_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;

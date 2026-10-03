@@ -10,8 +10,9 @@ extern "C" {
 #endif
 
 typedef struct {
-  int64_t step_pos;
-  int64_t encoder_pos;
+  int64_t encoder_pos;        // Actual emitted encoder position
+  int64_t commanded_pos;      // Commanded target position (in encoder counts)
+  int32_t step_rem;           // Fractional step remainder for ratio accumulator
   uint16_t step_cnt_prev;
   uint16_t step_dcnt;
   bool step_reverse;

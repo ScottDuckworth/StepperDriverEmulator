@@ -286,30 +286,28 @@ void ReportOdr(void) {
   ReportU16("odr", GetOdr());
 }
 
-uint16_t GetEpr(void) {
-  return config.epr;
+bool SetRatio(uint16_t spr, uint16_t epr) {
+  if (spr == 0 || epr == 0) return false;
+  uint16_t g = CalcGCD(spr, epr);
+  __disable_irq();
+  config.ratio_spr = spr / g;
+  config.ratio_epr = epr / g;
+  config.counts_per_step = (float) config.ratio_epr / (float) config.ratio_spr;
+  position.step_rem = 0;
+  __enable_irq();
+  ReportRatio();
+  return true;
 }
 
-void SetEpr(uint16_t epr) {
-  config.epr = epr;
-  ReportEpr();
+void GetRatio(uint16_t* out_spr, uint16_t* out_epr) {
+  if (out_spr) *out_spr = config.ratio_spr;
+  if (out_epr) *out_epr = config.ratio_epr;
 }
 
-void ReportEpr(void) {
-  ReportU16("epr", GetEpr());
-}
-
-uint16_t GetSpr(void) {
-  return config.spr;
-}
-
-void SetSpr(uint16_t spr) {
-  config.spr = spr;
-  ReportSpr();
-}
-
-void ReportSpr(void) {
-  ReportU16("spr", GetSpr());
+void ReportRatio(void) {
+  char buf[32];
+  int size = snprintf(buf, sizeof(buf), "ratio %u %u\r\n", config.ratio_spr, config.ratio_epr);
+  WriteData((uint8_t*) buf, size);
 }
 
 void GetTorqueCurve(int32_t* t0, uint32_t* v_knee, uint32_t* v_max, int32_t* t_min) {
@@ -485,13 +483,6 @@ void ReportEncoderPosition(void) {
   ReportI64("pos", GetEncoderPosition());
 }
 
-int64_t GetStepPosition(void) {
-  __disable_irq();
-  int64_t pos = position.step_pos;
-  __enable_irq();
-  return pos;
-}
-
 bool GetStepReverse(void) {
   return position.step_reverse;
 }
@@ -506,10 +497,6 @@ bool GetStepEnabled(void) {
 
 void ReportStepEnabled(void) {
   ReportU8("ena", GetStepEnabled());
-}
-
-static inline int64_t StepToEncoderPosition(int64_t step_position) {
-  return StepToEncoderPositionConfig(&config, step_position);
 }
 
 void UpdateStepEnabled(void) {
@@ -562,8 +549,10 @@ static void UpdatePositionCounters(void) {
   position.step_dcnt = valid_steps;
   if (valid_steps != 0) {
     last_step_time = now;
+    int32_t step_delta = position.step_reverse ? -(int32_t) valid_steps : (int32_t) valid_steps;
+    int32_t count_delta = ConvertStepDeltaToCounts(step_delta, config.ratio_spr, config.ratio_epr, &position.step_rem);
+    position.commanded_pos += count_delta;
   }
-  position.step_pos = AccumulateStepPosition(position.step_pos, valid_steps, position.step_reverse);
 }
 
 void UpdateStepDirection(void) {
@@ -579,7 +568,7 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
   UpdatePositionCounters();
 
   bool is_freewheeling = stall_tripped || !GetStepEnabled();
-  int64_t commanded_pos = StepToEncoderPosition(position.step_pos);
+  int64_t commanded_pos = position.commanded_pos;
 
   uint32_t period_cnt = (startup_sync_count > 0) ? 0 : step_period_cnt;
 
@@ -609,11 +598,7 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
   // Calculate pacing frequency
   float pace_velocity = res.target_velocity;
   if (pace_velocity == 0.0f) {
-    if (config.spr > 0) {
-      pace_velocity = ((float) config.epr / (float) config.spr);
-    } else {
-      pace_velocity = 4.0f;
-    }
+    pace_velocity = config.counts_per_step;
   }
 
   uint16_t psc = 0;
@@ -632,7 +617,7 @@ void Motion_Start(void) {
   if (motion_active) return;
 
   UpdatePositionCounters();
-  int64_t commanded = StepToEncoderPosition(position.step_pos);
+  int64_t commanded = position.commanded_pos;
   int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
 
   bool should_start = false;
@@ -696,16 +681,12 @@ void Motion_Wakeup_Handler(void) {
     }
 
     uint32_t captured_period = step_period_cnt;
-    if (captured_period >= 240 && config.spr > 0) {
-      float step_counts = 4.0f;
-      float rate_scale = 192000.0f;
-      if (config.spr > 0) {
-        step_counts = (float) config.epr / (float) config.spr;
-        rate_scale = 48000.0f * step_counts;
-      }
+    if (captured_period >= 240 && config.ratio_spr > 0) {
+      float step_counts = config.counts_per_step;
+      float rate_scale = 48000.0f * step_counts;
       float in_rate = rate_scale / (float) captured_period;
       if (position.step_reverse) in_rate = -in_rate;
-      int64_t cmd = StepToEncoderPosition(position.step_pos);
+      int64_t cmd = position.commanded_pos;
       int64_t err = cmd - planned_encoder_pos;
       int32_t clamped_err = (err > 2000000000LL) ? 2000000000 : ((err < -2000000000LL) ? -2000000000 : (int32_t) err);
       float eff_err = (float) clamped_err;
@@ -772,7 +753,7 @@ void Motion_Wakeup_Handler(void) {
     return;
   }
 
-  int64_t commanded = StepToEncoderPosition(position.step_pos);
+  int64_t commanded = position.commanded_pos;
   int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
 
   bool should_start = false;
@@ -819,7 +800,7 @@ static void CheckMotionIdle(void) {
     if ((now - last_step_time) < step_timeout_ms) {
       return;
     }
-    int64_t commanded = StepToEncoderPosition(position.step_pos);
+    int64_t commanded = position.commanded_pos;
     int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
     if (commanded == position.encoder_pos && position.encoder_pos == planned_encoder_pos && position.step_dcnt == 0 && abs_tension <= config.torque_t0) {
       TIM3->CR1 &= ~TIM_CR1_CEN;
@@ -878,7 +859,7 @@ void UpdateTick(void) {
     if (stall_tripped || !GetStepEnabled()) {
       should_start = (load_tension != 0);
     } else {
-      int64_t commanded = StepToEncoderPosition(position.step_pos);
+      int64_t commanded = position.commanded_pos;
       should_start = (commanded != position.encoder_pos) || (step_cnt != position.step_cnt_prev) || (abs_tension > config.torque_t0);
     }
     if (should_start) {
@@ -1113,10 +1094,12 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   ConfigStore_Load(ConfigStore_GetStm32FlashDriver(), CONFIG_FLASH_PAGE_ADDR, &config);
+  config.counts_per_step = (config.ratio_spr > 0) ? ((float) config.ratio_epr / (float) config.ratio_spr) : 4.0f;
 
   UpdatePositionCounters();
-  position.step_pos = 0;
+  position.commanded_pos = 0;
   position.encoder_pos = 0;
+  position.step_rem = 0;
   UpdateStepDirection();
   UpdateStepEnabled();
   Motion_Init();

@@ -8,8 +8,8 @@
 extern "C" {
 #endif
 
-int64_t StepToEncoderPositionConfig(const EmulatorConfig_t* cfg, int64_t step_position);
-int64_t EncoderToStepPositionConfig(const EmulatorConfig_t* cfg, int64_t encoder_position);
+uint16_t CalcGCD(uint16_t a, uint16_t b);
+int32_t ConvertStepDeltaToCounts(int32_t step_delta, uint16_t ratio_spr, uint16_t ratio_epr, int32_t* remainder);
 int32_t CalcMotorTorqueConfig(const EmulatorConfig_t* cfg, float speed_abs);
 int32_t CalcNetTorque(int32_t t_motor, int dir, int32_t load_tension);
 float CalcFreewheelVelocity(const EmulatorConfig_t* cfg, int32_t load_tension);

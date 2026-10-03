@@ -11,8 +11,8 @@ extern "C" {
 typedef struct {
   // Timing and Resolution
   uint16_t odr;               // Output Data Rate for periodic position reports (ms, 0 = disabled)
-  uint16_t epr;               // Encoder counts per revolution (quadrature edges)
-  uint16_t spr;               // Step pulses per revolution
+  uint16_t ratio_spr;         // Canonical step ratio (reduced by GCD)
+  uint16_t ratio_epr;         // Canonical encoder count ratio (reduced by GCD)
 
   // Torque-Speed Curve Parameters
   int32_t torque_t0;          // Maximum holding torque shelf below v_knee
@@ -25,12 +25,15 @@ typedef struct {
   float kp;                   // Proportional gain for position tracking error
   float kff;                  // Feedforward velocity gain for input pulse rate
   float kfree;                // Viscous freewheeling velocity coefficient under load tension
+
+  // Pre-calculated Kinematic Conversions
+  float counts_per_step;      // Pre-calculated ratio: (float) ratio_epr / (float) ratio_spr
 } EmulatorConfig_t;
 
 #define DEFAULT_EMULATOR_CONFIG { \
   .odr = 1000, \
-  .epr = 4000, \
-  .spr = 1000, \
+  .ratio_spr = 1, \
+  .ratio_epr = 4, \
   .torque_t0 = 1000, \
   .torque_v_knee = 1000, \
   .torque_v_max = 8000, \
@@ -39,6 +42,7 @@ typedef struct {
   .kp = 0.1f, \
   .kff = 1.0f, \
   .kfree = 0.005f, \
+  .counts_per_step = 4.0f, \
 }
 
 #ifdef __cplusplus

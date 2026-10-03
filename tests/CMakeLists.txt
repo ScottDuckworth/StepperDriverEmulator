@@ -45,6 +45,7 @@ add_test(NAME test_physics COMMAND $<TARGET_FILE:test_physics> WORKING_DIRECTORY
 add_executable(test_cmd
     test_cmd.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/cmd.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/motion_math.c
 )
 target_compile_definitions(test_cmd PRIVATE
     UNIT_TEST

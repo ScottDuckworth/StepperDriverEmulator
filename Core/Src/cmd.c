@@ -191,26 +191,16 @@ static void Cmd_odr(const Command_t* self) {
   SetOdr(value);
 }
 
-static void Cmd_epr(const Command_t* self) {
+static void Cmd_ratio(const Command_t* self) {
   if (argc == 1) {
-    ReportEpr();
+    ReportRatio();
     return;
   }
-  if (argc != 2) { InvalidUsage(self->usage); return; }
-  uint16_t value;
-  if (!StrToU16(argv[1], &value)) { InvalidValue("uint16", argv[1]); return; }
-  SetEpr(value);
-}
-
-static void Cmd_spr(const Command_t* self) {
-  if (argc == 1) {
-    ReportSpr();
-    return;
-  }
-  if (argc != 2) { InvalidUsage(self->usage); return; }
-  uint16_t value;
-  if (!StrToU16(argv[1], &value)) { InvalidValue("uint16", argv[1]); return; }
-  SetSpr(value);
+  if (argc != 3) { InvalidUsage(self->usage); return; }
+  uint16_t spr, epr;
+  if (!StrToU16(argv[1], &spr) || spr == 0) { InvalidValue("uint16 > 0", argv[1]); return; }
+  if (!StrToU16(argv[2], &epr) || epr == 0) { InvalidValue("uint16 > 0", argv[2]); return; }
+  SetRatio(spr, epr);
 }
 
 static void Cmd_kp(const Command_t* self) {
@@ -249,8 +239,7 @@ static void Cmd_blank(const Command_t* self) {
 static void Cmd_r(const Command_t* self) {
   if (argc != 1) { InvalidUsage(self->usage); return; }
   ReportOdr();
-  ReportEpr();
-  ReportSpr();
+  ReportRatio();
   ReportKp();
   ReportKff();
   ReportStepBlanking();
@@ -289,8 +278,7 @@ static const Command_t commands[] = {
     {"zero", "zero", Cmd_zero},
     {"blink", "blink [0|1]", Cmd_blink},
     {"odr", "odr <uint16>", Cmd_odr},
-    {"epr", "epr <uint16>", Cmd_epr},
-    {"spr", "spr <uint16>", Cmd_spr},
+    {"ratio", "ratio [spr] [epr]", Cmd_ratio},
     {"kp", "kp [float]", Cmd_kp},
     {"kff", "kff [float]", Cmd_kff},
     {"save", "save", Cmd_save},

@@ -16,7 +16,7 @@ It monitors standard stepper controller signals (**Step/PUL**, **Direction/DIR**
   * Captures pulse periods on PA5 via **TIM2** (running at 48 MHz) and streams captured timestamps through **DMA1 Channel 5**.
   * Direction is sampled with interrupt-level precision on PA4.
 * **Configurable Gear/Resolution Ratio:**
-  * Independent configuration of steps per revolution (`spr`) and encoder counts per revolution (`epr`).
+  * Configure steps per revolution and encoder counts per revolution via `ratio <spr> <epr>`, automatically reduced to canonical coprime integers.
 * **Physics & Torque Curve Modeling:**
   * Piecewise linear torque vs. speed curve ($T_0$, $V_{\text{knee}}$, $V_{\text{max}}$, $T_{\text{min}}$).
   * Real-time external load tension/torque input via USB (`t`).
@@ -243,8 +243,7 @@ The firmware uses a generalized, dimensionless coordinate system that models phy
 
 | Parameter / Variable | CLI Command | Firmware Unit | Dimension | Physical Meaning & Proportional Relationship |
 | :--- | :--- | :--- | :--- | :--- |
-| $\text{epr}$ | `epr` | counts / rev | $[C / \text{rev}]$ | Quadrature encoder resolution (4 edges per cycle) |
-| $\text{spr}$ | `spr` | steps / rev | $[S / \text{rev}]$ | Stepper controller input resolution (full/microsteps per revolution) |
+| $\text{ratio}$ | `ratio` | counts / step | $[C / S]$ | Canonical gear ratio: reduced $\text{spr}$ (steps/rev) to $\text{epr}$ (counts/rev) |
 | $T_0$ | `tcurve` | torque units | $[T]$ | Maximum holding torque capability at speeds $v \le V_{\text{knee}}$ |
 | $T_{\text{min}}$ | `tcurve` | torque units | $[T]$ | Residual pull-out torque at high speeds $v \ge V_{\text{max}}$ |
 | $V_{\text{knee}}$ | `tcurve` | counts / sec | $[C / s]$ | Knee speed below which torque is flat: $\omega_{\text{knee}} = \frac{V_{\text{knee}}}{\text{epr}}\text{ rev/s}$ |
@@ -338,8 +337,7 @@ Commands are sent via the USB Virtual COM Port (terminated with `\r` or `\n`).
 | `blink` | `blink [0\|1]` | Query or toggle yellow identify blink | `blink 1` | `blink 1\r\n` |
 | `zero` | `zero` | Zero encoder and step positions | `zero` | `pos 0\r\n` |
 | `odr` | `odr [uint16]` | Periodic position report rate in ms (`0` = off) | `odr 500` | `odr 500\r\n` |
-| `epr` | `epr [uint16]` | Encoder counts per revolution | `epr 4000` | `epr 4000\r\n` |
-| `spr` | `spr [uint16]` | Input steps per revolution | `spr 1000` | `spr 1000\r\n` |
+| `ratio` | `ratio [spr] [epr]` | Query or set canonical gear ratio (steps/rev and encoder counts/rev) | `ratio 1000 4000` | `ratio 1 4\r\n` |
 | `kp` | `kp [float]` | Query or set proportional position restoring gain in 1/ms (default: `0.1000`) | `kp 0.1` | `kp 0.1000\r\n` |
 | `kff` | `kff [float]` | Query or set velocity feedforward gain (default: `1.0000` for zero-lag tracking) | `kff 1.0` | `kff 1.0000\r\n` |
 | `lim1` | `lim1 <0\|1>` | Drive simulated limit switch 1 pin | `lim1 1` | `lim1 1\r\n` |
@@ -348,7 +346,7 @@ Commands are sent via the USB Virtual COM Port (terminated with `\r` or `\n`).
 | `r` | `r` | Dump full configuration and runtime status | `r` | Multi-line report (see below) |
 | `help` | `help` | Print command usage list | `help` | Usage list (see below) |
 
-> **Note on Queries:** Commands that accept optional parameters (`t`, `tcurve`, `stall`, `kfree`, `blank`, `blink`, `odr`, `epr`, `spr`, `kp`, `kff`) return the current value when issued with no arguments (e.g. typing `t` replies `t 0\r\n`, typing `odr` replies `odr 1000\r\n`).
+> **Note on Queries:** Commands that accept optional parameters (`t`, `tcurve`, `stall`, `kfree`, `blank`, `blink`, `odr`, `ratio`, `kp`, `kff`) return the current value when issued with no arguments (e.g. typing `t` replies `t 0\r\n`, typing `ratio` replies `ratio 1 4\r\n`, typing `odr` replies `odr 1000\r\n`).
 
 ### Full State Report (`r` command)
 
@@ -356,8 +354,7 @@ Executes `r` to print all parameters and live hardware states:
 
 ```text
 odr 1000
-epr 4000
-spr 1000
+ratio 1 4
 kp 0.1000
 kff 1.0000
 blank 3.5000
