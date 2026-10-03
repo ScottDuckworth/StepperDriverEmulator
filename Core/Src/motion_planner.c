@@ -170,20 +170,6 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
   }
   res->target_velocity = target_velocity;
 
-  if (error == 0 && input_rate == 0.0f) {
-    // error == 0 and input_rate == 0: motor is at target
-    float v_slip = CalcSlipVelocity(cfg, req->load_tension);
-    if (v_slip > 0.0f) {
-      res->dir = (req->load_tension > 0) ? 1 : -1;
-      res->count_to_emit = chunk_sz;
-      res->target_velocity = (res->dir > 0) ? (v_slip * 0.001f) : -(v_slip * 0.001f);
-    } else {
-      res->dir = 0;
-      res->count_to_emit = 0;
-    }
-    return;
-  }
-
   int dir = 0;
   if (input_rate > 0.0f) {
     dir = 1;
@@ -217,8 +203,8 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
     return;
   }
 
-  // Torque deficit: motor cannot advance in commanded direction
-  float v_slip = CalcSlipVelocity(cfg, req->load_tension);
+  // Torque deficit: tension exceeds motor torque capacity at speed (opposing or overrunning)
+  float v_slip = CalcSlipVelocity(cfg, req->load_tension, t_motor);
   if (v_slip > 0.0f) {
     res->dir = (req->load_tension > 0) ? 1 : -1;
     res->count_to_emit = chunk_sz;

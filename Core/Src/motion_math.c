@@ -37,7 +37,9 @@ int32_t CalcMotorTorqueConfig(const EmulatorConfig_t* cfg, float speed_abs) {
 }
 
 int32_t CalcNetTorque(int32_t t_motor, int dir, int32_t load_tension) {
-  return t_motor + dir * load_tension;
+  (void) dir;
+  int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
+  return t_motor - abs_tension;
 }
 
 float CalcFreewheelVelocity(const EmulatorConfig_t* cfg, int32_t load_tension) {
@@ -52,13 +54,13 @@ float CalcFreewheelVelocity(const EmulatorConfig_t* cfg, int32_t load_tension) {
   return v_free;
 }
 
-float CalcSlipVelocity(const EmulatorConfig_t* cfg, int32_t load_tension) {
+float CalcSlipVelocity(const EmulatorConfig_t* cfg, int32_t load_tension, int32_t t_motor) {
   if (!cfg) return 0.0f;
   int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
-  if (abs_tension <= cfg->torque_t0) {
+  if (abs_tension <= t_motor) {
     return 0.0f;
   }
-  float v_slip = (float)(abs_tension - cfg->torque_t0) * cfg->kfree;
+  float v_slip = (float)(abs_tension - t_motor) * cfg->kfree;
   float v_max = (float) cfg->torque_v_max;
   if (v_slip > v_max) {
     v_slip = v_max;

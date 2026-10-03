@@ -110,12 +110,13 @@ void test_planner_feedforward_rate(void) {
 }
 
 void test_planner_torque_deficit_stall_and_slip(void) {
-  // Commanded forward (+1), but opposing tension load_tension = -1500 exceeds motor T0 (1000)
-  // Net torque = 1000 + (1 * -1500) = -500 < 0
-  // Motor cannot advance; instead slips backward under load:
-  // v_slip = (1500 - 1000) * 1.0 = 500 counts/sec -> 0.5 counts/ms in direction -1
+  /* Commanded forward (+1) at low speed within knee:
+   * error = 2 -> target_velocity = 0.5 count/ms (500 counts/s <= v_knee 1000) -> T(v) = T0 = 1000
+   * Opposing tension load_tension = -1500 exceeds motor T0 (1000).
+   * Motor cannot advance; instead slips backward under load:
+   * v_slip = (1500 - 1000) * 1.0 = 500 counts/sec -> 0.5 counts/ms in direction -1 */
   Motion_PlanStepRequest_t req = {
-      .commanded_pos = 500,
+      .commanded_pos = 2,
       .planned_encoder_pos = 0,
       .load_tension = -1500,
       .now = 1000,
@@ -130,11 +131,19 @@ void test_planner_torque_deficit_stall_and_slip(void) {
 
   Motion_PlanStep(&config, &req, &res);
 
-  TEST_ASSERT_EQUAL_INT(-1, res.dir); // pulled backward
+  TEST_ASSERT_EQUAL_INT(-1, res.dir); /* pulled backward */
   TEST_ASSERT_EQUAL_UINT16(8, res.count_to_emit);
   TEST_ASSERT_FLOAT_WITHIN(0.01f, -0.5f, res.target_velocity);
-  TEST_ASSERT_FALSE(res.stall_tripped); // error 500 < threshold 4000
+  TEST_ASSERT_FALSE(res.stall_tripped); /* error 2 < threshold 4000 */
   TEST_ASSERT_FALSE(res.stall_trip_event);
+
+  /* At high commanded velocity (error = 500 -> 250,000 counts/s >= v_max 8000):
+   * Motor pull-out torque derates to t_min = 200.
+   * Dynamic slip velocity: v_slip = (1500 - 200) * 1.0 = 1300 counts/s -> 1.3 counts/ms in direction -1 */
+  req.commanded_pos = 500;
+  Motion_PlanStep(&config, &req, &res);
+  TEST_ASSERT_EQUAL_INT(-1, res.dir);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, -1.3f, res.target_velocity);
 }
 
 void test_planner_stall_trip_trigger_event(void) {
@@ -156,6 +165,49 @@ void test_planner_stall_trip_trigger_event(void) {
   Motion_PlanStep(&config, &req, &res);
 
   TEST_ASSERT_TRUE(res.stall_trip_event); // One-shot trigger event fired
+  TEST_ASSERT_TRUE(res.stall_tripped);
+  TEST_ASSERT_TRUE(res.is_freewheeling);
+}
+
+void test_planner_overrunning_aiding_tension_slip_and_stall(void) {
+  /* Commanded forward (+1) at low speed within knee:
+   * error = 2 -> target_velocity = 0.5 count/ms (500 counts/s <= v_knee 1000) -> T(v) = T0 = 1000
+   * Aiding tension load_tension = +1500 exceeds motor T0 (1000).
+   * Motor slips forward in direction of tension:
+   * v_slip = (1500 - 1000) * 1.0 = 500 counts/s -> 0.5 counts/ms in direction +1 */
+  Motion_PlanStepRequest_t req = {
+      .commanded_pos = 2,
+      .planned_encoder_pos = 0,
+      .load_tension = 1500,
+      .now = 1000,
+      .last_step_time = 0,
+      .step_period_cnt = 0,
+      .step_reverse = false,
+      .is_freewheeling = false,
+      .stall_tripped = false,
+      .chunk_size = 8
+  };
+  Motion_PlanStepResult_t res;
+  Motion_PlanStep(&config, &req, &res);
+
+  TEST_ASSERT_EQUAL_INT(1, res.dir); /* pulled forward in direction of tension */
+  TEST_ASSERT_EQUAL_UINT16(8, res.count_to_emit);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.5f, res.target_velocity);
+  TEST_ASSERT_FALSE(res.stall_tripped); /* error 2 < threshold 4000 */
+  TEST_ASSERT_FALSE(res.stall_trip_event);
+
+  /* At high speed (error = 500 -> 250,000 counts/s >= v_max 8000):
+   * Motor pull-out torque derates to t_min = 200.
+   * Dynamic slip velocity: v_slip = (1500 - 200) * 1.0 = 1300 counts/s -> 1.3 counts/ms in direction +1 */
+  req.commanded_pos = 500;
+  Motion_PlanStep(&config, &req, &res);
+  TEST_ASSERT_EQUAL_INT(1, res.dir);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 1.3f, res.target_velocity);
+
+  /* Stall trip event when error reaches or exceeds stall_threshold 4000 */
+  req.commanded_pos = 4000;
+  Motion_PlanStep(&config, &req, &res);
+  TEST_ASSERT_TRUE(res.stall_trip_event);
   TEST_ASSERT_TRUE(res.stall_tripped);
   TEST_ASSERT_TRUE(res.is_freewheeling);
 }
@@ -226,6 +278,37 @@ void test_planner_at_target_zero_error_stable(void) {
 
   TEST_ASSERT_EQUAL_INT(0, res.dir);
   TEST_ASSERT_EQUAL_UINT16(0, res.count_to_emit);
+}
+
+void test_planner_at_target_zero_error_tension_exceeds_holding_torque(void) {
+  /* At target (error = 0, input_rate = 0), external load tension 1500 exceeds holding torque t0 (1000).
+   * Motor slips in the direction of the tension (+1) at v_slip = (1500 - 1000) * 1.0 = 0.5 counts/ms */
+  Motion_PlanStepRequest_t req = {
+      .commanded_pos = 1000,
+      .planned_encoder_pos = 1000,
+      .load_tension = 1500,
+      .now = 1000,
+      .last_step_time = 0,
+      .step_period_cnt = 0,
+      .step_reverse = false,
+      .is_freewheeling = false,
+      .stall_tripped = false,
+      .chunk_size = 8
+  };
+  Motion_PlanStepResult_t res;
+
+  Motion_PlanStep(&config, &req, &res);
+
+  TEST_ASSERT_EQUAL_INT(1, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(8, res.count_to_emit);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.5f, res.target_velocity);
+
+  /* Negative tension exceeding holding torque slips in direction -1 */
+  req.load_tension = -1500;
+  Motion_PlanStep(&config, &req, &res);
+  TEST_ASSERT_EQUAL_INT(-1, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(8, res.count_to_emit);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, -0.5f, res.target_velocity);
 }
 
 void test_planner_null_safety(void) {
@@ -793,9 +876,11 @@ int main(void) {
   RUN_TEST(test_planner_feedforward_rate);
   RUN_TEST(test_planner_torque_deficit_stall_and_slip);
   RUN_TEST(test_planner_stall_trip_trigger_event);
+  RUN_TEST(test_planner_overrunning_aiding_tension_slip_and_stall);
   RUN_TEST(test_planner_freewheeling_under_tension);
   RUN_TEST(test_planner_freewheeling_zero_tension_stops);
   RUN_TEST(test_planner_at_target_zero_error_stable);
+  RUN_TEST(test_planner_at_target_zero_error_tension_exceeds_holding_torque);
   RUN_TEST(test_planner_null_safety);
   RUN_TEST(test_planner_default_config_gains);
   RUN_TEST(test_planner_continuous_streaming_zero_error);

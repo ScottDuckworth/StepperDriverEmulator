@@ -66,10 +66,13 @@ void test_net_torque_no_load(void) {
 
 void test_net_torque_aiding_load(void) {
   int32_t t_motor = 1000;
-  // Forward motion assisted by positive tension
-  TEST_ASSERT_EQUAL_INT32(1500, CalcNetTorque(t_motor, 1, 500));
-  // Reverse motion assisted by negative tension
-  TEST_ASSERT_EQUAL_INT32(1500, CalcNetTorque(t_motor, -1, -500));
+  // Forward motion with positive tension <= t_motor: margin is positive (+500)
+  TEST_ASSERT_EQUAL_INT32(500, CalcNetTorque(t_motor, 1, 500));
+  // Reverse motion with negative tension <= t_motor: margin is positive (+500)
+  TEST_ASSERT_EQUAL_INT32(500, CalcNetTorque(t_motor, -1, -500));
+  // Overrunning load exceeding t_motor: net margin is negative (-500)
+  TEST_ASSERT_EQUAL_INT32(-500, CalcNetTorque(t_motor, 1, 1500));
+  TEST_ASSERT_EQUAL_INT32(-500, CalcNetTorque(t_motor, -1, -1500));
 }
 
 void test_net_torque_opposing_sufficient(void) {
@@ -114,10 +117,10 @@ void test_slip_velocity_holding_torque(void) {
   test_config.kfree = 0.005f;
 
   // Below holding torque shelf -> rotor does not slip (returns 0.0f)
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, CalcSlipVelocity(&test_config, 500));
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, CalcSlipVelocity(&test_config, -500));
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, CalcSlipVelocity(&test_config, 1000));
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, CalcSlipVelocity(&test_config, -1000));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, CalcSlipVelocity(&test_config, 500, test_config.torque_t0));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, CalcSlipVelocity(&test_config, -500, test_config.torque_t0));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, CalcSlipVelocity(&test_config, 1000, test_config.torque_t0));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, CalcSlipVelocity(&test_config, -1000, test_config.torque_t0));
 }
 
 void test_slip_velocity_exceeding_holding_torque(void) {
@@ -126,11 +129,25 @@ void test_slip_velocity_exceeding_holding_torque(void) {
   test_config.kfree = 0.005f;
 
   // Tension 3000 exceeds t0 (1000) by 2000 -> slip = 2000 * 0.005 = 10.0
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 10.0f, CalcSlipVelocity(&test_config, 3000));
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 10.0f, CalcSlipVelocity(&test_config, -3000));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 10.0f, CalcSlipVelocity(&test_config, 3000, test_config.torque_t0));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 10.0f, CalcSlipVelocity(&test_config, -3000, test_config.torque_t0));
 
   // Huge tension -> clamped to v_max (8000)
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 8000.0f, CalcSlipVelocity(&test_config, 5000000));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 8000.0f, CalcSlipVelocity(&test_config, 5000000, test_config.torque_t0));
+}
+
+void test_slip_velocity_at_dynamic_torque(void) {
+  test_config.kfree = 0.005f;
+  test_config.torque_v_max = 8000;
+
+  // At high speed where motor torque derates to 400:
+  // Tension 300 <= t_motor 400 -> no slip
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, CalcSlipVelocity(&test_config, 300, 400));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, CalcSlipVelocity(&test_config, -300, 400));
+
+  // Tension 1400 exceeds t_motor 400 by 1000 -> slip = 1000 * 0.005 = 5.0 counts/sec
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 5.0f, CalcSlipVelocity(&test_config, 1400, 400));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 5.0f, CalcSlipVelocity(&test_config, -1400, 400));
 }
 
 int main(void) {
@@ -152,5 +169,6 @@ int main(void) {
   RUN_TEST(test_freewheel_velocity_clamping);
   RUN_TEST(test_slip_velocity_holding_torque);
   RUN_TEST(test_slip_velocity_exceeding_holding_torque);
+  RUN_TEST(test_slip_velocity_at_dynamic_torque);
   return UNITY_END();
 }

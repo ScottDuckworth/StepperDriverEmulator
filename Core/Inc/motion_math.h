@@ -13,7 +13,7 @@ int32_t ConvertStepDeltaToCounts(int32_t step_delta, uint16_t ratio_spr, uint16_
 int32_t CalcMotorTorqueConfig(const EmulatorConfig_t* cfg, float speed_abs);
 int32_t CalcNetTorque(int32_t t_motor, int dir, int32_t load_tension);
 float CalcFreewheelVelocity(const EmulatorConfig_t* cfg, int32_t load_tension);
-float CalcSlipVelocity(const EmulatorConfig_t* cfg, int32_t load_tension);
+float CalcSlipVelocity(const EmulatorConfig_t* cfg, int32_t load_tension, int32_t t_motor);
 
 #ifdef __cplusplus
 }
