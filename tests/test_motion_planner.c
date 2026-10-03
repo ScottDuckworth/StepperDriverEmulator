@@ -350,6 +350,96 @@ void test_planner_large_64bit_coordinates(void) {
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 2.5f, res.target_velocity); // kp = 0.5 * 5 = 2.5
 }
 
+void test_planner_low_frequency_feedforward_50hz(void) {
+  // 48 MHz / 960,000 ticks = 50 Hz steps
+  // 4000 epr / 1000 spr = 4.0 ratio -> input_rate = 50 * 4 = 200 counts/sec = 0.2 counts/ms
+  // With kff = 1.0, target_velocity = 0.2 counts/ms (takes 20 ms for 4 counts)
+  MotionPlanRequest_t req = {
+      .cfg = &config,
+      .commanded_pos = 100,
+      .planned_encoder_pos = 100, // zero error
+      .load_tension = 0,
+      .now = 120,
+      .last_step_time = 100, // 20 ms gap <= 50 ms timeout
+      .step_period_cnt = 960000,
+      .step_reverse = false,
+      .is_freewheeling = false,
+      .stall_tripped = false,
+      .chunk_size = 4
+  };
+  MotionPlanResult_t res;
+
+  PlanMotionStep(&req, &res);
+  TEST_ASSERT_EQUAL_INT(1, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.2f, res.target_velocity);
+}
+
+void test_planner_low_frequency_timeout_extension(void) {
+  // 20 Hz step rate: 48 MHz / 2,400,000 ticks = 50 ms period
+  // dynamic timeout = 50 + 25 + 10 = 85 ms
+  // input_rate = (48000 / 2400000) * 4.0 = 0.08 counts/ms
+  MotionPlanRequest_t req = {
+      .cfg = &config,
+      .commanded_pos = 100,
+      .planned_encoder_pos = 100,
+      .load_tension = 0,
+      .now = 170,
+      .last_step_time = 100, // 70 ms gap: > 50 ms old limit, but <= 85 ms dynamic timeout
+      .step_period_cnt = 2400000,
+      .step_reverse = false,
+      .is_freewheeling = false,
+      .stall_tripped = false,
+      .chunk_size = 4
+  };
+  MotionPlanResult_t res;
+
+  PlanMotionStep(&req, &res);
+  // Pacing remains active across 70 ms gap
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.08f, res.target_velocity);
+
+  // If time exceeds 85 ms dynamic timeout (e.g. 90 ms gap), input_rate drops to 0
+  req.now = 190;
+  PlanMotionStep(&req, &res);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, res.target_velocity);
+  TEST_ASSERT_EQUAL_UINT16(0, res.count_to_emit);
+}
+
+void test_planner_standstill_single_step_kp_pacing(void) {
+  // Single step from standstill: step_period_cnt = 0 (no frequency known)
+  // error = 4 counts (1 step at 4000 epr / 1000 spr)
+  // target_velocity must be kp * error
+  EmulatorConfig_t test_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
+  test_cfg.kp = 0.05f; // User sets kp = 0.05
+  test_cfg.kff = 1.0f;
+
+  MotionPlanRequest_t req = {
+      .cfg = &test_cfg,
+      .commanded_pos = 4,
+      .planned_encoder_pos = 0,
+      .load_tension = 0,
+      .now = 1000,
+      .last_step_time = 1000,
+      .step_period_cnt = 0,
+      .step_reverse = false,
+      .is_freewheeling = false,
+      .stall_tripped = false,
+      .chunk_size = 4
+  };
+  MotionPlanResult_t res;
+
+  PlanMotionStep(&req, &res);
+  TEST_ASSERT_EQUAL_INT(1, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
+  // Velocity is kp * 4 = 0.05 * 4 = 0.2 counts/ms (200 counts/s = 20 ms for 4 counts)
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.2f, res.target_velocity);
+
+  // With kp = 0.1: velocity is 0.1 * 4 = 0.4 counts/ms (10 ms for 4 counts)
+  test_cfg.kp = 0.1f;
+  PlanMotionStep(&req, &res);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.4f, res.target_velocity);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_planner_nominal_tracking_forward);
@@ -366,5 +456,8 @@ int main(void) {
   RUN_TEST(test_planner_continuous_streaming_zero_error);
   RUN_TEST(test_planner_soft_knee_error_attenuation);
   RUN_TEST(test_planner_large_64bit_coordinates);
+  RUN_TEST(test_planner_low_frequency_feedforward_50hz);
+  RUN_TEST(test_planner_low_frequency_timeout_extension);
+  RUN_TEST(test_planner_standstill_single_step_kp_pacing);
   return UNITY_END();
 }

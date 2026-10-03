@@ -31,8 +31,17 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
     return;
   }
 
+  uint32_t step_timeout_ms = 50;
+  if (req->step_period_cnt >= 240) {
+    uint32_t period_ms = req->step_period_cnt / 48000;
+    uint32_t dynamic_timeout = period_ms + (period_ms >> 1) + 10;
+    if (dynamic_timeout > step_timeout_ms) {
+      step_timeout_ms = (dynamic_timeout < 150) ? dynamic_timeout : 150;
+    }
+  }
+
   float input_rate = 0.0f;
-  if ((req->now - req->last_step_time) <= 50 && req->step_period_cnt >= 240 && req->cfg->spr > 0) {
+  if ((req->now - req->last_step_time) <= step_timeout_ms && req->step_period_cnt >= 240 && req->cfg->spr > 0) {
     input_rate = (48000.0f / (float) req->step_period_cnt) * ((float) req->cfg->epr / (float) req->cfg->spr);
     if (req->step_reverse) {
       input_rate = -input_rate;

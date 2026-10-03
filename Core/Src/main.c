@@ -470,6 +470,8 @@ void SetEncoderPosition(int64_t pos) {
   planned_encoder_pos = pos;
   half_0_delta = 0;
   half_1_delta = 0;
+  startup_sync_count = 0;
+  step_period_cnt = 0;
   for (int i = 0; i < TOTAL_BUFFER_SIZE; i++) {
     quad_buffer[i] = GetQuadBsrrValue(current_quad_state);
   }
@@ -619,9 +621,6 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
     } else {
       pace_velocity = 4.0f;
     }
-  } else if (startup_sync_count > 0 && config.spr > 0) {
-    float step_rate_nominal = ((float) config.epr / (float) config.spr);
-    pace_velocity = (res.dir >= 0) ? step_rate_nominal : -step_rate_nominal;
   }
 
   uint16_t psc = 0;
@@ -650,7 +649,7 @@ void Motion_Start(void) {
   }
 
   motion_active = true;
-  startup_sync_count = 2;
+  startup_sync_count = 1;
   planned_encoder_pos = position.encoder_pos;
 
   FillQuadChunk(&quad_buffer[0], &half_0_delta);
@@ -702,7 +701,15 @@ void Motion_Wakeup_Handler(void) {
         int64_t cmd = StepToEncoderPosition(position.step_pos);
         int64_t err = cmd - planned_encoder_pos;
         int32_t clamped_err = (err > 2000000000LL) ? 2000000000 : ((err < -2000000000LL) ? -2000000000 : (int32_t) err);
-        float v_target = config.kff * in_rate + config.kp * (float) clamped_err;
+        float eff_err = (float) clamped_err;
+        float step_counts = (float) config.epr / (float) config.spr;
+        if (step_counts > 0.0f) {
+          float abs_err = fabsf(eff_err);
+          if (abs_err <= step_counts) {
+            eff_err = (eff_err * abs_err) / step_counts;
+          }
+        }
+        float v_target = config.kff * in_rate + config.kp * eff_err;
         uint16_t psc = 0;
         uint16_t arr = 0;
         CalcTimerPacing(v_target, &psc, &arr);
@@ -713,8 +720,15 @@ void Motion_Wakeup_Handler(void) {
         }
       }
 
-      if (half_1_delta == 0) {
-        FillQuadChunk(&quad_buffer[CHUNK_SIZE], &half_1_delta);
+      uint32_t cndtr = DMA1_Channel3->CNDTR;
+      if (cndtr > CHUNK_SIZE) {
+        if (half_1_delta == 0) {
+          FillQuadChunk(&quad_buffer[CHUNK_SIZE], &half_1_delta);
+        }
+      } else {
+        if (half_0_delta == 0) {
+          FillQuadChunk(&quad_buffer[0], &half_0_delta);
+        }
       }
 
       if (startup_sync_count == 0) {
@@ -751,11 +765,24 @@ static void CheckMotionIdle(void) {
         TIM3->CR1 &= ~TIM_CR1_CEN;
         DMA1_Channel3->CCR &= ~DMA_CCR_EN;
         motion_active = false;
+        startup_sync_count = 0;
+        step_period_cnt = 0;
         if (GetStepEnabled()) {
           TIM2->SR = 0;
           TIM2->DIER |= TIM_DIER_CC1IE;
         }
       }
+      return;
+    }
+    uint32_t step_timeout_ms = 50;
+    if (startup_sync_count == 0 && step_period_cnt >= 240) {
+      uint32_t period_ms = step_period_cnt / 48000;
+      uint32_t dynamic_timeout = period_ms + (period_ms >> 1) + 10;
+      if (dynamic_timeout > step_timeout_ms) {
+        step_timeout_ms = (dynamic_timeout < 150) ? dynamic_timeout : 150;
+      }
+    }
+    if ((now - last_step_time) < step_timeout_ms) {
       return;
     }
     int64_t commanded = StepToEncoderPosition(position.step_pos);
@@ -764,6 +791,8 @@ static void CheckMotionIdle(void) {
       TIM3->CR1 &= ~TIM_CR1_CEN;
       DMA1_Channel3->CCR &= ~DMA_CCR_EN;
       motion_active = false;
+      startup_sync_count = 0;
+      step_period_cnt = 0;
       TIM2->SR = 0;
       TIM2->DIER |= TIM_DIER_CC1IE;
     }
@@ -787,6 +816,8 @@ void Motion_Init(void) {
   half_0_delta = 0;
   half_1_delta = 0;
   motion_active = false;
+  startup_sync_count = 0;
+  step_period_cnt = 0;
   planned_encoder_pos = position.encoder_pos;
 
   for (int i = 0; i < TOTAL_BUFFER_SIZE; i++) {
