@@ -66,8 +66,6 @@ jobs:
 
       - name: Set up ARM GCC Toolchain
         uses: carlosperate/arm-none-eabi-gcc-action@v1
-        with:
-          release: '12.3.Rel1'
 
       - name: Configure Release firmware
         run: cmake --preset Release
