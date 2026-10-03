@@ -1,5 +1,5 @@
-#ifndef __MOTION_PLANNER_H
-#define __MOTION_PLANNER_H
+#ifndef __MOTION_H
+#define __MOTION_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -8,6 +8,12 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* Motor pull-out torque and dynamic load calculations */
+int32_t Motion_CalcMotorTorque(const EmulatorConfig_t* cfg, float speed_abs);
+int32_t Motion_CalcNetTorque(int32_t t_motor, int dir, int32_t load_tension);
+float Motion_CalcFreewheelVelocity(const EmulatorConfig_t* cfg, int32_t load_tension);
+float Motion_CalcSlipVelocity(const EmulatorConfig_t* cfg, int32_t load_tension, int32_t t_motor);
 
 /* Motion start evaluation and state parameters */
 typedef struct {
@@ -141,4 +147,4 @@ bool Motion_ShouldStop(const EmulatorConfig_t* cfg, const Motion_StopRequest_t* 
 }
 #endif
 
-#endif /* __MOTION_PLANNER_H */
+#endif /* __MOTION_H */

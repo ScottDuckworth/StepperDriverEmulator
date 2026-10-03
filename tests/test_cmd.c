@@ -1,7 +1,7 @@
 #include "unity.h"
 #include "cmd.h"
 #include "main.h"
-#include "motion_math.h"
+#include "mathutil.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -169,7 +169,7 @@ void ReportOdr(void) { ReportU16("odr", GetOdr()); }
 
 bool SetRatio(uint16_t spr, uint16_t epr) {
   if (spr == 0 || epr == 0) return false;
-  uint16_t g = CalcGCD(spr, epr);
+  uint16_t g = MathUtil_CalcGCD(spr, epr);
   mock_config.ratio_spr = spr / g;
   mock_config.ratio_epr = epr / g;
   mock_config.counts_per_step = (float) mock_config.ratio_epr / (float) mock_config.ratio_spr;

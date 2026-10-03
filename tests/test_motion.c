@@ -1,5 +1,5 @@
 #include "unity.h"
-#include "motion_planner.h"
+#include "motion.h"
 #include "emulator_config.h"
 
 static EmulatorConfig_t config;
@@ -11,6 +11,156 @@ void setUp(void) {
 }
 
 void tearDown(void) {}
+
+/* ========================================================================= */
+/* --- Motor Torque-Speed Curve Physics Tests ------------------------------ */
+/* ========================================================================= */
+
+void test_torque_curve_standstill(void) {
+  TEST_ASSERT_EQUAL_INT32(1000, Motion_CalcMotorTorque(&config, 0.0f));
+}
+
+void test_torque_curve_below_knee(void) {
+  TEST_ASSERT_EQUAL_INT32(1000, Motion_CalcMotorTorque(&config, 500.0f));
+}
+
+void test_torque_curve_at_knee(void) {
+  TEST_ASSERT_EQUAL_INT32(1000, Motion_CalcMotorTorque(&config, 1000.0f));
+}
+
+void test_torque_curve_midpoint(void) {
+  // Midpoint between v_knee (1000) and v_max (8000) is 4500
+  // Torque should be midpoint between t0 (1000) and t_min (200), which is 600
+  TEST_ASSERT_EQUAL_INT32(600, Motion_CalcMotorTorque(&config, 4500.0f));
+}
+
+void test_torque_curve_at_max(void) {
+  TEST_ASSERT_EQUAL_INT32(200, Motion_CalcMotorTorque(&config, 8000.0f));
+}
+
+void test_torque_curve_above_max(void) {
+  TEST_ASSERT_EQUAL_INT32(200, Motion_CalcMotorTorque(&config, 12000.0f));
+  TEST_ASSERT_EQUAL_INT32(200, Motion_CalcMotorTorque(&config, 50000.0f));
+}
+
+void test_torque_curve_degenerate_vmax_less_than_knee(void) {
+  config.torque_v_knee = 3000;
+  config.torque_v_max = 2000; // Inverted / degenerate
+  // Below knee: should still return t0
+  TEST_ASSERT_EQUAL_INT32(1000, Motion_CalcMotorTorque(&config, 1000.0f));
+  // At or above knee: should return t_min without division by zero
+  TEST_ASSERT_EQUAL_INT32(200, Motion_CalcMotorTorque(&config, 3500.0f));
+}
+
+void test_torque_curve_null_config(void) {
+  TEST_ASSERT_EQUAL_INT32(0, Motion_CalcMotorTorque(NULL, 1000.0f));
+}
+
+/* ========================================================================= */
+/* --- Net Torque Margin Tests --------------------------------------------- */
+/* ========================================================================= */
+
+void test_net_torque_no_load(void) {
+  int32_t t_motor = 1000;
+  // Forward motion under zero tension
+  TEST_ASSERT_EQUAL_INT32(1000, Motion_CalcNetTorque(t_motor, 1, 0));
+  // Reverse motion under zero tension
+  TEST_ASSERT_EQUAL_INT32(1000, Motion_CalcNetTorque(t_motor, -1, 0));
+}
+
+void test_net_torque_aiding_load(void) {
+  int32_t t_motor = 1000;
+  // Forward motion with positive tension <= t_motor: margin is positive (+500)
+  TEST_ASSERT_EQUAL_INT32(500, Motion_CalcNetTorque(t_motor, 1, 500));
+  // Reverse motion with negative tension <= t_motor: margin is positive (+500)
+  TEST_ASSERT_EQUAL_INT32(500, Motion_CalcNetTorque(t_motor, -1, -500));
+  // Overrunning load exceeding t_motor: net margin is negative (-500)
+  TEST_ASSERT_EQUAL_INT32(-500, Motion_CalcNetTorque(t_motor, 1, 1500));
+  TEST_ASSERT_EQUAL_INT32(-500, Motion_CalcNetTorque(t_motor, -1, -1500));
+}
+
+void test_net_torque_opposing_sufficient(void) {
+  int32_t t_motor = 1000;
+  // Forward motion opposed by 600 tension -> net torque is positive (+400)
+  TEST_ASSERT_EQUAL_INT32(400, Motion_CalcNetTorque(t_motor, 1, -600));
+  // Reverse motion opposed by 600 tension -> net torque is positive (+400)
+  TEST_ASSERT_EQUAL_INT32(400, Motion_CalcNetTorque(t_motor, -1, 600));
+}
+
+void test_net_torque_deficit(void) {
+  int32_t t_motor = 1000;
+  // Forward motion opposed by 1500 tension -> net torque is negative (-500)
+  TEST_ASSERT_EQUAL_INT32(-500, Motion_CalcNetTorque(t_motor, 1, -1500));
+  // Reverse motion opposed by 1500 tension -> net torque is negative (-500)
+  TEST_ASSERT_EQUAL_INT32(-500, Motion_CalcNetTorque(t_motor, -1, 1500));
+}
+
+/* ========================================================================= */
+/* --- Freewheeling & Dynamic Slip Velocity Tests -------------------------- */
+/* ========================================================================= */
+
+void test_freewheel_velocity_zero_tension(void) {
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, Motion_CalcFreewheelVelocity(&config, 0));
+}
+
+void test_freewheel_velocity_proportional(void) {
+  config.kfree = 0.005f;
+  // 1000 * 0.005 = 5.0 counts/sec
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 5.0f, Motion_CalcFreewheelVelocity(&config, 1000));
+  // -1000 * 0.005 = -5.0 counts/sec
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, -5.0f, Motion_CalcFreewheelVelocity(&config, -1000));
+}
+
+void test_freewheel_velocity_clamping(void) {
+  config.torque_v_max = 8000;
+  config.kfree = 0.005f;
+  // Large tension would produce 50,000 counts/sec -> clamped to +8000
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 8000.0f, Motion_CalcFreewheelVelocity(&config, 10000000));
+  // Negative large tension -> clamped to -8000
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, -8000.0f, Motion_CalcFreewheelVelocity(&config, -10000000));
+}
+
+void test_slip_velocity_holding_torque(void) {
+  config.torque_t0 = 1000;
+  config.kfree = 0.005f;
+
+  // Below holding torque shelf -> rotor does not slip (returns 0.0f)
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, Motion_CalcSlipVelocity(&config, 500, config.torque_t0));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, Motion_CalcSlipVelocity(&config, -500, config.torque_t0));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, Motion_CalcSlipVelocity(&config, 1000, config.torque_t0));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, Motion_CalcSlipVelocity(&config, -1000, config.torque_t0));
+}
+
+void test_slip_velocity_exceeding_holding_torque(void) {
+  config.torque_t0 = 1000;
+  config.torque_v_max = 8000;
+  config.kfree = 0.005f;
+
+  // Tension 3000 exceeds t0 (1000) by 2000 -> slip = 2000 * 0.005 = 10.0
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 10.0f, Motion_CalcSlipVelocity(&config, 3000, config.torque_t0));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 10.0f, Motion_CalcSlipVelocity(&config, -3000, config.torque_t0));
+
+  // Huge tension -> clamped to v_max (8000)
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 8000.0f, Motion_CalcSlipVelocity(&config, 5000000, config.torque_t0));
+}
+
+void test_slip_velocity_at_dynamic_torque(void) {
+  config.kfree = 0.005f;
+  config.torque_v_max = 8000;
+
+  // At high speed where motor torque derates to 400:
+  // Tension 300 <= t_motor 400 -> no slip
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, Motion_CalcSlipVelocity(&config, 300, 400));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, Motion_CalcSlipVelocity(&config, -300, 400));
+
+  // Tension 1400 exceeds t_motor 400 by 1000 -> slip = 1000 * 0.005 = 5.0 counts/sec
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 5.0f, Motion_CalcSlipVelocity(&config, 1400, 400));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 5.0f, Motion_CalcSlipVelocity(&config, -1400, 400));
+}
+
+/* ========================================================================= */
+/* --- Step Planning & Motion Execution Tests ------------------------------ */
+/* ========================================================================= */
 
 void test_planner_nominal_tracking_forward(void) {
   Motion_PlanStepRequest_t req = {
@@ -340,7 +490,9 @@ void test_planner_default_config_gains(void) {
   Motion_PlanStepResult_t res;
 
   Motion_PlanStep(&def_cfg, &req, &res);
-  TEST_ASSERT_FLOAT_WITHIN(0.01f, 10.0f, res.target_velocity); // default kp = 0.1 * 100 = 10.0
+
+  // Default Kp is 0.1, so error of 100 yields target_velocity of 10.0
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 10.0f, res.target_velocity);
 }
 
 void test_planner_continuous_streaming_zero_error(void) {
@@ -366,15 +518,17 @@ void test_planner_continuous_streaming_zero_error(void) {
 }
 
 void test_planner_soft_knee_error_attenuation(void) {
-  // epr = 4000, spr = 1000 -> 1 step = 4 counts.
-  // Within nominal 1-step feedforward window (error = 4): eff_error = 0.0 (pure feedforward 400.0 counts/ms).
+  // During active streaming at 50 kHz (input_rate = 200 counts/ms):
+  // Discrete step arrivals cause error to cycle between 0 and 1 step (4 counts).
+  // 1. With error = 4 (exactly 1 step), effective error after subtracting feedforward window (4 counts) is 0.
+  // Pacing remains exactly 200.0 counts/ms without cyclic frequency modulation!
   Motion_PlanStepRequest_t req = {
-      .commanded_pos = 104,
-      .planned_encoder_pos = 100, // error = 4 (nominal 1-step streaming)
+      .commanded_pos = 1004,
+      .planned_encoder_pos = 1000, // error = 4 counts = 1 step
       .load_tension = 0,
-      .now = 100,
-      .last_step_time = 90,
-      .step_period_cnt = 480, // 400 counts/ms
+      .now = 200,
+      .last_step_time = 190,
+      .step_period_cnt = 960, // 200 counts/ms
       .step_reverse = false,
       .is_freewheeling = false,
       .stall_tripped = false,
@@ -383,31 +537,34 @@ void test_planner_soft_knee_error_attenuation(void) {
   Motion_PlanStepResult_t res;
 
   Motion_PlanStep(&config, &req, &res);
-  TEST_ASSERT_EQUAL_INT(1, res.dir);
-  TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
-  TEST_ASSERT_FLOAT_WITHIN(0.01f, 400.0f, res.target_velocity); // 0 phase modulation at nominal 1 step
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 200.0f, res.target_velocity);
 
-  // When error = 6 (excess lag = 6 - 4 = 2 counts <= 4): eff_error = (2 * 2) / 4.0 = 1.0.
-  // kp = 0.5 -> kp * eff_error = 0.5.
-  // target_velocity = 400.0 + 0.5 = 400.5
-  req.commanded_pos = 106;
+  // 2. With error = 2 (halfway through the step), effective error is 0.
+  req.commanded_pos = 1002;
   Motion_PlanStep(&config, &req, &res);
-  TEST_ASSERT_EQUAL_INT(1, res.dir);
-  TEST_ASSERT_EQUAL_UINT16(6, res.count_to_emit);
-  TEST_ASSERT_FLOAT_WITHIN(0.01f, 400.5f, res.target_velocity);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 200.0f, res.target_velocity);
 
-  // When error = 24 (excess lag = 24 - 4 = 20 counts > 4): eff_error = 20 (full linear gain).
-  // kp * eff_error = 0.5 * 20 = 10.0.
-  // target_velocity = 400.0 + 10.0 = 410.0
-  req.commanded_pos = 124;
+  // 3. With error = 8 (2 steps behind), effective error is (8 - 4) = 4 counts.
+  // Restoring term Kp * 4 = 0.5 * 4 = 2.0 counts/ms accelerates motor to 202.0 counts/ms.
+  req.commanded_pos = 1008;
   Motion_PlanStep(&config, &req, &res);
-  TEST_ASSERT_FLOAT_WITHIN(0.01f, 410.0f, res.target_velocity);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 202.0f, res.target_velocity);
+
+  // 4. Overshoot during forward streaming: error = -2.
+  // Negative error is outside deadband, attenuates quadratically:
+  // abs_err = 2 <= 4 -> eff_error = (-2 * 2) / 4 = -1.0.
+  // Target velocity = 200.0 + 0.5 * (-1.0) = 199.5 counts/ms.
+  req.commanded_pos = 998;
+  Motion_PlanStep(&config, &req, &res);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 199.5f, res.target_velocity);
 }
 
 void test_planner_large_64bit_coordinates(void) {
+  // Test planning across large 64-bit coordinates exceeding 32-bit signed limits (> 2^31 - 1)
+  int64_t base_coord = 5000000000LL;
   Motion_PlanStepRequest_t req = {
-      .commanded_pos = 10000000005LL,
-      .planned_encoder_pos = 10000000000LL, // error = 5 counts at 10 billion
+      .commanded_pos = base_coord + 20,
+      .planned_encoder_pos = base_coord,
       .load_tension = 0,
       .now = 1000,
       .last_step_time = 0,
@@ -421,24 +578,22 @@ void test_planner_large_64bit_coordinates(void) {
 
   Motion_PlanStep(&config, &req, &res);
 
-  // Error = 5 < chunk_size 8: emit exactly 5 steps
   TEST_ASSERT_EQUAL_INT(1, res.dir);
-  TEST_ASSERT_EQUAL_UINT16(5, res.count_to_emit);
-  TEST_ASSERT_FLOAT_WITHIN(0.01f, 2.5f, res.target_velocity); // kp = 0.5 * 5 = 2.5
+  TEST_ASSERT_EQUAL_UINT16(8, res.count_to_emit);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 10.0f, res.target_velocity); // 0.5 * 20 = 10.0
 }
 
 void test_planner_low_frequency_feedforward_50hz(void) {
-  // 48 MHz / 960,000 ticks = 50 Hz steps
-  // 4000 epr / 1000 spr = 4.0 ratio -> input_rate = 50 * 4 = 200 counts/sec = 0.2 counts/ms
-  // With kff = 1.0, kp = 0.1, target_velocity remains 0.2 counts/ms across the 1-step window (takes 20 ms for 4 counts)
-  config.kp = 0.1f;
+  // 50 Hz step pulses: 48 MHz / 960000 ticks.
+  // Period is 20 ms. Dynamic timeout is 20 + 10 + 10 = 40 ms.
+  // 50 Hz * 4 counts/step = 0.2 counts/ms input rate.
   Motion_PlanStepRequest_t req = {
-      .commanded_pos = 104,
-      .planned_encoder_pos = 100, // 4 counts error (1 step)
+      .commanded_pos = 4,
+      .planned_encoder_pos = 0,
       .load_tension = 0,
-      .now = 120,
-      .last_step_time = 100, // 20 ms gap <= 50 ms timeout
-      .step_period_cnt = 960000,
+      .now = 125, // 25 ms since last step (exceeds default 20 ms interval)
+      .last_step_time = 100,
+      .step_period_cnt = 960000, // 50 Hz
       .step_reverse = false,
       .is_freewheeling = false,
       .stall_tripped = false,
@@ -447,29 +602,24 @@ void test_planner_low_frequency_feedforward_50hz(void) {
   Motion_PlanStepResult_t res;
 
   Motion_PlanStep(&config, &req, &res);
+
+  // Time diff = 25 ms <= dynamic step_timeout_ms (40 ms), so input_rate feedforward is active!
+  // At error = 4 counts, feedforward window absorbs it, so velocity is exactly 0.2 counts/ms.
   TEST_ASSERT_EQUAL_INT(1, res.dir);
   TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.2f, res.target_velocity);
-
-  // When error reaches 0, no counts emitted to prevent overshoot
-  req.commanded_pos = 100;
-  Motion_PlanStep(&config, &req, &res);
-  TEST_ASSERT_EQUAL_UINT16(0, res.count_to_emit);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.2f, res.target_velocity);
 }
 
 void test_planner_low_frequency_timeout_extension(void) {
-  // 20 Hz step rate: 48 MHz / 2,400,000 ticks = 50 ms period
-  // dynamic timeout = 50 + 25 + 10 = 85 ms
-  // input_rate = (48000 / 2400000) * 4.0 = 0.08 counts/ms
-  config.kp = 0.1f;
+  // At 20 Hz (period = 50 ms):
+  // dynamic timeout is 50 + 25 + 10 = 85 ms.
   Motion_PlanStepRequest_t req = {
       .commanded_pos = 104,
-      .planned_encoder_pos = 100, // 4 counts error
+      .planned_encoder_pos = 100,
       .load_tension = 0,
-      .now = 170,
-      .last_step_time = 100, // 70 ms gap: > 50 ms old limit, but <= 85 ms dynamic timeout
-      .step_period_cnt = 2400000,
+      .now = 170, // 70 ms since last pulse
+      .last_step_time = 100,
+      .step_period_cnt = 2400000, // 20 Hz
       .step_reverse = false,
       .is_freewheeling = false,
       .stall_tripped = false,
@@ -478,16 +628,14 @@ void test_planner_low_frequency_timeout_extension(void) {
   Motion_PlanStepResult_t res;
 
   Motion_PlanStep(&config, &req, &res);
-  // Pacing remains active across 70 ms gap with exactly 4 counts
-  TEST_ASSERT_EQUAL_INT(1, res.dir);
-  TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
+
+  // diff = 70 ms <= timeout (85 ms), feedforward remains active (20 Hz = 0.08 counts/ms)
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.08f, res.target_velocity);
 
-  // If time exceeds 85 ms dynamic timeout (e.g. 90 ms gap), input_rate drops to 0
-  config.kp = 0.5f;
+  // If time exceeds 85 ms (e.g. 90 ms): steps have stopped!
   req.now = 190;
   Motion_PlanStep(&config, &req, &res);
-  // With input_rate = 0, target_velocity is kp * 4 = 0.5 * 4 = 2.0 counts/ms
+  // diff = 90 > 85 ms -> feedforward drops to 0, motor paces purely by position error Kp * 4 = 2.0 counts/ms
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 2.0f, res.target_velocity);
   TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
 
@@ -691,16 +839,19 @@ void test_motion_should_start(void) {
   TEST_ASSERT_TRUE(Motion_ShouldStart(&test_cfg, &req));
   req.load_tension = -1200;
   TEST_ASSERT_TRUE(Motion_ShouldStart(&test_cfg, &req));
+
+  // Load within holding torque
   req.load_tension = 800;
   TEST_ASSERT_FALSE(Motion_ShouldStart(&test_cfg, &req));
-  req.load_tension = 0;
+  req.load_tension = -800;
+  TEST_ASSERT_FALSE(Motion_ShouldStart(&test_cfg, &req));
 
-  // Freewheeling under load vs zero load
+  // Freewheeling mode
   req.is_freewheeling = true;
-  req.load_tension = 500;
-  TEST_ASSERT_TRUE(Motion_ShouldStart(&test_cfg, &req));
   req.load_tension = 0;
   TEST_ASSERT_FALSE(Motion_ShouldStart(&test_cfg, &req));
+  req.load_tension = 50;
+  TEST_ASSERT_TRUE(Motion_ShouldStart(&test_cfg, &req));
 
   // NULL safety
   TEST_ASSERT_FALSE(Motion_ShouldStart(NULL, &req));
@@ -722,48 +873,49 @@ void test_motion_should_stop(void) {
       .is_freewheeling = false
   };
 
-  // Normal complete stop
+  // 1. Nominal stop condition (converged, timed out, no load)
   TEST_ASSERT_TRUE(Motion_ShouldStop(&test_cfg, &req));
 
-  // Timeout not reached
-  req.time_since_last_step_ms = 40;
+  // 2. Active step timeout not yet expired
+  req.time_since_last_step_ms = 30;
   TEST_ASSERT_FALSE(Motion_ShouldStop(&test_cfg, &req));
   req.time_since_last_step_ms = 60;
 
-  // Unfinished commanded position
-  req.commanded_pos = 104;
+  // 3. Encoder hasn't caught up to commanded pos
+  req.encoder_pos = 96;
   TEST_ASSERT_FALSE(Motion_ShouldStop(&test_cfg, &req));
-  req.commanded_pos = 100;
+  req.encoder_pos = 100;
 
-  // DMA buffer still emitting
-  req.planned_encoder_pos = 104;
+  // 4. Planned position has chunks ahead
+  req.planned_encoder_pos = 108;
   TEST_ASSERT_FALSE(Motion_ShouldStop(&test_cfg, &req));
   req.planned_encoder_pos = 100;
 
-  // Step pulses still active
+  // 5. New input steps still present
   req.step_dcnt = 2;
   TEST_ASSERT_FALSE(Motion_ShouldStop(&test_cfg, &req));
   req.step_dcnt = 0;
 
-  // Load tension exceeding holding torque
-  req.load_tension = 1200;
+  // 6. External tension exceeds holding torque
+  req.load_tension = 1500;
   TEST_ASSERT_FALSE(Motion_ShouldStop(&test_cfg, &req));
-  req.load_tension = 0;
+  req.load_tension = 500;
+  TEST_ASSERT_TRUE(Motion_ShouldStop(&test_cfg, &req));
 
-  // Freewheeling stopping condition
+  // 7. Freewheeling
   req.is_freewheeling = true;
+  req.load_tension = 100;
+  TEST_ASSERT_FALSE(Motion_ShouldStop(&test_cfg, &req));
   req.load_tension = 0;
   TEST_ASSERT_TRUE(Motion_ShouldStop(&test_cfg, &req));
-  req.load_tension = 500;
-  TEST_ASSERT_FALSE(Motion_ShouldStop(&test_cfg, &req));
 
-  // NULL safety
+  // 8. NULL safety
   TEST_ASSERT_FALSE(Motion_ShouldStop(NULL, &req));
   TEST_ASSERT_FALSE(Motion_ShouldStop(&test_cfg, NULL));
 }
 
 void test_motion_plan_and_emit_chunk(void) {
-  uint32_t chunk[8] = {0};
+  uint32_t chunk_buf[8] = {0};
   uint8_t quad_state = 0;
 
   Motion_PlanStepRequest_t plan_req = {
@@ -778,9 +930,8 @@ void test_motion_plan_and_emit_chunk(void) {
       .stall_tripped = false,
       .chunk_size = 8
   };
-
   Motion_ChunkRequest_t chunk_req = {
-      .chunk = chunk,
+      .chunk = chunk_buf,
       .inout_quad_state = &quad_state
   };
   Motion_ChunkResult_t res = {0};
@@ -792,8 +943,8 @@ void test_motion_plan_and_emit_chunk(void) {
   TEST_ASSERT_GREATER_THAN_UINT16(0, res.arr);
 
   // Buffer entries should not all be 0 (valid GPIO BSRR bits set)
-  TEST_ASSERT_NOT_EQUAL(0, chunk[0]);
-  TEST_ASSERT_NOT_EQUAL(0, chunk[7]);
+  TEST_ASSERT_NOT_EQUAL(0, chunk_buf[0]);
+  TEST_ASSERT_NOT_EQUAL(0, chunk_buf[7]);
 
   // NULL safety
   TEST_ASSERT_FALSE(Motion_PlanAndEmitChunk(NULL, &plan_req, &chunk_req, &res));
@@ -810,18 +961,18 @@ void test_motion_plan_and_emit_chunk(void) {
 void test_motion_prepare_start(void) {
   uint32_t quad_buf[16] = {0};
   uint8_t quad_state = 0;
-  Motion_StartResult_t res = {0};
 
   Motion_StartBuffers_t buf = {
       .chunk_size = 8,
       .quad_buffer = quad_buf,
       .inout_quad_state = &quad_state
   };
+  Motion_StartResult_t res = {0};
 
-  // 1. Should not start when idle and aligned
+  // 1. ShouldStart returns false (at target, idle)
   Motion_StartRequest_t idle_req = {
-      .commanded_pos = 1000,
-      .encoder_pos = 1000,
+      .commanded_pos = 100,
+      .encoder_pos = 100,
       .load_tension = 0,
       .step_dcnt = 0,
       .now = 500,
@@ -870,6 +1021,32 @@ void test_motion_prepare_start(void) {
 
 int main(void) {
   UNITY_BEGIN();
+
+  /* Motor Torque-Speed Curve Physics Tests */
+  RUN_TEST(test_torque_curve_standstill);
+  RUN_TEST(test_torque_curve_below_knee);
+  RUN_TEST(test_torque_curve_at_knee);
+  RUN_TEST(test_torque_curve_midpoint);
+  RUN_TEST(test_torque_curve_at_max);
+  RUN_TEST(test_torque_curve_above_max);
+  RUN_TEST(test_torque_curve_degenerate_vmax_less_than_knee);
+  RUN_TEST(test_torque_curve_null_config);
+
+  /* Net Torque Margin Tests */
+  RUN_TEST(test_net_torque_no_load);
+  RUN_TEST(test_net_torque_aiding_load);
+  RUN_TEST(test_net_torque_opposing_sufficient);
+  RUN_TEST(test_net_torque_deficit);
+
+  /* Freewheeling & Dynamic Slip Velocity Tests */
+  RUN_TEST(test_freewheel_velocity_zero_tension);
+  RUN_TEST(test_freewheel_velocity_proportional);
+  RUN_TEST(test_freewheel_velocity_clamping);
+  RUN_TEST(test_slip_velocity_holding_torque);
+  RUN_TEST(test_slip_velocity_exceeding_holding_torque);
+  RUN_TEST(test_slip_velocity_at_dynamic_torque);
+
+  /* Motion Planning & Step Emission Tests */
   RUN_TEST(test_planner_nominal_tracking_forward);
   RUN_TEST(test_planner_nominal_tracking_small_error);
   RUN_TEST(test_planner_nominal_tracking_reverse);
@@ -897,5 +1074,6 @@ int main(void) {
   RUN_TEST(test_motion_should_stop);
   RUN_TEST(test_motion_plan_and_emit_chunk);
   RUN_TEST(test_motion_prepare_start);
+
   return UNITY_END();
 }

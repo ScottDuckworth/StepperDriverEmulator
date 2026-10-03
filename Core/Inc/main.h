@@ -37,11 +37,11 @@ typedef void TIM_HandleTypeDef;
 
 #include <stdbool.h>
 #include "emulator_config.h"
-#include "motion_math.h"
+#include "position.h"
+#include "motion.h"
 #include "quadrature.h"
 #include "led_control.h"
-#include "position_tracker.h"
-#include "motion_planner.h"
+#include "mathutil.h"
 
 /* USER CODE END Includes */
 
@@ -142,8 +142,6 @@ float GetStepBlanking(void);
 void SetStepBlanking(float blank_us);
 void ReportStepBlanking(void);
 
-int32_t CalcMotorTorqueConfig(const EmulatorConfig_t* cfg, float speed_abs);
-int32_t CalcMotorTorque(float speed_abs);
 
 bool GetStallTrip(void);
 void ReportStallTrip(void);

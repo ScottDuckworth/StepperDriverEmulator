@@ -434,7 +434,7 @@ cmake --build --preset host-test
 ctest --preset host-test
 
 # Or run the test executable directly for verbose breakdown:
-./build/host-test/tests/Debug/test_coordinates.exe
+./build/host-test/tests/Debug/test_position.exe
 ```
 
 ---

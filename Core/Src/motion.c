@@ -1,8 +1,53 @@
-#include "motion_planner.h"
-#include "motion_math.h"
+#include "motion.h"
 #include "quadrature.h"
 #include <math.h>
 #include <stdlib.h>
+
+int32_t Motion_CalcMotorTorque(const EmulatorConfig_t* cfg, float speed_abs) {
+  if (!cfg) return 0;
+  uint32_t v = (uint32_t) speed_abs;
+  if (v <= cfg->torque_v_knee) {
+    return cfg->torque_t0;
+  }
+  if (v >= cfg->torque_v_max || cfg->torque_v_max <= cfg->torque_v_knee) {
+    return cfg->torque_t_min;
+  }
+  int32_t num = (cfg->torque_t0 - cfg->torque_t_min) * (int32_t)(v - cfg->torque_v_knee);
+  int32_t den = (int32_t)(cfg->torque_v_max - cfg->torque_v_knee);
+  return (den > 0) ? (cfg->torque_t0 - (num / den)) : cfg->torque_t_min;
+}
+
+int32_t Motion_CalcNetTorque(int32_t t_motor, int dir, int32_t load_tension) {
+  (void) dir;
+  int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
+  return t_motor - abs_tension;
+}
+
+float Motion_CalcFreewheelVelocity(const EmulatorConfig_t* cfg, int32_t load_tension) {
+  if (!cfg) return 0.0f;
+  float v_free = (float) load_tension * cfg->kfree;
+  float v_max = (float) cfg->torque_v_max;
+  if (v_free > v_max) {
+    v_free = v_max;
+  } else if (v_free < -v_max) {
+    v_free = -v_max;
+  }
+  return v_free;
+}
+
+float Motion_CalcSlipVelocity(const EmulatorConfig_t* cfg, int32_t load_tension, int32_t t_motor) {
+  if (!cfg) return 0.0f;
+  int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
+  if (abs_tension <= t_motor) {
+    return 0.0f;
+  }
+  float v_slip = (float)(abs_tension - t_motor) * cfg->kfree;
+  float v_max = (float) cfg->torque_v_max;
+  if (v_slip > v_max) {
+    v_slip = v_max;
+  }
+  return v_slip;
+}
 
 bool Motion_ShouldStart(const EmulatorConfig_t* cfg, const Motion_StartRequest_t* req) {
   if (!cfg || !req) return false;
@@ -88,7 +133,7 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
   uint16_t chunk_sz = (req->chunk_size > 0) ? req->chunk_size : 8;
 
   if (req->is_freewheeling) {
-    float v_free = CalcFreewheelVelocity(cfg, req->load_tension);
+    float v_free = Motion_CalcFreewheelVelocity(cfg, req->load_tension);
     if (v_free != 0.0f) {
       res->dir = (v_free > 0.0f) ? 1 : -1;
       res->count_to_emit = chunk_sz;
@@ -184,8 +229,8 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
   }
 
   float speed_hz = fabsf(target_velocity) * 1000.0f;
-  int32_t t_motor = CalcMotorTorqueConfig(cfg, speed_hz);
-  int32_t t_net = CalcNetTorque(t_motor, dir, req->load_tension);
+  int32_t t_motor = Motion_CalcMotorTorque(cfg, speed_hz);
+  int32_t t_net = Motion_CalcNetTorque(t_motor, dir, req->load_tension);
   uint32_t abs_error = (error < 0) ? (0U - (uint32_t) error) : (uint32_t) error;
 
   if (t_net >= 0) {
@@ -204,7 +249,7 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
   }
 
   // Torque deficit: tension exceeds motor torque capacity at speed (opposing or overrunning)
-  float v_slip = CalcSlipVelocity(cfg, req->load_tension, t_motor);
+  float v_slip = Motion_CalcSlipVelocity(cfg, req->load_tension, t_motor);
   if (v_slip > 0.0f) {
     res->dir = (req->load_tension > 0) ? 1 : -1;
     res->count_to_emit = chunk_sz;

@@ -9,43 +9,44 @@ FetchContent_MakeAvailable(unity)
 
 add_compile_definitions(UNITY_SUPPORT_64)
 
-# 1. Coordinate Math Test
-add_executable(test_coordinates
-    test_coordinates.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/motion_math.c
+# 1. Position Tracking & Coordinates Test
+add_executable(test_position
+    test_position.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/position.c
 )
-target_include_directories(test_coordinates PRIVATE
+target_include_directories(test_position PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Inc
 )
-target_link_libraries(test_coordinates PRIVATE
+target_link_libraries(test_position PRIVATE
     unity
 )
 if(UNIX)
-    target_link_libraries(test_coordinates PRIVATE m)
+    target_link_libraries(test_position PRIVATE m)
 endif()
-add_test(NAME test_coordinates COMMAND $<TARGET_FILE:test_coordinates> WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+add_test(NAME test_position COMMAND $<TARGET_FILE:test_position> WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
-# 2. Motor Physics & Dynamics Test
-add_executable(test_physics
-    test_physics.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/motion_math.c
+# 2. Motion Physics & Step Planning Test
+add_executable(test_motion
+    test_motion.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/motion.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/quadrature.c
 )
-target_include_directories(test_physics PRIVATE
+target_include_directories(test_motion PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Inc
 )
-target_link_libraries(test_physics PRIVATE
+target_link_libraries(test_motion PRIVATE
     unity
 )
 if(UNIX)
-    target_link_libraries(test_physics PRIVATE m)
+    target_link_libraries(test_motion PRIVATE m)
 endif()
-add_test(NAME test_physics COMMAND $<TARGET_FILE:test_physics> WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+add_test(NAME test_motion COMMAND $<TARGET_FILE:test_motion> WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
 # 3. Serial CLI Command Parser Test
 add_executable(test_cmd
     test_cmd.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/cmd.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/motion_math.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/mathutil.c
 )
 target_compile_definitions(test_cmd PRIVATE
     UNIT_TEST
@@ -93,42 +94,7 @@ if(UNIX)
 endif()
 add_test(NAME test_led COMMAND $<TARGET_FILE:test_led> WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
-# 6. Position Tracking Math Test
-add_executable(test_position
-    test_position.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/position_tracker.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/motion_math.c
-)
-target_include_directories(test_position PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Inc
-)
-target_link_libraries(test_position PRIVATE
-    unity
-)
-if(UNIX)
-    target_link_libraries(test_position PRIVATE m)
-endif()
-add_test(NAME test_position COMMAND $<TARGET_FILE:test_position> WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-
-# 7. Motion Planning & Stall Engine Test
-add_executable(test_motion_planner
-    test_motion_planner.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/motion_planner.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/motion_math.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/quadrature.c
-)
-target_include_directories(test_motion_planner PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Inc
-)
-target_link_libraries(test_motion_planner PRIVATE
-    unity
-)
-if(UNIX)
-    target_link_libraries(test_motion_planner PRIVATE m)
-endif()
-add_test(NAME test_motion_planner COMMAND $<TARGET_FILE:test_motion_planner> WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-
-# 8. Configuration Storage & Persistence Test
+# 6. Configuration Storage & Persistence Test
 add_executable(test_config_store
     test_config_store.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/config_store.c
@@ -147,4 +113,18 @@ if(UNIX)
 endif()
 add_test(NAME test_config_store COMMAND $<TARGET_FILE:test_config_store> WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
-
+# 7. Math Utilities (GCD & Float Ratio) Test
+add_executable(test_mathutil
+    test_mathutil.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/mathutil.c
+)
+target_include_directories(test_mathutil PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Inc
+)
+target_link_libraries(test_mathutil PRIVATE
+    unity
+)
+if(UNIX)
+    target_link_libraries(test_mathutil PRIVATE m)
+endif()
+add_test(NAME test_mathutil COMMAND $<TARGET_FILE:test_mathutil> WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})

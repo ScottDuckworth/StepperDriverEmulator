@@ -156,6 +156,23 @@ void ReportString(const char* var, const char* value) {
   WriteString("\r\n");
 }
 
+void ReportFloat(const char* var, float value) {
+  int size;
+  char output[24];
+  if (value < 0.0f) {
+    float abs_val = -value;
+    int32_t int_part = (int32_t) abs_val;
+    int32_t frac_part = (int32_t) ((abs_val - (float) int_part) * 10000.0f + 0.5f);
+    size = snprintf(output, sizeof(output), " -%ld.%04ld\r\n", int_part, frac_part);
+  } else {
+    int32_t int_part = (int32_t) value;
+    int32_t frac_part = (int32_t) ((value - (float) int_part) * 10000.0f + 0.5f);
+    size = snprintf(output, sizeof(output), " %ld.%04ld\r\n", int_part, frac_part);
+  }
+  WriteString(var);
+  WriteData((uint8_t*) output, size);
+}
+
 void ReportI64(const char* var, int64_t value) {
   char buf[32];
   char* p = buf;
@@ -284,33 +301,14 @@ void ReportOdr(void) {
   ReportU16("odr", GetOdr());
 }
 
-/*
- * CalcRatioFloat:
- * Computes (float) num / (float) den using 32-bit integer arithmetic.
- * Employs two-stage fixed-point division (Q16.16 followed by a second Q16
- * remainder stage) to achieve 32-bit fractional resolution, then converts
- * to float via multiplication by power-of-two constants (1/65536.0f and
- * 1/4294967296.0f).
- *
- * This avoids linking the software floating-point division library (__aeabi_fdiv),
- * saving Flash space on Cortex-M0 while preserving exact float accuracy.
- */
-static float CalcRatioFloat(uint16_t num, uint16_t den) {
-  if (den == 0) return 0.0f;
-  uint32_t q = ((uint32_t) num << 16) / den;
-  uint32_t rem = ((uint32_t) num << 16) % den;
-  uint32_t frac = ((uint32_t) rem << 16) / den;
-  return (float) q * (1.0f / 65536.0f) + (float) frac * (1.0f / 4294967296.0f);
-}
-
 bool SetRatio(uint16_t spr, uint16_t epr) {
   if (spr == 0 || epr == 0) return false;
-  uint16_t g = CalcGCD(spr, epr);
+  uint16_t g = MathUtil_CalcGCD(spr, epr);
   __disable_irq();
   config.ratio_spr = spr / g;
   config.ratio_epr = epr / g;
-  config.counts_per_step = CalcRatioFloat(config.ratio_epr, config.ratio_spr);
-  config.inv_counts_per_step = CalcRatioFloat(config.ratio_spr, config.ratio_epr);
+  config.counts_per_step = MathUtil_CalcRatioFloat(config.ratio_epr, config.ratio_spr);
+  config.inv_counts_per_step = MathUtil_CalcRatioFloat(config.ratio_spr, config.ratio_epr);
   position.step_rem = 0;
   __enable_irq();
   ReportRatio();
@@ -383,27 +381,6 @@ bool GetStallTrip(void) {
 
 void ReportStallTrip(void) {
   ReportU8("stall_trip", GetStallTrip());
-}
-
-int32_t CalcMotorTorque(float speed_abs) {
-  return CalcMotorTorqueConfig(&config, speed_abs);
-}
-
-void ReportFloat(const char* var, float value) {
-  int size;
-  char output[24];
-  if (value < 0.0f) {
-    float abs_val = -value;
-    int32_t int_part = (int32_t) abs_val;
-    int32_t frac_part = (int32_t) ((abs_val - (float) int_part) * 10000.0f + 0.5f);
-    size = snprintf(output, sizeof(output), " -%ld.%04ld\r\n", int_part, frac_part);
-  } else {
-    int32_t int_part = (int32_t) value;
-    int32_t frac_part = (int32_t) ((value - (float) int_part) * 10000.0f + 0.5f);
-    size = snprintf(output, sizeof(output), " %ld.%04ld\r\n", int_part, frac_part);
-  }
-  WriteString(var);
-  WriteData((uint8_t*) output, size);
 }
 
 float GetKp(void) {
@@ -479,7 +456,7 @@ void SetEncoderPosition(int64_t pos) {
   uint16_t head = (STEP_BUF_SIZE - (uint16_t) DMA1_Channel5->CNDTR) & (STEP_BUF_SIZE - 1);
   step_buf_tail = head;
   blanking_accum = min_blanking_ticks;
-  RealignPositionCounters(&position, pos, &config, head);
+  Position_RealignCounters(&position, pos, &config, head);
   planned_encoder_pos = pos;
   half_0_delta = 0;
   half_1_delta = 0;
@@ -530,7 +507,7 @@ void UpdateStepEnabled(void) {
     uint16_t head = (STEP_BUF_SIZE - (uint16_t) DMA1_Channel5->CNDTR) & (STEP_BUF_SIZE - 1);
     step_buf_tail = head;
     blanking_accum = min_blanking_ticks;
-    RealignPositionCounters(&position, position.encoder_pos, &config, head);
+    Position_RealignCounters(&position, position.encoder_pos, &config, head);
     planned_encoder_pos = position.encoder_pos;
   } else {
     TIM2->CR1 &= ~TIM_CR1_CEN;
@@ -556,7 +533,7 @@ static void UpdatePositionCounters(void) {
     step_buf_tail = (step_buf_tail + 1) & (STEP_BUF_SIZE - 1);
 
     uint32_t valid_period = 0;
-    if (FilterStepWithBlanking(period, min_blanking_ticks, &blanking_accum, &valid_period)) {
+    if (Position_FilterStepWithBlanking(period, min_blanking_ticks, &blanking_accum, &valid_period)) {
       valid_steps++;
       step_period_cnt = valid_period;
     }
@@ -566,7 +543,7 @@ static void UpdatePositionCounters(void) {
   if (valid_steps != 0) {
     last_step_time = now;
     int32_t step_delta = position.step_reverse ? -(int32_t) valid_steps : (int32_t) valid_steps;
-    int32_t count_delta = ConvertStepDeltaToCounts(step_delta, config.ratio_spr, config.ratio_epr, &position.step_rem);
+    int32_t count_delta = Position_ConvertStepDeltaToCounts(step_delta, config.ratio_spr, config.ratio_epr, &position.step_rem);
     position.commanded_pos += count_delta;
   }
 }
@@ -1051,8 +1028,8 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   ConfigStore_Load(ConfigStore_GetStm32FlashDriver(), CONFIG_FLASH_PAGE_ADDR, &config);
-  config.counts_per_step = (config.ratio_spr > 0) ? CalcRatioFloat(config.ratio_epr, config.ratio_spr) : 4.0f;
-  config.inv_counts_per_step = (config.ratio_epr > 0) ? CalcRatioFloat(config.ratio_spr, config.ratio_epr) : 0.25f;
+  config.counts_per_step = (config.ratio_spr > 0) ? MathUtil_CalcRatioFloat(config.ratio_epr, config.ratio_spr) : 4.0f;
+  config.inv_counts_per_step = (config.ratio_epr > 0) ? MathUtil_CalcRatioFloat(config.ratio_spr, config.ratio_epr) : 0.25f;
 
   UpdatePositionCounters();
   position.commanded_pos = 0;
