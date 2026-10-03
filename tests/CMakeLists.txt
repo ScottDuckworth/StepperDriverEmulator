@@ -7,6 +7,8 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(unity)
 
+add_compile_definitions(UNITY_SUPPORT_64)
+
 # 1. Coordinate Math Test
 add_executable(test_coordinates
     test_coordinates.c

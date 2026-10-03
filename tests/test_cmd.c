@@ -2,6 +2,7 @@
 #include "cmd.h"
 #include "main.h"
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -83,13 +84,13 @@ void ReportI64(const char* var, int64_t value) {
 
 void ReportI32(const char* var, int32_t value) {
   char buf[32];
-  snprintf(buf, sizeof(buf), "%s %ld\r\n", var, value);
+  snprintf(buf, sizeof(buf), "%s %" PRId32 "\r\n", var, value);
   WriteString(buf);
 }
 
 void ReportU32(const char* var, uint32_t value) {
   char buf[32];
-  snprintf(buf, sizeof(buf), "%s %lu\r\n", var, value);
+  snprintf(buf, sizeof(buf), "%s %" PRIu32 "\r\n", var, value);
   WriteString(buf);
 }
 
@@ -111,11 +112,11 @@ void ReportFloat(const char* var, float value) {
     float abs_val = -value;
     int32_t int_part = (int32_t) abs_val;
     int32_t frac_part = (int32_t) ((abs_val - (float) int_part) * 10000.0f + 0.5f);
-    snprintf(buf, sizeof(buf), "%s -%ld.%04ld\r\n", var, int_part, frac_part);
+    snprintf(buf, sizeof(buf), "%s -%" PRId32 ".%04" PRId32 "\r\n", var, int_part, frac_part);
   } else {
     int32_t int_part = (int32_t) value;
     int32_t frac_part = (int32_t) ((value - (float) int_part) * 10000.0f + 0.5f);
-    snprintf(buf, sizeof(buf), "%s %ld.%04ld\r\n", var, int_part, frac_part);
+    snprintf(buf, sizeof(buf), "%s %" PRId32 ".%04" PRId32 "\r\n", var, int_part, frac_part);
   }
   WriteString(buf);
 }
@@ -140,7 +141,7 @@ void SetTorqueCurve(int32_t t0, uint32_t v_knee, uint32_t v_max, int32_t t_min) 
 }
 void ReportTorqueCurve(void) {
   char buf[64];
-  snprintf(buf, sizeof(buf), "tcurve %ld %lu %lu %ld\r\n",
+  snprintf(buf, sizeof(buf), "tcurve %" PRId32 " %" PRIu32 " %" PRIu32 " %" PRId32 "\r\n",
            mock_config.torque_t0, mock_config.torque_v_knee,
            mock_config.torque_v_max, mock_config.torque_t_min);
   WriteString(buf);

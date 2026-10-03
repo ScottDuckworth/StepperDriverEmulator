@@ -34,7 +34,18 @@ jobs:
         run: cmake --build --preset host-test-ninja
 
       - name: Run host tests
-        run: ctest --preset host-test-ninja --output-on-failure --verbose
+        run: |
+          if ! ctest --preset host-test-ninja --output-on-failure; then
+            echo "### :x: Host Unit Tests Failed" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            if [ -f build/host-test-ninja/Testing/Temporary/LastTest.log ]; then
+              cat build/host-test-ninja/Testing/Temporary/LastTest.log >> $GITHUB_STEP_SUMMARY
+            fi
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "::error::Host tests failed. Check step summary for full details."
+            exit 1
+          fi
+          echo "### :white_check_mark: All Host Unit Tests Passed" >> $GITHUB_STEP_SUMMARY
 
   firmware-build:
     name: ARM Cortex-M0 Firmware Build & Sizing
@@ -54,7 +65,7 @@ jobs:
           sudo apt-get install -y ninja-build cmake
 
       - name: Set up ARM GCC Toolchain
-        uses: arm-toolchain/setup-arm-toolchain@v1
+        uses: carlosperate/arm-none-eabi-gcc-action@v1
 
       - name: Configure Release firmware
         run: cmake --preset Release
@@ -63,4 +74,8 @@ jobs:
         run: cmake --build --preset Release -v
 
       - name: Validate Flash & RAM sizing constraints
-        run: python scripts/check_firmware_size.py build/Release/StepperDriverEmulator.elf
+        run: |
+          echo "### Firmware Memory Constraints" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          python scripts/check_firmware_size.py build/Release/StepperDriverEmulator.elf | tee -a $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
