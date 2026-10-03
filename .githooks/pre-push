@@ -17,4 +17,7 @@ fi
 
 $PYTHON_CMD scripts/check_firmware_size.py
 
+echo "=== [PRE-PUSH] Checking Disallowed Symbols (Float & Int64 Division) ==="
+$PYTHON_CMD scripts/check_disallowed_symbols.py
+
 echo "=== [PRE-PUSH] All pre-push checks passed ==="

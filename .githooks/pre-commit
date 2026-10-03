@@ -18,4 +18,13 @@ echo "=== [PRE-COMMIT] Building & Running Host Unit Tests ==="
 cmake --build --preset host-test
 ctest --preset host-test --output-on-failure
 
+echo "=== [PRE-COMMIT] Building ARM Release Firmware ==="
+cmake --build --preset Release
+
+echo "=== [PRE-COMMIT] Checking Disallowed Symbols (Float & Int64 Division) ==="
+$PYTHON_CMD scripts/check_disallowed_symbols.py
+
+echo "=== [PRE-COMMIT] Checking Firmware Size Constraints ==="
+$PYTHON_CMD scripts/check_firmware_size.py
+
 echo "=== [PRE-COMMIT] All presubmit checks passed ==="
