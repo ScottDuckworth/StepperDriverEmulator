@@ -584,7 +584,6 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
   uint32_t period_cnt = (startup_sync_count > 0) ? 0 : step_period_cnt;
 
   MotionPlanRequest_t req = {
-      .cfg = &config,
       .commanded_pos = commanded_pos,
       .planned_encoder_pos = planned_encoder_pos,
       .load_tension = load_tension,
@@ -597,7 +596,7 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
       .chunk_size = CHUNK_SIZE
   };
   MotionPlanResult_t res;
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
 
   if (res.stall_trip_event) {
     stall_tripped = true;

@@ -3,7 +3,7 @@
 #include <math.h>
 #include <stdlib.h>
 
-void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
+void PlanMotionStep(const EmulatorConfig_t* cfg, const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
   if (!req || !res) return;
 
   res->target_velocity = 0.0f;
@@ -13,12 +13,12 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
   res->stall_tripped = req->stall_tripped;
   res->stall_trip_event = false;
 
-  if (!req->cfg) return;
+  if (!cfg) return;
 
   uint16_t chunk_sz = (req->chunk_size > 0) ? req->chunk_size : 8;
 
   if (req->is_freewheeling) {
-    float v_free = CalcFreewheelVelocity(req->cfg, req->load_tension);
+    float v_free = CalcFreewheelVelocity(cfg, req->load_tension);
     if (v_free != 0.0f) {
       res->dir = (v_free > 0.0f) ? 1 : -1;
       res->count_to_emit = chunk_sz;
@@ -33,8 +33,8 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
 
   float step_counts = 4.0f;
   float rate_scale = 192000.0f;
-  if (req->cfg->spr > 0) {
-    step_counts = (float) req->cfg->epr / (float) req->cfg->spr;
+  if (cfg->spr > 0) {
+    step_counts = (float) cfg->epr / (float) cfg->spr;
     rate_scale = 48000.0f * step_counts;
   }
 
@@ -48,7 +48,7 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
   }
 
   float input_rate = 0.0f;
-  if ((req->now - req->last_step_time) <= step_timeout_ms && req->step_period_cnt >= 240 && req->cfg->spr > 0) {
+  if ((req->now - req->last_step_time) <= step_timeout_ms && req->step_period_cnt >= 240 && cfg->spr > 0) {
     input_rate = rate_scale / (float) req->step_period_cnt;
     if (req->step_reverse) {
       input_rate = -input_rate;
@@ -66,8 +66,8 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
   // Deducting the feedforward-managed step window eliminates double-counting the step
   // and prevents cyclic pacing frequency modulation across the phase, while restoring
   // gain (Kp) remains active for true tracking lag (> 1 step) or overshoot (< 0).
-  if (input_rate != 0.0f && req->cfg->spr > 0) {
-    float ff_window = req->cfg->kff * step_counts;
+  if (input_rate != 0.0f && cfg->spr > 0) {
+    float ff_window = cfg->kff * step_counts;
 
     if (input_rate > 0.0f) {
       if (eff_error > ff_window) {
@@ -91,12 +91,12 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
     }
   }
 
-  float target_velocity = req->cfg->kff * input_rate + req->cfg->kp * eff_error;
+  float target_velocity = cfg->kff * input_rate + cfg->kp * eff_error;
   if (input_rate > 0.0f) {
     if (target_velocity < 0.0f) {
       target_velocity = 0.0f;
     } else {
-      float max_v = fabsf(input_rate) * 1.25f + req->cfg->kp * step_counts;
+      float max_v = fabsf(input_rate) * 1.25f + cfg->kp * step_counts;
       if (target_velocity > max_v) {
         target_velocity = max_v;
       }
@@ -105,7 +105,7 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
     if (target_velocity > 0.0f) {
       target_velocity = 0.0f;
     } else {
-      float min_v = -(fabsf(input_rate) * 1.25f + req->cfg->kp * step_counts);
+      float min_v = -(fabsf(input_rate) * 1.25f + cfg->kp * step_counts);
       if (target_velocity < min_v) {
         target_velocity = min_v;
       }
@@ -128,7 +128,7 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
     }
 
     float speed_hz = fabsf(target_velocity) * 1000.0f;
-    int32_t t_motor = CalcMotorTorqueConfig(req->cfg, speed_hz);
+    int32_t t_motor = CalcMotorTorqueConfig(cfg, speed_hz);
     int32_t t_net = CalcNetTorque(t_motor, dir, req->load_tension);
 
     if (t_net >= 0) {
@@ -146,7 +146,7 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
       }
     } else {
       // Torque deficit: motor cannot advance in commanded direction
-      float v_slip = CalcSlipVelocity(req->cfg, req->load_tension);
+      float v_slip = CalcSlipVelocity(cfg, req->load_tension);
       if (v_slip > 0.0f) {
         res->dir = (req->load_tension > 0) ? 1 : -1;
         res->count_to_emit = chunk_sz;
@@ -158,7 +158,7 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
 
       // Under torque deficit, motor stalls and accumulates lag against commanded steps
       uint64_t lag = (error >= 0) ? (uint64_t) error : (uint64_t)(-(error + 1)) + 1ULL;
-      if (req->cfg->stall_threshold > 0 && lag >= (uint64_t) req->cfg->stall_threshold) {
+      if (cfg->stall_threshold > 0 && lag >= (uint64_t) cfg->stall_threshold) {
         if (!req->stall_tripped) {
           res->stall_trip_event = true;
         }
@@ -168,7 +168,7 @@ void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
     }
   } else {
     // error == 0 and input_rate == 0: motor is at target
-    float v_slip = CalcSlipVelocity(req->cfg, req->load_tension);
+    float v_slip = CalcSlipVelocity(cfg, req->load_tension);
     if (v_slip > 0.0f) {
       res->dir = (req->load_tension > 0) ? 1 : -1;
       res->count_to_emit = chunk_sz;

@@ -14,7 +14,6 @@ void tearDown(void) {}
 
 void test_planner_nominal_tracking_forward(void) {
   MotionPlanRequest_t req = {
-      .cfg = &config,
       .commanded_pos = 100,
       .planned_encoder_pos = 0,
       .load_tension = 0,
@@ -28,7 +27,7 @@ void test_planner_nominal_tracking_forward(void) {
   };
   MotionPlanResult_t res;
 
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
 
   // Large error (100 >= chunk_size 8): full chunk forward
   TEST_ASSERT_EQUAL_INT(1, res.dir);
@@ -41,7 +40,6 @@ void test_planner_nominal_tracking_forward(void) {
 
 void test_planner_nominal_tracking_small_error(void) {
   MotionPlanRequest_t req = {
-      .cfg = &config,
       .commanded_pos = 105,
       .planned_encoder_pos = 100,
       .load_tension = 0,
@@ -55,7 +53,7 @@ void test_planner_nominal_tracking_small_error(void) {
   };
   MotionPlanResult_t res;
 
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
 
   // Error = 5 < chunk_size 8: emit exactly 5 steps
   TEST_ASSERT_EQUAL_INT(1, res.dir);
@@ -65,7 +63,6 @@ void test_planner_nominal_tracking_small_error(void) {
 
 void test_planner_nominal_tracking_reverse(void) {
   MotionPlanRequest_t req = {
-      .cfg = &config,
       .commanded_pos = -50,
       .planned_encoder_pos = 0,
       .load_tension = 0,
@@ -79,7 +76,7 @@ void test_planner_nominal_tracking_reverse(void) {
   };
   MotionPlanResult_t res;
 
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
 
   TEST_ASSERT_EQUAL_INT(-1, res.dir);
   TEST_ASSERT_EQUAL_UINT16(8, res.count_to_emit);
@@ -90,7 +87,6 @@ void test_planner_feedforward_rate(void) {
   // 48 MHz / 480 ticks = 100 kHz steps
   // 4000 epr / 1000 spr = 4.0 ratio -> 400 counts/ms input rate
   MotionPlanRequest_t req = {
-      .cfg = &config,
       .commanded_pos = 0,
       .planned_encoder_pos = 0, // error = 0
       .load_tension = 0,
@@ -104,12 +100,12 @@ void test_planner_feedforward_rate(void) {
   };
   MotionPlanResult_t res;
 
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
   TEST_ASSERT_FLOAT_WITHIN(0.1f, 400.0f, res.target_velocity);
 
   // Reverse direction feedforward
   req.step_reverse = true;
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
   TEST_ASSERT_FLOAT_WITHIN(0.1f, -400.0f, res.target_velocity);
 }
 
@@ -119,7 +115,6 @@ void test_planner_torque_deficit_stall_and_slip(void) {
   // Motor cannot advance; instead slips backward under load:
   // v_slip = (1500 - 1000) * 1.0 = 500 counts/sec -> 0.5 counts/ms in direction -1
   MotionPlanRequest_t req = {
-      .cfg = &config,
       .commanded_pos = 500,
       .planned_encoder_pos = 0,
       .load_tension = -1500,
@@ -133,7 +128,7 @@ void test_planner_torque_deficit_stall_and_slip(void) {
   };
   MotionPlanResult_t res;
 
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
 
   TEST_ASSERT_EQUAL_INT(-1, res.dir); // pulled backward
   TEST_ASSERT_EQUAL_UINT16(8, res.count_to_emit);
@@ -145,7 +140,6 @@ void test_planner_torque_deficit_stall_and_slip(void) {
 void test_planner_stall_trip_trigger_event(void) {
   // When error reaches or exceeds stall_threshold (4000) under torque deficit:
   MotionPlanRequest_t req = {
-      .cfg = &config,
       .commanded_pos = 4000,
       .planned_encoder_pos = 0, // error = 4000 >= stall_threshold 4000
       .load_tension = -1500,
@@ -159,7 +153,7 @@ void test_planner_stall_trip_trigger_event(void) {
   };
   MotionPlanResult_t res;
 
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
 
   TEST_ASSERT_TRUE(res.stall_trip_event); // One-shot trigger event fired
   TEST_ASSERT_TRUE(res.stall_tripped);
@@ -169,7 +163,6 @@ void test_planner_stall_trip_trigger_event(void) {
 void test_planner_freewheeling_under_tension(void) {
   // When disengaged or tripped into freewheeling:
   MotionPlanRequest_t req = {
-      .cfg = &config,
       .commanded_pos = 0,
       .planned_encoder_pos = 0,
       .load_tension = 2000, // 2000 * kfree(1.0) = 2000 counts/sec -> 2.0 counts/ms
@@ -183,7 +176,7 @@ void test_planner_freewheeling_under_tension(void) {
   };
   MotionPlanResult_t res;
 
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
 
   TEST_ASSERT_EQUAL_INT(1, res.dir);
   TEST_ASSERT_EQUAL_UINT16(8, res.count_to_emit);
@@ -193,7 +186,6 @@ void test_planner_freewheeling_under_tension(void) {
 
 void test_planner_freewheeling_zero_tension_stops(void) {
   MotionPlanRequest_t req = {
-      .cfg = &config,
       .commanded_pos = 0,
       .planned_encoder_pos = 0,
       .load_tension = 0,
@@ -207,7 +199,7 @@ void test_planner_freewheeling_zero_tension_stops(void) {
   };
   MotionPlanResult_t res;
 
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
 
   TEST_ASSERT_EQUAL_INT(0, res.dir);
   TEST_ASSERT_EQUAL_UINT16(0, res.count_to_emit);
@@ -217,7 +209,6 @@ void test_planner_freewheeling_zero_tension_stops(void) {
 void test_planner_at_target_zero_error_stable(void) {
   // At target, load tension within holding torque (500 <= 1000)
   MotionPlanRequest_t req = {
-      .cfg = &config,
       .commanded_pos = 1000,
       .planned_encoder_pos = 1000,
       .load_tension = 500,
@@ -231,7 +222,7 @@ void test_planner_at_target_zero_error_stable(void) {
   };
   MotionPlanResult_t res;
 
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
 
   TEST_ASSERT_EQUAL_INT(0, res.dir);
   TEST_ASSERT_EQUAL_UINT16(0, res.count_to_emit);
@@ -242,17 +233,16 @@ void test_planner_null_safety(void) {
   MotionPlanResult_t res = {0};
 
   // Safe against NULL
-  PlanMotionStep(NULL, NULL);
-  PlanMotionStep(&req, NULL);
-  PlanMotionStep(NULL, &res);
-  PlanMotionStep(&req, &res); // req.cfg == NULL
+  PlanMotionStep(NULL, NULL, NULL);
+  PlanMotionStep(&config, &req, NULL);
+  PlanMotionStep(&config, NULL, &res);
+  PlanMotionStep(NULL, &req, &res);
   TEST_ASSERT_EQUAL_INT(0, res.dir);
 }
 
 void test_planner_default_config_gains(void) {
   EmulatorConfig_t def_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
   MotionPlanRequest_t req = {
-      .cfg = &def_cfg,
       .commanded_pos = 100,
       .planned_encoder_pos = 0,
       .load_tension = 0,
@@ -266,7 +256,7 @@ void test_planner_default_config_gains(void) {
   };
   MotionPlanResult_t res;
 
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&def_cfg, &req, &res);
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 10.0f, res.target_velocity); // default kp = 0.1 * 100 = 10.0
 }
 
@@ -274,7 +264,6 @@ void test_planner_continuous_streaming_zero_error(void) {
   // Input rate = 400.0 counts/ms, error = 0
   // Pacing velocity matches input rate, but count_to_emit = 0 so motor does not overshoot
   MotionPlanRequest_t req = {
-      .cfg = &config,
       .commanded_pos = 100,
       .planned_encoder_pos = 100, // error = 0
       .load_tension = 0,
@@ -288,7 +277,7 @@ void test_planner_continuous_streaming_zero_error(void) {
   };
   MotionPlanResult_t res;
 
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
   TEST_ASSERT_EQUAL_UINT16(0, res.count_to_emit);
   TEST_ASSERT_FLOAT_WITHIN(0.1f, 400.0f, res.target_velocity);
 }
@@ -297,7 +286,6 @@ void test_planner_soft_knee_error_attenuation(void) {
   // epr = 4000, spr = 1000 -> 1 step = 4 counts.
   // Within nominal 1-step feedforward window (error = 4): eff_error = 0.0 (pure feedforward 400.0 counts/ms).
   MotionPlanRequest_t req = {
-      .cfg = &config,
       .commanded_pos = 104,
       .planned_encoder_pos = 100, // error = 4 (nominal 1-step streaming)
       .load_tension = 0,
@@ -311,7 +299,7 @@ void test_planner_soft_knee_error_attenuation(void) {
   };
   MotionPlanResult_t res;
 
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
   TEST_ASSERT_EQUAL_INT(1, res.dir);
   TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 400.0f, res.target_velocity); // 0 phase modulation at nominal 1 step
@@ -320,7 +308,7 @@ void test_planner_soft_knee_error_attenuation(void) {
   // kp = 0.5 -> kp * eff_error = 0.5.
   // target_velocity = 400.0 + 0.5 = 400.5
   req.commanded_pos = 106;
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
   TEST_ASSERT_EQUAL_INT(1, res.dir);
   TEST_ASSERT_EQUAL_UINT16(6, res.count_to_emit);
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 400.5f, res.target_velocity);
@@ -329,13 +317,12 @@ void test_planner_soft_knee_error_attenuation(void) {
   // kp * eff_error = 0.5 * 20 = 10.0.
   // target_velocity = 400.0 + 10.0 = 410.0
   req.commanded_pos = 124;
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 410.0f, res.target_velocity);
 }
 
 void test_planner_large_64bit_coordinates(void) {
   MotionPlanRequest_t req = {
-      .cfg = &config,
       .commanded_pos = 10000000005LL,
       .planned_encoder_pos = 10000000000LL, // error = 5 counts at 10 billion
       .load_tension = 0,
@@ -349,7 +336,7 @@ void test_planner_large_64bit_coordinates(void) {
   };
   MotionPlanResult_t res;
 
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
 
   // Error = 5 < chunk_size 8: emit exactly 5 steps
   TEST_ASSERT_EQUAL_INT(1, res.dir);
@@ -363,7 +350,6 @@ void test_planner_low_frequency_feedforward_50hz(void) {
   // With kff = 1.0, kp = 0.1, target_velocity remains 0.2 counts/ms across the 1-step window (takes 20 ms for 4 counts)
   config.kp = 0.1f;
   MotionPlanRequest_t req = {
-      .cfg = &config,
       .commanded_pos = 104,
       .planned_encoder_pos = 100, // 4 counts error (1 step)
       .load_tension = 0,
@@ -377,14 +363,14 @@ void test_planner_low_frequency_feedforward_50hz(void) {
   };
   MotionPlanResult_t res;
 
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
   TEST_ASSERT_EQUAL_INT(1, res.dir);
   TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.2f, res.target_velocity);
 
   // When error reaches 0, no counts emitted to prevent overshoot
   req.commanded_pos = 100;
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
   TEST_ASSERT_EQUAL_UINT16(0, res.count_to_emit);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.2f, res.target_velocity);
 }
@@ -395,7 +381,6 @@ void test_planner_low_frequency_timeout_extension(void) {
   // input_rate = (48000 / 2400000) * 4.0 = 0.08 counts/ms
   config.kp = 0.1f;
   MotionPlanRequest_t req = {
-      .cfg = &config,
       .commanded_pos = 104,
       .planned_encoder_pos = 100, // 4 counts error
       .load_tension = 0,
@@ -409,7 +394,7 @@ void test_planner_low_frequency_timeout_extension(void) {
   };
   MotionPlanResult_t res;
 
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
   // Pacing remains active across 70 ms gap with exactly 4 counts
   TEST_ASSERT_EQUAL_INT(1, res.dir);
   TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
@@ -418,14 +403,14 @@ void test_planner_low_frequency_timeout_extension(void) {
   // If time exceeds 85 ms dynamic timeout (e.g. 90 ms gap), input_rate drops to 0
   config.kp = 0.5f;
   req.now = 190;
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
   // With input_rate = 0, target_velocity is kp * 4 = 0.5 * 4 = 2.0 counts/ms
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 2.0f, res.target_velocity);
   TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
 
   // When error reaches 0 after timeout, 0 counts are emitted
   req.commanded_pos = 100;
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
   TEST_ASSERT_EQUAL_UINT16(0, res.count_to_emit);
 }
 
@@ -438,7 +423,6 @@ void test_planner_standstill_single_step_kp_pacing(void) {
   test_cfg.kff = 1.0f;
 
   MotionPlanRequest_t req = {
-      .cfg = &test_cfg,
       .commanded_pos = 4,
       .planned_encoder_pos = 0,
       .load_tension = 0,
@@ -452,7 +436,7 @@ void test_planner_standstill_single_step_kp_pacing(void) {
   };
   MotionPlanResult_t res;
 
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&test_cfg, &req, &res);
   TEST_ASSERT_EQUAL_INT(1, res.dir);
   TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
   // Velocity is kp * 4 = 0.05 * 4 = 0.2 counts/ms (200 counts/s = 20 ms for 4 counts)
@@ -460,7 +444,7 @@ void test_planner_standstill_single_step_kp_pacing(void) {
 
   // With kp = 0.1: velocity is 0.1 * 4 = 0.4 counts/ms (10 ms for 4 counts)
   test_cfg.kp = 0.1f;
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&test_cfg, &req, &res);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.4f, res.target_velocity);
 }
 
@@ -471,7 +455,6 @@ void test_planner_prevents_reversals_during_streaming(void) {
   config.kp = 0.5f;
   config.kff = 1.0f;
   MotionPlanRequest_t req = {
-      .cfg = &config,
       .commanded_pos = 100,
       .planned_encoder_pos = 104, // 4 counts ahead (error = -4)
       .load_tension = 0,
@@ -485,7 +468,7 @@ void test_planner_prevents_reversals_during_streaming(void) {
   };
   MotionPlanResult_t res;
 
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
   // Must maintain forward direction (dir = 1), clamped velocity = 0.0, and 0 counts emitted
   TEST_ASSERT_EQUAL_INT(1, res.dir);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, res.target_velocity);
@@ -495,7 +478,7 @@ void test_planner_prevents_reversals_during_streaming(void) {
   req.step_reverse = true;
   req.commanded_pos = 100;
   req.planned_encoder_pos = 96; // 4 counts ahead in reverse (error = +4)
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&config, &req, &res);
   TEST_ASSERT_EQUAL_INT(-1, res.dir);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, res.target_velocity);
   TEST_ASSERT_EQUAL_UINT16(0, res.count_to_emit);
@@ -506,7 +489,6 @@ void test_planner_streaming_7khz(void) {
   // 7 kHz step rate: 48 MHz / 6857 ticks = 7000.14 Hz
   // input_rate = (48000 / 6857) * 4.0 = 28.0006 counts/ms
   MotionPlanRequest_t req = {
-      .cfg = &test_cfg,
       .commanded_pos = 4,
       .planned_encoder_pos = 0,
       .load_tension = 0,
@@ -521,7 +503,7 @@ void test_planner_streaming_7khz(void) {
   MotionPlanResult_t res;
 
   // Step 1 arrives
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&test_cfg, &req, &res);
   TEST_ASSERT_EQUAL_INT(1, res.dir);
   TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
   // Velocity should be 28.0 counts/ms
@@ -531,7 +513,7 @@ void test_planner_streaming_7khz(void) {
   req.planned_encoder_pos = 4;
   // Next step arrives: commanded_pos = 8
   req.commanded_pos = 8;
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&test_cfg, &req, &res);
   TEST_ASSERT_EQUAL_INT(1, res.dir);
   TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 28.0f, res.target_velocity);
@@ -544,7 +526,6 @@ void test_planner_streaming_clamps_excessive_catchup_velocity(void) {
   // Unclamped Kp * eff_error would add 28.0 counts/ms, resulting in 56.0 counts/ms (14 kHz 2x runaway).
   // Clamping must restrict catchup authority during active streaming to <= 1.25 * input_rate + kp * step_counts = 35.4 counts/ms.
   MotionPlanRequest_t req = {
-      .cfg = &test_cfg,
       .commanded_pos = 300,
       .planned_encoder_pos = 20, // 280 counts of lag
       .load_tension = 0,
@@ -558,7 +539,7 @@ void test_planner_streaming_clamps_excessive_catchup_velocity(void) {
   };
   MotionPlanResult_t res;
 
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&test_cfg, &req, &res);
   TEST_ASSERT_EQUAL_INT(1, res.dir);
   TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 35.4f, res.target_velocity);
@@ -568,7 +549,7 @@ void test_planner_streaming_clamps_excessive_catchup_velocity(void) {
   req.step_reverse = true;
   req.commanded_pos = -300;
   req.planned_encoder_pos = -20; // -280 counts of lag in reverse
-  PlanMotionStep(&req, &res);
+  PlanMotionStep(&test_cfg, &req, &res);
   TEST_ASSERT_EQUAL_INT(-1, res.dir);
   TEST_ASSERT_EQUAL_UINT16(4, res.count_to_emit);
   TEST_ASSERT_FLOAT_WITHIN(0.01f, -35.4f, res.target_velocity);

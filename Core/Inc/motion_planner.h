@@ -10,7 +10,6 @@ extern "C" {
 #endif
 
 typedef struct {
-  const EmulatorConfig_t* cfg;
   int64_t commanded_pos;
   int64_t planned_encoder_pos;
   int32_t load_tension;
@@ -32,7 +31,7 @@ typedef struct {
   bool stall_trip_event;
 } MotionPlanResult_t;
 
-void PlanMotionStep(const MotionPlanRequest_t* req, MotionPlanResult_t* res);
+void PlanMotionStep(const EmulatorConfig_t* cfg, const MotionPlanRequest_t* req, MotionPlanResult_t* res);
 
 #ifdef __cplusplus
 }
