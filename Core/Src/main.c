@@ -284,6 +284,17 @@ void ReportOdr(void) {
   ReportU16("odr", GetOdr());
 }
 
+/*
+ * CalcRatioFloat:
+ * Computes (float) num / (float) den using 32-bit integer arithmetic.
+ * Employs two-stage fixed-point division (Q16.16 followed by a second Q16
+ * remainder stage) to achieve 32-bit fractional resolution, then converts
+ * to float via multiplication by power-of-two constants (1/65536.0f and
+ * 1/4294967296.0f).
+ *
+ * This avoids linking the software floating-point division library (__aeabi_fdiv),
+ * saving Flash space on Cortex-M0 while preserving exact float accuracy.
+ */
 static float CalcRatioFloat(uint16_t num, uint16_t den) {
   if (den == 0) return 0.0f;
   uint32_t q = ((uint32_t) num << 16) / den;
