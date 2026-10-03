@@ -264,9 +264,7 @@ int32_t GetTension(void) {
 void SetTension(int32_t tension) {
   load_tension = tension;
   ReportTension();
-  if (!motion_active) {
-    Motion_Start();
-  }
+  MaybeStartMotion();
 }
 
 void ReportTension(void) {
@@ -527,9 +525,7 @@ void UpdateStepEnabled(void) {
     ReportStallTrip();
   }
   ReportStepEnabled();
-  if (!enabled && load_tension != 0 && !motion_active) {
-    Motion_Start();
-  }
+  MaybeStartMotion();
 }
 
 static void UpdatePositionCounters(void) {
@@ -565,13 +561,12 @@ void UpdateStepDirection(void) {
   ReportStepReverse();
 }
 
-void Motion_Start(void) {
-  if (motion_active) return;
+bool MaybeStartMotion(void) {
+  if (motion_active) return false;
 
   UpdatePositionCounters();
   bool is_freewheeling = stall_tripped || !GetStepEnabled();
-
-  MotionStartRequest_t req = {
+  Motion_StartRequest_t req = {
       .commanded_pos = position.commanded_pos,
       .encoder_pos = position.encoder_pos,
       .load_tension = load_tension,
@@ -580,14 +575,16 @@ void Motion_Start(void) {
       .last_step_time = last_step_time,
       .step_reverse = position.step_reverse,
       .is_freewheeling = is_freewheeling,
-      .stall_tripped = stall_tripped,
+      .stall_tripped = stall_tripped
+  };
+  Motion_StartBuffers_t buf = {
       .chunk_size = CHUNK_SIZE,
       .quad_buffer = quad_buffer,
       .inout_quad_state = &current_quad_state
   };
-  MotionStartResult_t res;
-  if (!Motion_PrepareStart(&config, &req, &res)) {
-    return;
+  Motion_StartResult_t res;
+  if (!Motion_PrepareStart(&config, &req, &buf, &res)) {
+    return false;
   }
 
   motion_active = true;
@@ -617,6 +614,7 @@ void Motion_Start(void) {
     TIM2->SR = 0;
     TIM2->DIER |= TIM_DIER_CC1IE;
   }
+  return true;
 }
 
 void Motion_Wakeup_Handler(void) {
@@ -638,7 +636,7 @@ void Motion_Wakeup_Handler(void) {
     int8_t* out_delta = (cndtr > CHUNK_SIZE) ? &half_1_delta : &half_0_delta;
 
     uint32_t period_cnt = (startup_sync_count > 0) ? 0 : step_period_cnt;
-    MotionPlanRequest_t req = {
+    Motion_PlanStepRequest_t req = {
         .commanded_pos = position.commanded_pos,
         .planned_encoder_pos = planned_encoder_pos,
         .load_tension = load_tension,
@@ -650,8 +648,8 @@ void Motion_Wakeup_Handler(void) {
         .stall_tripped = stall_tripped,
         .chunk_size = CHUNK_SIZE
     };
-    MotionPlanResult_t res;
-    PlanMotionStep(&config, &req, &res);
+    Motion_PlanStepResult_t res;
+    Motion_PlanStep(&config, &req, &res);
 
     if (res.stall_trip_event) {
       stall_tripped = true;
@@ -680,10 +678,7 @@ void Motion_Wakeup_Handler(void) {
     return;
   }
 
-  bool is_freewheeling = stall_tripped || !GetStepEnabled();
-  if (Motion_ShouldStart(position.commanded_pos, planned_encoder_pos, position.step_dcnt, load_tension, config.torque_t0, is_freewheeling)) {
-    Motion_Start();
-  } else {
+  if (!MaybeStartMotion()) {
     if (GetStepEnabled()) {
       TIM2->SR = 0;
       TIM2->DIER |= TIM_DIER_CC1IE;
@@ -704,7 +699,7 @@ static int8_t FillQuadChunk(uint32_t* chunk) {
   bool is_freewheeling = stall_tripped || !GetStepEnabled();
   uint32_t period_cnt = (startup_sync_count > 0) ? 0 : step_period_cnt;
 
-  MotionPlanRequest_t plan_req = {
+  Motion_PlanStepRequest_t plan_req = {
       .commanded_pos = position.commanded_pos,
       .planned_encoder_pos = planned_encoder_pos,
       .load_tension = load_tension,
@@ -717,12 +712,12 @@ static int8_t FillQuadChunk(uint32_t* chunk) {
       .chunk_size = CHUNK_SIZE
   };
 
-  MotionChunkRequest_t chunk_req = {
+  Motion_ChunkRequest_t chunk_req = {
       .chunk = chunk,
       .inout_quad_state = &current_quad_state
   };
 
-  MotionChunkResult_t res = {0};
+  Motion_ChunkResult_t res = {0};
   Motion_PlanAndEmitChunk(&config, &plan_req, &chunk_req, &res);
   planned_encoder_pos += res.delta;
 
@@ -744,9 +739,9 @@ static int8_t FillQuadChunk(uint32_t* chunk) {
 
 static void CheckMotionIdle(void) {
   if (half_0_delta == 0 && half_1_delta == 0) {
-    uint32_t step_timeout_ms = (startup_sync_count == 0 && step_period_cnt >= 240) ? CalcStepTimeoutMs(step_period_cnt) : 50;
+    uint32_t step_timeout_ms = (startup_sync_count == 0 && step_period_cnt >= 240) ? Motion_CalcStepTimeoutMs(step_period_cnt) : 50;
     bool is_freewheeling = stall_tripped || !GetStepEnabled();
-    MotionIdleCheckRequest_t req = {
+    Motion_StopRequest_t req = {
         .commanded_pos = position.commanded_pos,
         .encoder_pos = position.encoder_pos,
         .planned_encoder_pos = planned_encoder_pos,
@@ -783,7 +778,7 @@ void DMA_TransferComplete_Handler(void) {
   CheckMotionIdle();
 }
 
-void Motion_Init(void) {
+void InitMotion(void) {
   current_quad_state = 0;
   half_0_delta = 0;
   half_1_delta = 0;
@@ -808,15 +803,7 @@ void Motion_Init(void) {
 void UpdateTick(void) {
   ++now;
   UpdateLEDs();
-
-  if (!motion_active) {
-    uint16_t step_cnt = UINT16_MAX - (uint16_t) DMA1_Channel5->CNDTR;
-    uint16_t step_dcnt = (step_cnt != position.step_cnt_prev) ? 1 : 0;
-    bool is_freewheeling = stall_tripped || !GetStepEnabled();
-    if (Motion_ShouldStart(position.commanded_pos, position.encoder_pos, step_dcnt, load_tension, config.torque_t0, is_freewheeling)) {
-      Motion_Start();
-    }
-  }
+  MaybeStartMotion();
 }
 
 void SetLimit1(bool active) {
@@ -1054,7 +1041,7 @@ int main(void)
   position.step_rem = 0;
   UpdateStepDirection();
   UpdateStepEnabled();
-  Motion_Init();
+  InitMotion();
 
   /* USER CODE END 2 */
 

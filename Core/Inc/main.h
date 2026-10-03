@@ -80,7 +80,7 @@ void UpdateStepEnabled(void);
 void UpdateTick(void);
 
 void Motion_Init(void);
-void Motion_Start(void);
+bool MaybeStartMotion(void);
 void Motion_Wakeup_Handler(void);
 void DMA_HalfTransfer_Handler(void);
 void DMA_TransferComplete_Handler(void);

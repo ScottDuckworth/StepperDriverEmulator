@@ -4,7 +4,78 @@
 #include <math.h>
 #include <stdlib.h>
 
-void PlanMotionStep(const EmulatorConfig_t* cfg, const MotionPlanRequest_t* req, MotionPlanResult_t* res) {
+bool Motion_ShouldStart(const EmulatorConfig_t* cfg, const Motion_StartRequest_t* req) {
+  if (!cfg || !req) return false;
+  if (req->is_freewheeling) {
+    return (req->load_tension != 0);
+  }
+  int32_t abs_tension = (req->load_tension >= 0) ? req->load_tension : -req->load_tension;
+  return (req->commanded_pos != req->encoder_pos) || (req->step_dcnt != 0) || (abs_tension > cfg->torque_t0);
+}
+
+bool Motion_PrepareStart(const EmulatorConfig_t* cfg,
+                        const Motion_StartRequest_t* req,
+                        const Motion_StartBuffers_t* buf,
+                        Motion_StartResult_t* out_res) {
+  if (!cfg || !req || !buf || !buf->quad_buffer || !buf->inout_quad_state) return false;
+
+  if (!Motion_ShouldStart(cfg, req)) {
+    return false;
+  }
+
+  uint16_t chunk_size = (buf->chunk_size > 0) ? buf->chunk_size : 8;
+  int64_t planned_pos = req->encoder_pos;
+  bool stall_event = false;
+
+  // Prime Chunk 0 (startup_sync_count = 1 -> step_period_cnt = 0)
+  Motion_PlanStepRequest_t p_req = {
+      .commanded_pos = req->commanded_pos,
+      .planned_encoder_pos = planned_pos,
+      .load_tension = req->load_tension,
+      .now = req->now,
+      .last_step_time = req->last_step_time,
+      .step_period_cnt = 0,
+      .step_reverse = req->step_reverse,
+      .is_freewheeling = req->is_freewheeling,
+      .stall_tripped = req->stall_tripped,
+      .chunk_size = chunk_size
+  };
+
+  Motion_ChunkRequest_t c_req0 = {
+      .chunk = &buf->quad_buffer[0],
+      .inout_quad_state = buf->inout_quad_state
+  };
+  Motion_ChunkResult_t c_res0 = {0};
+  Motion_PlanAndEmitChunk(cfg, &p_req, &c_req0, &c_res0);
+  planned_pos += c_res0.delta;
+  if (c_res0.stall_trip_event) stall_event = true;
+
+  // Prime Chunk 1
+  p_req.planned_encoder_pos = planned_pos;
+  p_req.is_freewheeling = req->is_freewheeling || stall_event;
+  p_req.stall_tripped = req->stall_tripped || stall_event;
+
+  Motion_ChunkRequest_t c_req1 = {
+      .chunk = &buf->quad_buffer[chunk_size],
+      .inout_quad_state = buf->inout_quad_state
+  };
+  Motion_ChunkResult_t c_res1 = {0};
+  Motion_PlanAndEmitChunk(cfg, &p_req, &c_req1, &c_res1);
+  planned_pos += c_res1.delta;
+  if (c_res1.stall_trip_event) stall_event = true;
+
+  if (out_res) {
+    out_res->psc = c_res0.psc;
+    out_res->arr = c_res0.arr;
+    out_res->half_0_delta = c_res0.delta;
+    out_res->half_1_delta = c_res1.delta;
+    out_res->planned_encoder_pos = planned_pos;
+    out_res->stall_trip_event = stall_event;
+  }
+  return true;
+}
+
+void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t* req, Motion_PlanStepResult_t* res) {
   if (!cfg || !req || !res) return;
 
   res->target_velocity = 0.0f;
@@ -33,7 +104,7 @@ void PlanMotionStep(const EmulatorConfig_t* cfg, const MotionPlanRequest_t* req,
   float step_counts = cfg->counts_per_step;
   float rate_scale = 48000.0f * step_counts;
 
-  uint32_t step_timeout_ms = CalcStepTimeoutMs(req->step_period_cnt);
+  uint32_t step_timeout_ms = Motion_CalcStepTimeoutMs(req->step_period_cnt);
 
   float input_rate = 0.0f;
   if ((req->now - req->last_step_time) <= step_timeout_ms && req->step_period_cnt >= 240 && cfg->ratio_spr > 0) {
@@ -166,56 +237,16 @@ void PlanMotionStep(const EmulatorConfig_t* cfg, const MotionPlanRequest_t* req,
   }
 }
 
-uint32_t CalcStepTimeoutMs(uint32_t step_period_cnt) {
-  uint32_t step_timeout_ms = 50;
-  if (step_period_cnt >= 48000) {
-    uint32_t period_ms = step_period_cnt / 48000;
-    uint32_t dynamic_timeout = period_ms + (period_ms >> 1) + 10;
-    if (dynamic_timeout > step_timeout_ms) {
-      step_timeout_ms = (dynamic_timeout < 150) ? dynamic_timeout : 150;
-    }
-  }
-  return step_timeout_ms;
-}
-
-bool Motion_ShouldStart(int64_t commanded_pos, int64_t encoder_pos, uint16_t step_dcnt, int32_t load_tension, int32_t torque_t0, bool is_freewheeling) {
-  if (is_freewheeling) {
-    return (load_tension != 0);
-  }
-  int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
-  return (commanded_pos != encoder_pos) || (step_dcnt != 0) || (abs_tension > torque_t0);
-}
-
-bool Motion_ShouldStop(const EmulatorConfig_t* cfg, const MotionIdleCheckRequest_t* req) {
-  if (!cfg || !req) return false;
-  if (req->is_freewheeling) {
-    return (req->load_tension == 0);
-  }
-  if (req->time_since_last_step_ms < req->step_timeout_ms) {
-    return false;
-  }
-  int32_t abs_tension = (req->load_tension >= 0) ? req->load_tension : -req->load_tension;
-  return (req->commanded_pos == req->encoder_pos &&
-          req->encoder_pos == req->planned_encoder_pos &&
-          req->step_dcnt == 0 &&
-          abs_tension <= cfg->torque_t0);
-}
-
-/*
- * Motion_PlanAndEmitChunk:
- * Evaluates the motion profile for one chunk interval, renders the corresponding
- * quadrature edge patterns into the DMA buffer slice, and computes timer pacing.
- */
 bool Motion_PlanAndEmitChunk(const EmulatorConfig_t* cfg,
-                            const MotionPlanRequest_t* plan_req,
-                            const MotionChunkRequest_t* chunk_req,
-                            MotionChunkResult_t* out_res) {
+                            const Motion_PlanStepRequest_t* plan_req,
+                            const Motion_ChunkRequest_t* chunk_req,
+                            Motion_ChunkResult_t* out_res) {
   if (!cfg || !plan_req || !chunk_req || !chunk_req->chunk || !chunk_req->inout_quad_state) {
     return false;
   }
 
-  MotionPlanResult_t plan_res;
-  PlanMotionStep(cfg, plan_req, &plan_res);
+  Motion_PlanStepResult_t plan_res;
+  Motion_PlanStep(cfg, plan_req, &plan_res);
 
   uint16_t chunk_sz = (plan_req->chunk_size > 0) ? plan_req->chunk_size : 8;
   int8_t delta = GenerateQuadChunk(chunk_req->chunk, chunk_sz, chunk_req->inout_quad_state, plan_res.dir, plan_res.count_to_emit);
@@ -238,72 +269,29 @@ bool Motion_PlanAndEmitChunk(const EmulatorConfig_t* cfg,
   return true;
 }
 
-/*
- * Motion_PrepareStart:
- * Validates motion startup conditions, primes both chunks of the circular DMA
- * buffer (chunk 0 and chunk 1), verifies non-zero movement, and returns initial pacing.
- */
-bool Motion_PrepareStart(const EmulatorConfig_t* cfg,
-                        const MotionStartRequest_t* req,
-                        MotionStartResult_t* out_res) {
-  if (!cfg || !req || !req->quad_buffer || !req->inout_quad_state) return false;
+uint32_t Motion_CalcStepTimeoutMs(uint32_t step_period_cnt) {
+  uint32_t step_timeout_ms = 50;
+  if (step_period_cnt >= 48000) {
+    uint32_t period_ms = step_period_cnt / 48000;
+    uint32_t dynamic_timeout = period_ms + (period_ms >> 1) + 10;
+    if (dynamic_timeout > step_timeout_ms) {
+      step_timeout_ms = (dynamic_timeout < 150) ? dynamic_timeout : 150;
+    }
+  }
+  return step_timeout_ms;
+}
 
-  if (!Motion_ShouldStart(req->commanded_pos, req->encoder_pos, req->step_dcnt, req->load_tension, cfg->torque_t0, req->is_freewheeling)) {
+bool Motion_ShouldStop(const EmulatorConfig_t* cfg, const Motion_StopRequest_t* req) {
+  if (!cfg || !req) return false;
+  if (req->is_freewheeling) {
+    return (req->load_tension == 0);
+  }
+  if (req->time_since_last_step_ms < req->step_timeout_ms) {
     return false;
   }
-
-  uint16_t chunk_size = (req->chunk_size > 0) ? req->chunk_size : 8;
-  int64_t planned_pos = req->encoder_pos;
-  bool stall_event = false;
-
-  // Prime Chunk 0 (startup_sync_count = 1 -> step_period_cnt = 0)
-  MotionPlanRequest_t p_req = {
-      .commanded_pos = req->commanded_pos,
-      .planned_encoder_pos = planned_pos,
-      .load_tension = req->load_tension,
-      .now = req->now,
-      .last_step_time = req->last_step_time,
-      .step_period_cnt = 0,
-      .step_reverse = req->step_reverse,
-      .is_freewheeling = req->is_freewheeling,
-      .stall_tripped = req->stall_tripped,
-      .chunk_size = chunk_size
-  };
-
-  MotionChunkRequest_t c_req0 = {
-      .chunk = &req->quad_buffer[0],
-      .inout_quad_state = req->inout_quad_state
-  };
-  MotionChunkResult_t c_res0 = {0};
-  Motion_PlanAndEmitChunk(cfg, &p_req, &c_req0, &c_res0);
-  planned_pos += c_res0.delta;
-  if (c_res0.stall_trip_event) stall_event = true;
-
-  // Prime Chunk 1
-  p_req.planned_encoder_pos = planned_pos;
-  p_req.is_freewheeling = req->is_freewheeling || stall_event;
-  p_req.stall_tripped = req->stall_tripped || stall_event;
-
-  MotionChunkRequest_t c_req1 = {
-      .chunk = &req->quad_buffer[chunk_size],
-      .inout_quad_state = req->inout_quad_state
-  };
-  MotionChunkResult_t c_res1 = {0};
-  Motion_PlanAndEmitChunk(cfg, &p_req, &c_req1, &c_res1);
-  planned_pos += c_res1.delta;
-  if (c_res1.stall_trip_event) stall_event = true;
-
-  if (c_res0.delta == 0 && c_res1.delta == 0 && !Motion_ShouldStart(req->commanded_pos, req->encoder_pos, req->step_dcnt, req->load_tension, cfg->torque_t0, req->is_freewheeling)) {
-    return false;
-  }
-
-  if (out_res) {
-    out_res->psc = c_res0.psc;
-    out_res->arr = c_res0.arr;
-    out_res->half_0_delta = c_res0.delta;
-    out_res->half_1_delta = c_res1.delta;
-    out_res->planned_encoder_pos = planned_pos;
-    out_res->stall_trip_event = stall_event;
-  }
-  return true;
+  int32_t abs_tension = (req->load_tension >= 0) ? req->load_tension : -req->load_tension;
+  return (req->commanded_pos == req->encoder_pos &&
+          req->encoder_pos == req->planned_encoder_pos &&
+          req->step_dcnt == 0 &&
+          abs_tension <= cfg->torque_t0);
 }
