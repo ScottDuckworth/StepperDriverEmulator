@@ -565,16 +565,21 @@ void UpdateStepDirection(void) {
   ReportStepReverse();
 }
 
-static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
+/*
+ * FillQuadChunk:
+ * Service routine invoked by DMA half-transfer and transfer-complete interrupts.
+ * Updates position tracking, delegates chunk calculation and pattern rendering
+ * to Motion_PlanAndEmitChunk, updates TIM3 pacing registers for the next chunk,
+ * and returns the emitted delta counts.
+ */
+static int8_t FillQuadChunk(uint32_t* chunk) {
   UpdatePositionCounters();
 
   bool is_freewheeling = stall_tripped || !GetStepEnabled();
-  int64_t commanded_pos = position.commanded_pos;
-
   uint32_t period_cnt = (startup_sync_count > 0) ? 0 : step_period_cnt;
 
-  MotionPlanRequest_t req = {
-      .commanded_pos = commanded_pos,
+  MotionPlanRequest_t plan_req = {
+      .commanded_pos = position.commanded_pos,
       .planned_encoder_pos = planned_encoder_pos,
       .load_tension = load_tension,
       .now = now,
@@ -585,33 +590,30 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
       .stall_tripped = stall_tripped,
       .chunk_size = CHUNK_SIZE
   };
-  MotionPlanResult_t res;
-  PlanMotionStep(&config, &req, &res);
+
+  MotionChunkRequest_t chunk_req = {
+      .chunk = chunk,
+      .inout_quad_state = &current_quad_state
+  };
+
+  MotionChunkResult_t res = {0};
+  Motion_PlanAndEmitChunk(&config, &plan_req, &chunk_req, &res);
+  planned_encoder_pos += res.delta;
 
   if (res.stall_trip_event) {
     stall_tripped = true;
     ReportStallTrip();
   }
 
-  *out_delta = GenerateQuadChunk(chunk, CHUNK_SIZE, &current_quad_state, res.dir, res.count_to_emit);
-  planned_encoder_pos += *out_delta;
-
-  // Calculate pacing frequency
-  float pace_velocity = res.target_velocity;
-  if (pace_velocity == 0.0f) {
-    pace_velocity = config.counts_per_step;
-  }
-
-  uint16_t psc = 0;
-  uint16_t arr = 0;
-  CalcTimerPacing(pace_velocity, &psc, &arr);
-  TIM3->PSC = psc;
-  TIM3->ARR = arr;
+  TIM3->PSC = res.psc;
+  TIM3->ARR = res.arr;
 
   if (step_period_cnt >= 48000 && GetStepEnabled()) {
     TIM2->SR = 0;
     TIM2->DIER |= TIM_DIER_CC1IE;
   }
+
+  return res.delta;
 }
 
 void Motion_Start(void) {
@@ -619,28 +621,35 @@ void Motion_Start(void) {
 
   UpdatePositionCounters();
   bool is_freewheeling = stall_tripped || !GetStepEnabled();
-  if (!Motion_ShouldStart(position.commanded_pos, position.encoder_pos, position.step_dcnt, load_tension, config.torque_t0, is_freewheeling)) {
+
+  MotionStartRequest_t req = {
+      .commanded_pos = position.commanded_pos,
+      .encoder_pos = position.encoder_pos,
+      .load_tension = load_tension,
+      .step_dcnt = position.step_dcnt,
+      .now = now,
+      .last_step_time = last_step_time,
+      .step_reverse = position.step_reverse,
+      .is_freewheeling = is_freewheeling,
+      .stall_tripped = stall_tripped,
+      .chunk_size = CHUNK_SIZE,
+      .quad_buffer = quad_buffer,
+      .inout_quad_state = &current_quad_state
+  };
+  MotionStartResult_t res;
+  if (!Motion_PrepareStart(&config, &req, &res)) {
     return;
   }
 
   motion_active = true;
   startup_sync_count = 1;
-  planned_encoder_pos = position.encoder_pos;
+  planned_encoder_pos = res.planned_encoder_pos;
+  half_0_delta = res.half_0_delta;
+  half_1_delta = res.half_1_delta;
 
-  FillQuadChunk(&quad_buffer[0], &half_0_delta);
-  uint16_t chunk0_psc = TIM3->PSC;
-  uint16_t chunk0_arr = TIM3->ARR;
-
-  FillQuadChunk(&quad_buffer[CHUNK_SIZE], &half_1_delta);
-
-  // Arm TIM3 with Chunk 0 pacing, since Chunk 0 is the chunk transmitted first by DMA!
-  TIM3->PSC = chunk0_psc;
-  TIM3->ARR = chunk0_arr;
-
-  if (half_0_delta == 0 && half_1_delta == 0 && !Motion_ShouldStart(position.commanded_pos, position.encoder_pos, position.step_dcnt, load_tension, config.torque_t0, is_freewheeling)) {
-    motion_active = false;
-    startup_sync_count = 0;
-    return;
+  if (res.stall_trip_event) {
+    stall_tripped = true;
+    ReportStallTrip();
   }
 
   DMA1_Channel3->CCR &= ~DMA_CCR_EN;
@@ -648,6 +657,9 @@ void Motion_Start(void) {
   DMA1_Channel3->CNDTR = TOTAL_BUFFER_SIZE;
   DMA1_Channel3->CCR |= DMA_CCR_EN;
 
+  // Arm TIM3 with Chunk 0 pacing, since Chunk 0 is the chunk transmitted first by DMA!
+  TIM3->PSC = res.psc;
+  TIM3->ARR = res.arr;
   TIM3->CNT = 0;
   TIM3->CR1 |= TIM_CR1_CEN;
   TIM3->EGR = TIM_EGR_UG;
@@ -761,13 +773,13 @@ static void CheckMotionIdle(void) {
 
 void DMA_HalfTransfer_Handler(void) {
   position.encoder_pos += half_0_delta;
-  FillQuadChunk(&quad_buffer[0], &half_0_delta);
+  half_0_delta = FillQuadChunk(&quad_buffer[0]);
   CheckMotionIdle();
 }
 
 void DMA_TransferComplete_Handler(void) {
   position.encoder_pos += half_1_delta;
-  FillQuadChunk(&quad_buffer[CHUNK_SIZE], &half_1_delta);
+  half_1_delta = FillQuadChunk(&quad_buffer[CHUNK_SIZE]);
   CheckMotionIdle();
 }
 

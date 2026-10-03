@@ -648,6 +648,111 @@ void test_motion_should_stop(void) {
   TEST_ASSERT_FALSE(Motion_ShouldStop(&test_cfg, NULL));
 }
 
+void test_motion_plan_and_emit_chunk(void) {
+  uint32_t chunk[8] = {0};
+  uint8_t quad_state = 0;
+
+  MotionPlanRequest_t plan_req = {
+      .commanded_pos = 100,
+      .planned_encoder_pos = 0,
+      .load_tension = 0,
+      .now = 1000,
+      .last_step_time = 0,
+      .step_period_cnt = 0,
+      .step_reverse = false,
+      .is_freewheeling = false,
+      .stall_tripped = false,
+      .chunk_size = 8
+  };
+
+  MotionChunkRequest_t chunk_req = {
+      .chunk = chunk,
+      .inout_quad_state = &quad_state
+  };
+  MotionChunkResult_t res = {0};
+
+  bool ok = Motion_PlanAndEmitChunk(&config, &plan_req, &chunk_req, &res);
+  TEST_ASSERT_TRUE(ok);
+  TEST_ASSERT_EQUAL_INT8(8, res.delta);
+  TEST_ASSERT_FALSE(res.stall_trip_event);
+  TEST_ASSERT_GREATER_THAN_UINT16(0, res.arr);
+
+  // Buffer entries should not all be 0 (valid GPIO BSRR bits set)
+  TEST_ASSERT_NOT_EQUAL(0, chunk[0]);
+  TEST_ASSERT_NOT_EQUAL(0, chunk[7]);
+
+  // NULL safety
+  TEST_ASSERT_FALSE(Motion_PlanAndEmitChunk(NULL, &plan_req, &chunk_req, &res));
+  TEST_ASSERT_FALSE(Motion_PlanAndEmitChunk(&config, NULL, &chunk_req, &res));
+  TEST_ASSERT_FALSE(Motion_PlanAndEmitChunk(&config, &plan_req, NULL, &res));
+  MotionChunkRequest_t bad_chunk = chunk_req;
+  bad_chunk.chunk = NULL;
+  TEST_ASSERT_FALSE(Motion_PlanAndEmitChunk(&config, &plan_req, &bad_chunk, &res));
+  bad_chunk = chunk_req;
+  bad_chunk.inout_quad_state = NULL;
+  TEST_ASSERT_FALSE(Motion_PlanAndEmitChunk(&config, &plan_req, &bad_chunk, &res));
+}
+
+void test_motion_prepare_start(void) {
+  uint32_t quad_buf[16] = {0};
+  uint8_t quad_state = 0;
+  MotionStartResult_t res = {0};
+
+  // 1. Should not start when idle and aligned
+  MotionStartRequest_t idle_req = {
+      .commanded_pos = 1000,
+      .encoder_pos = 1000,
+      .load_tension = 0,
+      .step_dcnt = 0,
+      .now = 500,
+      .last_step_time = 0,
+      .step_reverse = false,
+      .is_freewheeling = false,
+      .stall_tripped = false,
+      .chunk_size = 8,
+      .quad_buffer = quad_buf,
+      .inout_quad_state = &quad_state
+  };
+  TEST_ASSERT_FALSE(Motion_PrepareStart(&config, &idle_req, &res));
+
+  // 2. Nominal start with position error
+  MotionStartRequest_t start_req = {
+      .commanded_pos = 100,
+      .encoder_pos = 0,
+      .load_tension = 0,
+      .step_dcnt = 0,
+      .now = 500,
+      .last_step_time = 0,
+      .step_reverse = false,
+      .is_freewheeling = false,
+      .stall_tripped = false,
+      .chunk_size = 8,
+      .quad_buffer = quad_buf,
+      .inout_quad_state = &quad_state
+  };
+  bool started = Motion_PrepareStart(&config, &start_req, &res);
+  TEST_ASSERT_TRUE(started);
+  TEST_ASSERT_EQUAL_INT8(8, res.half_0_delta);
+  TEST_ASSERT_EQUAL_INT8(8, res.half_1_delta);
+  TEST_ASSERT_EQUAL_INT64(16, res.planned_encoder_pos);
+  TEST_ASSERT_GREATER_THAN_UINT16(0, res.arr);
+  TEST_ASSERT_FALSE(res.stall_trip_event);
+
+  // Both halves of buffer should have valid patterns
+  TEST_ASSERT_NOT_EQUAL(0, quad_buf[0]);
+  TEST_ASSERT_NOT_EQUAL(0, quad_buf[8]);
+
+  // 3. NULL safety
+  TEST_ASSERT_FALSE(Motion_PrepareStart(NULL, &start_req, &res));
+  TEST_ASSERT_FALSE(Motion_PrepareStart(&config, NULL, &res));
+  MotionStartRequest_t bad_start = start_req;
+  bad_start.quad_buffer = NULL;
+  TEST_ASSERT_FALSE(Motion_PrepareStart(&config, &bad_start, &res));
+  bad_start = start_req;
+  bad_start.inout_quad_state = NULL;
+  TEST_ASSERT_FALSE(Motion_PrepareStart(&config, &bad_start, &res));
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_planner_nominal_tracking_forward);
@@ -673,5 +778,7 @@ int main(void) {
   RUN_TEST(test_calc_step_timeout_ms);
   RUN_TEST(test_motion_should_start);
   RUN_TEST(test_motion_should_stop);
+  RUN_TEST(test_motion_plan_and_emit_chunk);
+  RUN_TEST(test_motion_prepare_start);
   return UNITY_END();
 }

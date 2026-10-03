@@ -1,5 +1,6 @@
 #include "motion_planner.h"
 #include "motion_math.h"
+#include "quadrature.h"
 #include <math.h>
 #include <stdlib.h>
 
@@ -198,4 +199,111 @@ bool Motion_ShouldStop(const EmulatorConfig_t* cfg, const MotionIdleCheckRequest
           req->encoder_pos == req->planned_encoder_pos &&
           req->step_dcnt == 0 &&
           abs_tension <= cfg->torque_t0);
+}
+
+/*
+ * Motion_PlanAndEmitChunk:
+ * Evaluates the motion profile for one chunk interval, renders the corresponding
+ * quadrature edge patterns into the DMA buffer slice, and computes timer pacing.
+ */
+bool Motion_PlanAndEmitChunk(const EmulatorConfig_t* cfg,
+                            const MotionPlanRequest_t* plan_req,
+                            const MotionChunkRequest_t* chunk_req,
+                            MotionChunkResult_t* out_res) {
+  if (!cfg || !plan_req || !chunk_req || !chunk_req->chunk || !chunk_req->inout_quad_state) {
+    return false;
+  }
+
+  MotionPlanResult_t plan_res;
+  PlanMotionStep(cfg, plan_req, &plan_res);
+
+  uint16_t chunk_sz = (plan_req->chunk_size > 0) ? plan_req->chunk_size : 8;
+  int8_t delta = GenerateQuadChunk(chunk_req->chunk, chunk_sz, chunk_req->inout_quad_state, plan_res.dir, plan_res.count_to_emit);
+
+  float pace_velocity = plan_res.target_velocity;
+  if (pace_velocity == 0.0f) {
+    pace_velocity = cfg->counts_per_step;
+  }
+
+  uint16_t psc = 0;
+  uint16_t arr = 0;
+  CalcTimerPacing(pace_velocity, &psc, &arr);
+
+  if (out_res) {
+    out_res->delta = delta;
+    out_res->psc = psc;
+    out_res->arr = arr;
+    out_res->stall_trip_event = plan_res.stall_trip_event;
+  }
+  return true;
+}
+
+/*
+ * Motion_PrepareStart:
+ * Validates motion startup conditions, primes both chunks of the circular DMA
+ * buffer (chunk 0 and chunk 1), verifies non-zero movement, and returns initial pacing.
+ */
+bool Motion_PrepareStart(const EmulatorConfig_t* cfg,
+                        const MotionStartRequest_t* req,
+                        MotionStartResult_t* out_res) {
+  if (!cfg || !req || !req->quad_buffer || !req->inout_quad_state) return false;
+
+  if (!Motion_ShouldStart(req->commanded_pos, req->encoder_pos, req->step_dcnt, req->load_tension, cfg->torque_t0, req->is_freewheeling)) {
+    return false;
+  }
+
+  uint16_t chunk_size = (req->chunk_size > 0) ? req->chunk_size : 8;
+  int64_t planned_pos = req->encoder_pos;
+  bool stall_event = false;
+
+  // Prime Chunk 0 (startup_sync_count = 1 -> step_period_cnt = 0)
+  MotionPlanRequest_t p_req = {
+      .commanded_pos = req->commanded_pos,
+      .planned_encoder_pos = planned_pos,
+      .load_tension = req->load_tension,
+      .now = req->now,
+      .last_step_time = req->last_step_time,
+      .step_period_cnt = 0,
+      .step_reverse = req->step_reverse,
+      .is_freewheeling = req->is_freewheeling,
+      .stall_tripped = req->stall_tripped,
+      .chunk_size = chunk_size
+  };
+
+  MotionChunkRequest_t c_req0 = {
+      .chunk = &req->quad_buffer[0],
+      .inout_quad_state = req->inout_quad_state
+  };
+  MotionChunkResult_t c_res0 = {0};
+  Motion_PlanAndEmitChunk(cfg, &p_req, &c_req0, &c_res0);
+  planned_pos += c_res0.delta;
+  if (c_res0.stall_trip_event) stall_event = true;
+
+  // Prime Chunk 1
+  p_req.planned_encoder_pos = planned_pos;
+  p_req.is_freewheeling = req->is_freewheeling || stall_event;
+  p_req.stall_tripped = req->stall_tripped || stall_event;
+
+  MotionChunkRequest_t c_req1 = {
+      .chunk = &req->quad_buffer[chunk_size],
+      .inout_quad_state = req->inout_quad_state
+  };
+  MotionChunkResult_t c_res1 = {0};
+  Motion_PlanAndEmitChunk(cfg, &p_req, &c_req1, &c_res1);
+  planned_pos += c_res1.delta;
+  if (c_res1.stall_trip_event) stall_event = true;
+
+  if (c_res0.delta == 0 && c_res1.delta == 0 && !Motion_ShouldStart(req->commanded_pos, req->encoder_pos, req->step_dcnt, req->load_tension, cfg->torque_t0, req->is_freewheeling)) {
+    return false;
+  }
+
+  if (out_res) {
+    out_res->psc = c_res0.psc;
+    out_res->arr = c_res0.arr;
+    out_res->half_0_delta = c_res0.delta;
+    out_res->half_1_delta = c_res1.delta;
+    out_res->planned_encoder_pos = planned_pos;
+    out_res->stall_trip_event = stall_event;
+  }
+  return true;
 }

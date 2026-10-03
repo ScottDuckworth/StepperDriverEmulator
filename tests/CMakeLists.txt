@@ -115,6 +115,7 @@ add_executable(test_motion_planner
     test_motion_planner.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/motion_planner.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/motion_math.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/quadrature.c
 )
 target_include_directories(test_motion_planner PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Inc
