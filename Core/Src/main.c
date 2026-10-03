@@ -611,11 +611,7 @@ static void FillQuadChunk(uint32_t* chunk, int8_t* out_delta) {
   float pace_velocity = res.target_velocity;
   if (pace_velocity == 0.0f) {
     if (config.spr > 0) {
-      if ((config.epr % config.spr) == 0) {
-        pace_velocity = (float)(config.epr / config.spr);
-      } else {
-        pace_velocity = ((float) config.epr / (float) config.spr);
-      }
+      pace_velocity = ((float) config.epr / (float) config.spr);
     } else {
       pace_velocity = 4.0f;
     }
