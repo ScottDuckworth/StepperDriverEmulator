@@ -117,14 +117,6 @@ static inline q16_t MathUtil_MulQ16_Q16(q16_t a, q16_t b) {
   return q;
 }
 
-/*
- * 64-bit intermediate fixed-point multiplication helper:
- * Promotes operands to 64-bit before shifting, preventing overflow
- * when multiplying large numbers by a Q16 scale factor.
- */
-static inline int32_t MathUtil_MulQ16_64(int32_t a, q16_t b) {
-  return (int32_t)(((int64_t) a * b.raw) >> 16);
-}
 
 /*
  * Integer clamp utility:

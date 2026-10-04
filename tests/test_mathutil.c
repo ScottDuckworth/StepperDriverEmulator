@@ -135,12 +135,12 @@ void test_mathutil_mul_q12_and_q16(void) {
   // Q16 * Q16 multiplication
   TEST_ASSERT_EQUAL_INT32(65536, MathUtil_MulQ16_Q16((q16_t){.raw = 65536}, (q16_t){.raw = 65536}).raw);
 
-  // Q16_64 multiplication with large numbers
+  // Q16 * Q16 multiplication with large numbers (using 64-bit intermediate product)
   // 65536 * 65536 = 4,294,967,296. In Q16: 65536
-  TEST_ASSERT_EQUAL_INT32(65536, MathUtil_MulQ16_64(65536, (q16_t){.raw = 65536}));
+  TEST_ASSERT_EQUAL_INT32(65536, MathUtil_MulQ16_Q16((q16_t){.raw = 65536}, (q16_t){.raw = 65536}).raw);
   // 4000 * 4000 = 16,000,000. In Q16: 16,000,000 * 16384 = 262,144,000,000 (overflows 32-bit!)
-  // MathUtil_MulQ16_64 safely computes: (16,000,000 * 16384) >> 16 = 4,000,000
-  TEST_ASSERT_EQUAL_INT32(4000000, MathUtil_MulQ16_64(16000000, (q16_t){.raw = 16384}));
+  // MathUtil_MulQ16_Q16 safely computes: (16,000,000 * 16384) >> 16 = 4,000,000
+  TEST_ASSERT_EQUAL_INT32(4000000, MathUtil_MulQ16_Q16((q16_t){.raw = 16000000}, (q16_t){.raw = 16384}).raw);
 
   // Conversion helpers
   TEST_ASSERT_EQUAL_INT32(20480, MathUtil_IntToQ12(5).raw);
