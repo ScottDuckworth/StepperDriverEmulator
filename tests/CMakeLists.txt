@@ -8,6 +8,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(unity)
 
 add_compile_definitions(UNITY_SUPPORT_64)
+add_compile_definitions(UNIT_TEST)
 
 # 1. Position Tracking & Coordinates Test
 add_executable(test_position
@@ -30,6 +31,8 @@ add_executable(test_motion
     test_motion.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/motion.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/quadrature.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/config_store.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/mathutil.c
 )
 target_include_directories(test_motion PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Inc
@@ -98,6 +101,7 @@ add_test(NAME test_led COMMAND $<TARGET_FILE:test_led> WORKING_DIRECTORY ${CMAKE
 add_executable(test_config_store
     test_config_store.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/config_store.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Core/Src/mathutil.c
 )
 target_compile_definitions(test_config_store PRIVATE
     UNIT_TEST

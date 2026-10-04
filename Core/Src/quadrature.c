@@ -27,12 +27,19 @@ int8_t GenerateQuadChunk(uint32_t* chunk, uint16_t chunk_size, uint8_t* inout_st
   }
 
   uint8_t state = *inout_state;
-  for (uint16_t i = 0; i < count_to_emit; i++) {
-    state = NextQuadState(state, dir);
-    chunk[i] = GetQuadBsrrValue(state);
+  if (dir > 0) {
+    for (uint16_t i = 0; i < count_to_emit; i++) {
+      state = (state + 1) & 3;
+      chunk[i] = QUAD_BSRR_STATES[state];
+    }
+  } else if (dir < 0) {
+    for (uint16_t i = 0; i < count_to_emit; i++) {
+      state = (state - 1) & 3;
+      chunk[i] = QUAD_BSRR_STATES[state];
+    }
   }
 
-  uint32_t fill_val = GetQuadBsrrValue(state);
+  uint32_t fill_val = QUAD_BSRR_STATES[state & 3];
   for (uint16_t i = count_to_emit; i < chunk_size; i++) {
     chunk[i] = fill_val;
   }
@@ -41,19 +48,15 @@ int8_t GenerateQuadChunk(uint32_t* chunk, uint16_t chunk_size, uint8_t* inout_st
   return (dir > 0) ? (int8_t) count_to_emit : (dir < 0) ? (int8_t)(-count_to_emit) : 0;
 }
 
-void CalcTimerPacing(float target_velocity_counts_per_ms, uint16_t* out_psc, uint16_t* out_arr) {
-  float abs_rate = target_velocity_counts_per_ms >= 0.0f ? target_velocity_counts_per_ms : -target_velocity_counts_per_ms;
-  if (abs_rate < 0.001f) {
-    abs_rate = 0.001f;
-  }
-  if (abs_rate > 300.0f) {
-    abs_rate = 300.0f;
-  }
-
-  uint32_t counts_per_sec = (uint32_t)(abs_rate * 1000.0f);
+void CalcTimerPacing(uint32_t target_velocity_counts_sec, uint16_t* out_psc, uint16_t* out_arr) {
+  uint32_t counts_per_sec = target_velocity_counts_sec;
   if (counts_per_sec < 1) {
     counts_per_sec = 1;
   }
+  if (counts_per_sec > 300000U) {
+    counts_per_sec = 300000U; // max 300 kHz
+  }
+
   uint32_t ticks = 48000000U / counts_per_sec;
   if (ticks < 160) {
     ticks = 160; // max 300 kHz

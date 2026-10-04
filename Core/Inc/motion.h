@@ -10,10 +10,10 @@ extern "C" {
 #endif
 
 /* Motor pull-out torque and dynamic load calculations */
-int32_t Motion_CalcMotorTorque(const EmulatorConfig_t* cfg, float speed_abs);
+int32_t Motion_CalcMotorTorque(const EmulatorConfig_t* cfg, uint32_t speed_counts_sec);
 int32_t Motion_CalcNetTorque(int32_t t_motor, int dir, int32_t load_tension);
-float Motion_CalcFreewheelVelocity(const EmulatorConfig_t* cfg, int32_t load_tension);
-float Motion_CalcSlipVelocity(const EmulatorConfig_t* cfg, int32_t load_tension, int32_t t_motor);
+int32_t Motion_CalcFreewheelVelocity(const EmulatorConfig_t* cfg, int32_t load_tension);
+int32_t Motion_CalcSlipVelocity(const EmulatorConfig_t* cfg, int32_t load_tension, int32_t t_motor);
 
 /* Motion start evaluation and state parameters */
 typedef struct {
@@ -61,7 +61,7 @@ typedef struct {
 
 /* Planned step outcome and target velocity */
 typedef struct {
-  float target_velocity;
+  int32_t target_velocity;      /* Target velocity in encoder counts/sec */
   int dir;
   uint16_t count_to_emit;
   bool is_freewheeling;

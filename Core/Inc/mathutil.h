@@ -8,6 +8,19 @@ extern "C" {
 #include <stdint.h>
 
 /*
+ * Strongly typed fixed-point representation structures.
+ * Encapsulating scaled integers inside structs prevents mixing up
+ * integer counts, velocities, and Q12 / Q16 fixed-point scales at compile-time.
+ */
+typedef struct {
+  int32_t raw;
+} q12_t;
+
+typedef struct {
+  int32_t raw;
+} q16_t;
+
+/*
  * MathUtil_CalcGCD:
  * Computes the Greatest Common Divisor using the Euclidean algorithm.
  * Handles zero values gracefully (GCD(0, x) = x, GCD(0, 0) = 0).
@@ -26,6 +39,102 @@ uint16_t MathUtil_CalcGCD(uint16_t a, uint16_t b);
  * saving Flash space on Cortex-M0 while preserving exact float accuracy.
  */
 float MathUtil_CalcRatioFloat(uint16_t num, uint16_t den);
+
+/*
+ * Fixed-point conversion helpers:
+ * Precomputes Q12 (scale 4096) and Q16 (scale 65536) values
+ * from float values during configuration loading or updates.
+ */
+q12_t MathUtil_FloatToQ12(float val);
+q16_t MathUtil_FloatToQ16(float val);
+float MathUtil_Q12ToFloat(q12_t q);
+float MathUtil_Q16ToFloat(q16_t q);
+
+/*
+ * Fixed-point raw and integer constructor/conversion helpers:
+ */
+static inline q12_t MathUtil_FromRawQ12(int32_t raw) {
+  q12_t q = { .raw = raw };
+  return q;
+}
+
+static inline q16_t MathUtil_FromRawQ16(int32_t raw) {
+  q16_t q = { .raw = raw };
+  return q;
+}
+
+static inline q12_t MathUtil_IntToQ12(int32_t val) {
+  q12_t q = { .raw = val << 12 };
+  return q;
+}
+
+static inline int32_t MathUtil_Q12ToInt(q12_t q) {
+  return (q.raw + 2048) >> 12;
+}
+
+static inline q16_t MathUtil_IntToQ16(int32_t val) {
+  q16_t q = { .raw = val << 16 };
+  return q;
+}
+
+static inline int32_t MathUtil_Q16ToInt(q16_t q) {
+  return (q.raw + 32768) >> 16;
+}
+
+/*
+ * Fixed-point ratio helpers:
+ * Computes (num / den) in Q12 and Q16 formats without floats.
+ */
+q12_t MathUtil_CalcRatioQ12(uint16_t num, uint16_t den);
+q16_t MathUtil_CalcRatioQ16(uint16_t num, uint16_t den);
+
+/*
+ * Fixed-point multiplication helpers:
+ * Executes 32-bit fixed-point multiplication on Cortex-M0.
+ * Operands must fit within signed 32-bit limits so intermediate products
+ * do not overflow 32 bits, executing via single-cycle muls instructions.
+ */
+
+/* Multiplies an integer by a Q12 scale factor, returning an integer. */
+static inline int32_t MathUtil_MulQ12(int32_t a, q12_t b) {
+  return (a * b.raw) >> 12;
+}
+
+/* Multiplies two Q12 scale factors, returning a Q12 scale factor. */
+static inline q12_t MathUtil_MulQ12_Q12(q12_t a, q12_t b) {
+  q12_t q = { .raw = (a.raw * b.raw) >> 12 };
+  return q;
+}
+
+/* Multiplies an integer by a Q16 scale factor, returning an integer. */
+static inline int32_t MathUtil_MulQ16(int32_t a, q16_t b) {
+  return (a * b.raw) >> 16;
+}
+
+/* Multiplies two Q16 scale factors, returning a Q16 scale factor. */
+static inline q16_t MathUtil_MulQ16_Q16(q16_t a, q16_t b) {
+  q16_t q = { .raw = (int32_t)(((int64_t) a.raw * b.raw) >> 16) };
+  return q;
+}
+
+/*
+ * 64-bit intermediate fixed-point multiplication helper:
+ * Promotes operands to 64-bit before shifting, preventing overflow
+ * when multiplying large numbers by a Q16 scale factor.
+ */
+static inline int32_t MathUtil_MulQ16_64(int32_t a, q16_t b) {
+  return (int32_t)(((int64_t) a * b.raw) >> 16);
+}
+
+/*
+ * Integer clamp utility:
+ * Clamps value between min_val and max_val.
+ */
+static inline int32_t MathUtil_ClampI32(int32_t val, int32_t min_val, int32_t max_val) {
+  if (val < min_val) return min_val;
+  if (val > max_val) return max_val;
+  return val;
+}
 
 #ifdef __cplusplus
 }

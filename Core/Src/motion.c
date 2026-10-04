@@ -1,18 +1,17 @@
 #include "motion.h"
 #include "quadrature.h"
-#include <math.h>
+#include "mathutil.h"
 #include <stdlib.h>
 
-int32_t Motion_CalcMotorTorque(const EmulatorConfig_t* cfg, float speed_abs) {
+int32_t Motion_CalcMotorTorque(const EmulatorConfig_t* cfg, uint32_t speed_counts_sec) {
   if (!cfg) return 0;
-  uint32_t v = (uint32_t) speed_abs;
-  if (v <= cfg->torque_v_knee) {
+  if (speed_counts_sec <= cfg->torque_v_knee) {
     return cfg->torque_t0;
   }
-  if (v >= cfg->torque_v_max || cfg->torque_v_max <= cfg->torque_v_knee) {
+  if (speed_counts_sec >= cfg->torque_v_max || cfg->torque_v_max <= cfg->torque_v_knee) {
     return cfg->torque_t_min;
   }
-  int32_t num = (cfg->torque_t0 - cfg->torque_t_min) * (int32_t)(v - cfg->torque_v_knee);
+  int32_t num = (cfg->torque_t0 - cfg->torque_t_min) * (int32_t)(speed_counts_sec - cfg->torque_v_knee);
   int32_t den = (int32_t)(cfg->torque_v_max - cfg->torque_v_knee);
   return (den > 0) ? (cfg->torque_t0 - (num / den)) : cfg->torque_t_min;
 }
@@ -23,26 +22,21 @@ int32_t Motion_CalcNetTorque(int32_t t_motor, int dir, int32_t load_tension) {
   return t_motor - abs_tension;
 }
 
-float Motion_CalcFreewheelVelocity(const EmulatorConfig_t* cfg, int32_t load_tension) {
-  if (!cfg) return 0.0f;
-  float v_free = (float) load_tension * cfg->kfree;
-  float v_max = (float) cfg->torque_v_max;
-  if (v_free > v_max) {
-    v_free = v_max;
-  } else if (v_free < -v_max) {
-    v_free = -v_max;
-  }
-  return v_free;
+int32_t Motion_CalcFreewheelVelocity(const EmulatorConfig_t* cfg, int32_t load_tension) {
+  if (!cfg) return 0;
+  int32_t v_free = MathUtil_MulQ12(load_tension, cfg->kfree_q12);
+  int32_t v_max = (int32_t) cfg->torque_v_max;
+  return MathUtil_ClampI32(v_free, -v_max, v_max);
 }
 
-float Motion_CalcSlipVelocity(const EmulatorConfig_t* cfg, int32_t load_tension, int32_t t_motor) {
-  if (!cfg) return 0.0f;
+int32_t Motion_CalcSlipVelocity(const EmulatorConfig_t* cfg, int32_t load_tension, int32_t t_motor) {
+  if (!cfg) return 0;
   int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
   if (abs_tension <= t_motor) {
-    return 0.0f;
+    return 0;
   }
-  float v_slip = (float)(abs_tension - t_motor) * cfg->kfree;
-  float v_max = (float) cfg->torque_v_max;
+  int32_t v_slip = MathUtil_MulQ12(abs_tension - t_motor, cfg->kfree_q12);
+  int32_t v_max = (int32_t) cfg->torque_v_max;
   if (v_slip > v_max) {
     v_slip = v_max;
   }
@@ -68,7 +62,7 @@ bool Motion_PrepareStart(const EmulatorConfig_t* cfg,
     return false;
   }
 
-  uint16_t chunk_size = (buf->chunk_size > 0) ? buf->chunk_size : 8;
+  uint16_t chunk_size = (buf->chunk_size > 0) ? buf->chunk_size : 16;
   int64_t planned_pos = req->encoder_pos;
   bool stall_event = false;
 
@@ -123,37 +117,35 @@ bool Motion_PrepareStart(const EmulatorConfig_t* cfg,
 void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t* req, Motion_PlanStepResult_t* res) {
   if (!cfg || !req || !res) return;
 
-  res->target_velocity = 0.0f;
+  res->target_velocity = 0;
   res->dir = 0;
   res->count_to_emit = 0;
   res->is_freewheeling = req->is_freewheeling;
   res->stall_tripped = req->stall_tripped;
   res->stall_trip_event = false;
 
-  uint16_t chunk_sz = (req->chunk_size > 0) ? req->chunk_size : 8;
+  uint16_t chunk_sz = (req->chunk_size > 0) ? req->chunk_size : 16;
 
   if (req->is_freewheeling) {
-    float v_free = Motion_CalcFreewheelVelocity(cfg, req->load_tension);
-    if (v_free != 0.0f) {
-      res->dir = (v_free > 0.0f) ? 1 : -1;
+    int32_t v_free = Motion_CalcFreewheelVelocity(cfg, req->load_tension);
+    if (v_free != 0) {
+      res->dir = (v_free > 0) ? 1 : -1;
       res->count_to_emit = chunk_sz;
-      res->target_velocity = v_free * 0.001f;
+      res->target_velocity = v_free;
     } else {
       res->dir = 0;
       res->count_to_emit = 0;
-      res->target_velocity = 0.0f;
+      res->target_velocity = 0;
     }
     return;
   }
 
-  float step_counts = cfg->counts_per_step;
+  uint32_t step_timeout_ms = (req->step_period_cnt < 48000) ? 50 : Motion_CalcStepTimeoutMs(req->step_period_cnt);
 
-  uint32_t step_timeout_ms = Motion_CalcStepTimeoutMs(req->step_period_cnt);
-
-  float input_rate = 0.0f;
+  int32_t input_rate = 0;
   if ((req->now - req->last_step_time) <= step_timeout_ms && req->step_period_cnt >= 160 && cfg->ratio_spr > 0) {
-    uint32_t step_hz_q4 = 768000000U / req->step_period_cnt;
-    input_rate = (float) step_hz_q4 * (step_counts * 0.0000625f);
+    uint32_t step_hz = 48000000U / req->step_period_cnt;
+    input_rate = MathUtil_MulQ12((int32_t) step_hz, cfg->counts_per_step_q12);
     if (req->step_reverse) {
       input_rate = -input_rate;
     }
@@ -161,7 +153,7 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
 
   int64_t d = req->commanded_pos - req->planned_encoder_pos;
   int32_t error = (d > INT32_MAX) ? INT32_MAX : ((d < INT32_MIN) ? INT32_MIN : (int32_t) d);
-  float eff_error = (float) error;
+  int32_t eff_error = error;
 
   // Soft-knee error profile during active step pulse streaming:
   // When pulses are streaming (input_rate != 0), normal discrete pulse arrivals cause
@@ -170,44 +162,50 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
   // Deducting the feedforward-managed step window eliminates double-counting the step
   // and prevents cyclic pacing frequency modulation across the phase, while restoring
   // gain (Kp) remains active for true tracking lag (> 1 step) or overshoot (< 0).
-  if (input_rate != 0.0f) {
-    float ff_window = cfg->kff * step_counts;
+  if (input_rate != 0) {
+    int32_t step_counts = MathUtil_Q12ToInt(cfg->counts_per_step_q12);
+    q12_t ff_window_q12 = MathUtil_MulQ12_Q12(cfg->kff_q12, cfg->counts_per_step_q12);
+    int32_t ff_window = MathUtil_Q12ToInt(ff_window_q12);
 
-    if (input_rate > 0.0f) {
+    if (input_rate > 0) {
       if (eff_error > ff_window) {
         eff_error -= ff_window;
-      } else if (eff_error >= 0.0f) {
-        eff_error = 0.0f;
+      } else if (eff_error >= 0) {
+        eff_error = 0;
       }
     } else {
       if (eff_error < -ff_window) {
         eff_error += ff_window;
-      } else if (eff_error <= 0.0f) {
-        eff_error = 0.0f;
+      } else if (eff_error <= 0) {
+        eff_error = 0;
       }
     }
 
-    float abs_err = fabsf(eff_error);
+    int32_t abs_err = (eff_error >= 0) ? eff_error : -eff_error;
     if (abs_err <= step_counts) {
-      eff_error = (eff_error * abs_err) * cfg->inv_counts_per_step;
+      eff_error = MathUtil_MulQ16(eff_error * abs_err, cfg->inv_counts_per_step_q16);
     }
   }
 
-  float target_velocity = cfg->kff * input_rate + cfg->kp * eff_error;
-  if (input_rate > 0.0f) {
-    if (target_velocity < 0.0f) {
-      target_velocity = 0.0f;
+  int32_t target_velocity = MathUtil_MulQ12(input_rate, cfg->kff_q12) +
+                            MathUtil_MulQ12(eff_error, cfg->kp_velocity_q12);
+  if (input_rate > 0) {
+    if (target_velocity < 0) {
+      target_velocity = 0;
     } else {
-      float max_v = fabsf(input_rate) * 1.25f + cfg->kp * step_counts;
+      int32_t step_counts = MathUtil_Q12ToInt(cfg->counts_per_step_q12);
+      int32_t max_v = input_rate + (input_rate >> 2) + MathUtil_MulQ12(step_counts, cfg->kp_velocity_q12);
       if (target_velocity > max_v) {
         target_velocity = max_v;
       }
     }
-  } else if (input_rate < 0.0f) {
-    if (target_velocity > 0.0f) {
-      target_velocity = 0.0f;
+  } else if (input_rate < 0) {
+    if (target_velocity > 0) {
+      target_velocity = 0;
     } else {
-      float min_v = -(fabsf(input_rate) * 1.25f + cfg->kp * step_counts);
+      int32_t abs_rate = -input_rate;
+      int32_t step_counts = MathUtil_Q12ToInt(cfg->counts_per_step_q12);
+      int32_t min_v = -(abs_rate + (abs_rate >> 2) + MathUtil_MulQ12(step_counts, cfg->kp_velocity_q12));
       if (target_velocity < min_v) {
         target_velocity = min_v;
       }
@@ -216,19 +214,19 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
   res->target_velocity = target_velocity;
 
   int dir = 0;
-  if (input_rate > 0.0f) {
+  if (input_rate > 0) {
     dir = 1;
-  } else if (input_rate < 0.0f) {
+  } else if (input_rate < 0) {
     dir = -1;
-  } else if (target_velocity > 0.0f) {
+  } else if (target_velocity > 0) {
     dir = 1;
-  } else if (target_velocity < 0.0f) {
+  } else if (target_velocity < 0) {
     dir = -1;
   } else if (error != 0) {
     dir = (error > 0) ? 1 : -1;
   }
 
-  float speed_hz = fabsf(target_velocity) * 1000.0f;
+  uint32_t speed_hz = (target_velocity >= 0) ? (uint32_t) target_velocity : (uint32_t)(-target_velocity);
   int32_t t_motor = Motion_CalcMotorTorque(cfg, speed_hz);
   int32_t t_net = Motion_CalcNetTorque(t_motor, dir, req->load_tension);
   uint32_t abs_error = (error < 0) ? (0U - (uint32_t) error) : (uint32_t) error;
@@ -249,11 +247,11 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
   }
 
   // Torque deficit: tension exceeds motor torque capacity at speed (opposing or overrunning)
-  float v_slip = Motion_CalcSlipVelocity(cfg, req->load_tension, t_motor);
-  if (v_slip > 0.0f) {
+  int32_t v_slip = Motion_CalcSlipVelocity(cfg, req->load_tension, t_motor);
+  if (v_slip > 0) {
     res->dir = (req->load_tension > 0) ? 1 : -1;
     res->count_to_emit = chunk_sz;
-    res->target_velocity = (res->dir > 0) ? (v_slip * 0.001f) : -(v_slip * 0.001f);
+    res->target_velocity = (res->dir > 0) ? v_slip : -v_slip;
   } else {
     res->dir = 0;
     res->count_to_emit = 0;
@@ -280,12 +278,17 @@ bool Motion_PlanAndEmitChunk(const EmulatorConfig_t* cfg,
   Motion_PlanStepResult_t plan_res;
   Motion_PlanStep(cfg, plan_req, &plan_res);
 
-  uint16_t chunk_sz = (plan_req->chunk_size > 0) ? plan_req->chunk_size : 8;
+  uint16_t chunk_sz = (plan_req->chunk_size > 0) ? plan_req->chunk_size : 16;
   int8_t delta = GenerateQuadChunk(chunk_req->chunk, chunk_sz, chunk_req->inout_quad_state, plan_res.dir, plan_res.count_to_emit);
 
-  float pace_velocity = plan_res.target_velocity;
-  if (pace_velocity == 0.0f) {
-    pace_velocity = cfg->counts_per_step;
+  uint32_t pace_velocity = 0;
+  if (plan_res.target_velocity == 0) {
+    pace_velocity = (uint32_t) MathUtil_MulQ12(1000, cfg->counts_per_step_q12);
+    if (pace_velocity == 0) {
+      pace_velocity = 4000;
+    }
+  } else {
+    pace_velocity = (plan_res.target_velocity >= 0) ? (uint32_t) plan_res.target_velocity : (uint32_t)(-plan_res.target_velocity);
   }
 
   uint16_t psc = 0;

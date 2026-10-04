@@ -239,23 +239,23 @@ void test_calc_timer_pacing_nominal_rates(void) {
   uint16_t psc = 999;
   uint16_t arr = 999;
 
-  // 100 kHz (100.0 counts/ms) -> 48000 / 100 = 480 ticks
-  CalcTimerPacing(100.0f, &psc, &arr);
+  // 100 kHz (100,000 counts/s) -> 48000000 / 100000 = 480 ticks
+  CalcTimerPacing(100000, &psc, &arr);
   TEST_ASSERT_EQUAL_UINT16(0, psc);
   TEST_ASSERT_EQUAL_UINT16(479, arr);
 
-  // 50 kHz (50.0 counts/ms) -> 48000 / 50 = 960 ticks
-  CalcTimerPacing(50.0f, &psc, &arr);
+  // 50 kHz (50,000 counts/s) -> 48000000 / 50000 = 960 ticks
+  CalcTimerPacing(50000, &psc, &arr);
   TEST_ASSERT_EQUAL_UINT16(0, psc);
   TEST_ASSERT_EQUAL_UINT16(959, arr);
 
-  // 10 kHz (10.0 counts/ms) -> 48000 / 10 = 4800 ticks
-  CalcTimerPacing(10.0f, &psc, &arr);
+  // 10 kHz (10,000 counts/s) -> 48000000 / 10000 = 4800 ticks
+  CalcTimerPacing(10000, &psc, &arr);
   TEST_ASSERT_EQUAL_UINT16(0, psc);
   TEST_ASSERT_EQUAL_UINT16(4799, arr);
 
-  // 1 kHz (1.0 counts/ms) -> 48000 / 1 = 48000 ticks
-  CalcTimerPacing(1.0f, &psc, &arr);
+  // 1 kHz (1,000 counts/s) -> 48000000 / 1000 = 48000 ticks
+  CalcTimerPacing(1000, &psc, &arr);
   TEST_ASSERT_EQUAL_UINT16(0, psc);
   TEST_ASSERT_EQUAL_UINT16(47999, arr);
 }
@@ -265,59 +265,39 @@ void test_calc_timer_pacing_ceiling_and_floor(void) {
   uint16_t arr = 999;
 
   // Ceiling: > 300 kHz clamped to 300 kHz (160 ticks, ARR=159)
-  CalcTimerPacing(350.0f, &psc, &arr);
+  CalcTimerPacing(350000, &psc, &arr);
   TEST_ASSERT_EQUAL_UINT16(0, psc);
   TEST_ASSERT_EQUAL_UINT16(159, arr);
 
-  // 200 kHz (200.0 counts/ms) -> 48000 / 200 = 240 ticks, ARR=239 (3000 RPM @ 4000 CPR)
-  CalcTimerPacing(200.0f, &psc, &arr);
+  // 200 kHz (200,000 counts/s) -> 48000000 / 200000 = 240 ticks, ARR=239 (3000 RPM @ 4000 CPR)
+  CalcTimerPacing(200000, &psc, &arr);
   TEST_ASSERT_EQUAL_UINT16(0, psc);
   TEST_ASSERT_EQUAL_UINT16(239, arr);
 
-  // 150 kHz (150.0 counts/ms) -> 48000 / 150 = 320 ticks, ARR=319
-  CalcTimerPacing(150.0f, &psc, &arr);
+  // 150 kHz (150,000 counts/s) -> 48000000 / 150000 = 320 ticks, ARR=319
+  CalcTimerPacing(150000, &psc, &arr);
   TEST_ASSERT_EQUAL_UINT16(0, psc);
   TEST_ASSERT_EQUAL_UINT16(319, arr);
 
-  // 20 Hz step rate: 48 MHz / 600,000 ticks -> 0.08 counts/ms (80 Hz quad rate)
+  // 80 Hz quad rate: 48 MHz / 600,000 ticks -> 80 counts/s
   // psc = 600000 >> 16 = 9. ticks = 600000 / 10 = 60000. arr = 59999.
-  CalcTimerPacing(0.08f, &psc, &arr);
+  CalcTimerPacing(80, &psc, &arr);
   TEST_ASSERT_EQUAL_UINT16(9, psc);
   TEST_ASSERT_EQUAL_UINT16(59999, arr);
 
-  // Floor: 0.001 counts/ms (1 Hz)
-  // 48000 / 0.001 = 48000000 ticks.
+  // Floor: 1 count/s
+  // 48000000 / 1 = 48000000 ticks.
   // psc = 48000000 >> 16 = 732.
   // ticks = 48000000 / (732 + 1) = 65484.
   // arr = 65483.
-  CalcTimerPacing(0.001f, &psc, &arr);
+  CalcTimerPacing(1, &psc, &arr);
   TEST_ASSERT_EQUAL_UINT16(732, psc);
   TEST_ASSERT_EQUAL_UINT16(65483, arr);
 
-  // Below floor (0.0001 counts/ms or 0.0) is clamped to 0.001 floor
-  CalcTimerPacing(0.0001f, &psc, &arr);
+  // Zero rate clamped to floor (1 count/s)
+  CalcTimerPacing(0, &psc, &arr);
   TEST_ASSERT_EQUAL_UINT16(732, psc);
   TEST_ASSERT_EQUAL_UINT16(65483, arr);
-
-  CalcTimerPacing(0.0f, &psc, &arr);
-  TEST_ASSERT_EQUAL_UINT16(732, psc);
-  TEST_ASSERT_EQUAL_UINT16(65483, arr);
-}
-
-void test_calc_timer_pacing_negative_velocity(void) {
-  uint16_t psc = 999;
-  uint16_t arr = 999;
-
-  // Negative velocities take absolute value
-  CalcTimerPacing(-10.0f, &psc, &arr);
-  TEST_ASSERT_EQUAL_UINT16(0, psc);
-  TEST_ASSERT_EQUAL_UINT16(4799, arr);
-
-  // -0.05 counts/ms -> abs = 0.05 (50 Hz quad rate)
-  // 48000 / 0.05 = 960000 ticks. psc = 960000 >> 16 = 14. ticks = 960000 / 15 = 64000. arr = 63999.
-  CalcTimerPacing(-0.05f, &psc, &arr);
-  TEST_ASSERT_EQUAL_UINT16(14, psc);
-  TEST_ASSERT_EQUAL_UINT16(63999, arr);
 }
 
 void test_calc_timer_pacing_null_pointers(void) {
@@ -325,12 +305,12 @@ void test_calc_timer_pacing_null_pointers(void) {
   uint16_t arr = 999;
 
   // Should safely execute without null pointer dereferences
-  CalcTimerPacing(10.0f, NULL, NULL);
+  CalcTimerPacing(10000, NULL, NULL);
 
-  CalcTimerPacing(10.0f, &psc, NULL);
+  CalcTimerPacing(10000, &psc, NULL);
   TEST_ASSERT_EQUAL_UINT16(0, psc);
 
-  CalcTimerPacing(10.0f, NULL, &arr);
+  CalcTimerPacing(10000, NULL, &arr);
   TEST_ASSERT_EQUAL_UINT16(4799, arr);
 }
 
@@ -350,7 +330,6 @@ int main(void) {
   RUN_TEST(test_generate_quad_chunk_clamping_and_null_protection);
   RUN_TEST(test_calc_timer_pacing_nominal_rates);
   RUN_TEST(test_calc_timer_pacing_ceiling_and_floor);
-  RUN_TEST(test_calc_timer_pacing_negative_velocity);
   RUN_TEST(test_calc_timer_pacing_null_pointers);
   return UNITY_END();
 }

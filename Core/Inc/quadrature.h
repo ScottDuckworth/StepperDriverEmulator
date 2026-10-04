@@ -17,7 +17,7 @@ extern "C" {
 uint8_t NextQuadState(uint8_t current_state, int dir);
 uint32_t GetQuadBsrrValue(uint8_t quad_state);
 int8_t GenerateQuadChunk(uint32_t* chunk, uint16_t chunk_size, uint8_t* inout_state, int dir, uint16_t count_to_emit);
-void CalcTimerPacing(float target_velocity_counts_per_ms, uint16_t* out_psc, uint16_t* out_arr);
+void CalcTimerPacing(uint32_t target_velocity_counts_sec, uint16_t* out_psc, uint16_t* out_arr);
 
 #ifdef __cplusplus
 }

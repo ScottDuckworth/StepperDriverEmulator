@@ -1,4 +1,5 @@
 #include "config_store.h"
+#include "mathutil.h"
 #include <string.h>
 
 uint32_t ConfigStore_CalcCRC32(const void* data, size_t length) {
@@ -19,6 +20,26 @@ bool ConfigStore_Validate(const EmulatorConfig_t* cfg) {
   if (cfg->kp < 0.0f || cfg->kff < 0.0f || cfg->kfree < 0.0f) return false;
   if (cfg->torque_v_max < cfg->torque_v_knee) return false;
   return true;
+}
+
+void ConfigStore_RefreshCachedValues(EmulatorConfig_t* cfg) {
+  if (!cfg) return;
+
+  // Float representations for CLI reporting
+  cfg->counts_per_step = MathUtil_CalcRatioFloat(cfg->ratio_epr, cfg->ratio_spr);
+  cfg->inv_counts_per_step = MathUtil_CalcRatioFloat(cfg->ratio_spr, cfg->ratio_epr);
+
+  // Cached fixed-point fields for zero-float ISR execution
+  cfg->kp_q12 = MathUtil_FloatToQ12(cfg->kp);
+  cfg->kp_velocity_q12 = MathUtil_FloatToQ12(cfg->kp * 1000.0f);
+  cfg->kff_q12 = MathUtil_FloatToQ12(cfg->kff);
+  cfg->kfree_q12 = MathUtil_FloatToQ12(cfg->kfree);
+
+  cfg->counts_per_step_q12 = MathUtil_CalcRatioQ12(cfg->ratio_epr, cfg->ratio_spr);
+  cfg->inv_counts_per_step_q16 = MathUtil_CalcRatioQ16(cfg->ratio_spr, cfg->ratio_epr);
+
+  uint32_t span_v = (cfg->torque_v_max > cfg->torque_v_knee) ? (cfg->torque_v_max - cfg->torque_v_knee) : 0;
+  cfg->inv_torque_span_v_q16 = (span_v > 0) ? MathUtil_FromRawQ16((int32_t)(65536U / span_v)) : MathUtil_FromRawQ16(0);
 }
 
 bool ConfigStore_Load(const FlashDriver_t* flash, uint32_t page_addr, EmulatorConfig_t* out_cfg) {
@@ -49,12 +70,15 @@ bool ConfigStore_Load(const FlashDriver_t* flash, uint32_t page_addr, EmulatorCo
   }
 
   *out_cfg = record.config;
+  ConfigStore_RefreshCachedValues(out_cfg);
   return true;
 }
 
 bool ConfigStore_Save(const FlashDriver_t* flash, uint32_t page_addr, const EmulatorConfig_t* in_cfg) {
   if (!flash || !flash->write || !flash->erase_page || !in_cfg) return false;
   if (!ConfigStore_Validate(in_cfg)) return false;
+
+  ConfigStore_RefreshCachedValues((EmulatorConfig_t*) in_cfg);
 
   ConfigRecord_t record;
   record.magic = CONFIG_STORE_MAGIC;

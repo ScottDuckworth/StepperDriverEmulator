@@ -307,8 +307,7 @@ bool SetRatio(uint16_t spr, uint16_t epr) {
   __disable_irq();
   config.ratio_spr = spr / g;
   config.ratio_epr = epr / g;
-  config.counts_per_step = MathUtil_CalcRatioFloat(config.ratio_epr, config.ratio_spr);
-  config.inv_counts_per_step = MathUtil_CalcRatioFloat(config.ratio_spr, config.ratio_epr);
+  ConfigStore_RefreshCachedValues(&config);
   position.step_rem = 0;
   __enable_irq();
   ReportRatio();
@@ -339,6 +338,7 @@ void SetTorqueCurve(int32_t t0, uint32_t v_knee, uint32_t v_max, int32_t t_min) 
   config.torque_v_knee = v_knee;
   config.torque_v_max = v_max;
   config.torque_t_min = t_min;
+  ConfigStore_RefreshCachedValues(&config);
   ReportTorqueCurve();
 }
 
@@ -368,6 +368,7 @@ float GetKfree(void) {
 
 void SetKfree(float k) {
   config.kfree = k;
+  ConfigStore_RefreshCachedValues(&config);
   ReportKfree();
 }
 
@@ -389,6 +390,7 @@ float GetKp(void) {
 
 void SetKp(float kp) {
   config.kp = kp;
+  ConfigStore_RefreshCachedValues(&config);
   ReportKp();
 }
 
@@ -402,6 +404,7 @@ float GetKff(void) {
 
 void SetKff(float kff) {
   config.kff = kff;
+  ConfigStore_RefreshCachedValues(&config);
   ReportKff();
 }
 
@@ -657,9 +660,14 @@ void Motion_Wakeup_Handler(void) {
       planned_encoder_pos += *out_delta;
     }
 
-    float pace_velocity = res.target_velocity;
-    if (pace_velocity == 0.0f) {
-      pace_velocity = config.counts_per_step;
+    uint32_t pace_velocity = 0;
+    if (res.target_velocity == 0) {
+      pace_velocity = (uint32_t) MathUtil_MulQ12(1000, config.counts_per_step_q12);
+      if (pace_velocity == 0) {
+        pace_velocity = 4000;
+      }
+    } else {
+      pace_velocity = (res.target_velocity >= 0) ? (uint32_t) res.target_velocity : (uint32_t)(-res.target_velocity);
     }
     uint16_t psc = 0;
     uint16_t arr = 0;
@@ -765,13 +773,17 @@ static void CheckMotionIdle(void) {
 void DMA_HalfTransfer_Handler(void) {
   position.encoder_pos += half_0_delta;
   half_0_delta = FillQuadChunk(&quad_buffer[0]);
-  CheckMotionIdle();
+  if (half_0_delta == 0 && half_1_delta == 0) {
+    CheckMotionIdle();
+  }
 }
 
 void DMA_TransferComplete_Handler(void) {
   position.encoder_pos += half_1_delta;
   half_1_delta = FillQuadChunk(&quad_buffer[CHUNK_SIZE]);
-  CheckMotionIdle();
+  if (half_0_delta == 0 && half_1_delta == 0) {
+    CheckMotionIdle();
+  }
 }
 
 void InitMotion(void) {
@@ -1028,8 +1040,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   ConfigStore_Load(ConfigStore_GetStm32FlashDriver(), CONFIG_FLASH_PAGE_ADDR, &config);
-  config.counts_per_step = (config.ratio_spr > 0) ? MathUtil_CalcRatioFloat(config.ratio_epr, config.ratio_spr) : 4.0f;
-  config.inv_counts_per_step = (config.ratio_epr > 0) ? MathUtil_CalcRatioFloat(config.ratio_spr, config.ratio_epr) : 0.25f;
+  ConfigStore_RefreshCachedValues(&config);
 
   UpdatePositionCounters();
   position.commanded_pos = 0;

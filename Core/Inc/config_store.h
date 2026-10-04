@@ -33,6 +33,7 @@ typedef struct {
 
 uint32_t ConfigStore_CalcCRC32(const void* data, size_t length);
 bool ConfigStore_Validate(const EmulatorConfig_t* cfg);
+void ConfigStore_RefreshCachedValues(EmulatorConfig_t* cfg);
 bool ConfigStore_Load(const FlashDriver_t* flash, uint32_t page_addr, EmulatorConfig_t* out_cfg);
 bool ConfigStore_Save(const FlashDriver_t* flash, uint32_t page_addr, const EmulatorConfig_t* in_cfg);
 

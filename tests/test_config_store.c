@@ -194,6 +194,38 @@ void test_null_safety(void) {
   TEST_ASSERT_FALSE(ConfigStore_Validate(NULL));
 }
 
+void test_cached_fixed_point_refresh(void) {
+  EmulatorConfig_t cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
+  cfg.kp = 0.2f;
+  cfg.kff = 1.5f;
+  cfg.kfree = 0.01f;
+  cfg.ratio_spr = 200;
+  cfg.ratio_epr = 1000; // 5 counts per step
+  cfg.torque_v_knee = 2000;
+  cfg.torque_v_max = 10000; // span 8000
+
+  ConfigStore_RefreshCachedValues(&cfg);
+
+  TEST_ASSERT_EQUAL_INT32(819, cfg.kp_q12.raw);           // 0.2 * 4096 = 819.2 -> 819
+  TEST_ASSERT_EQUAL_INT32(6144, cfg.kff_q12.raw);         // 1.5 * 4096 = 6144
+  TEST_ASSERT_EQUAL_INT32(41, cfg.kfree_q12.raw);         // 0.01 * 4096 = 40.96 -> 41
+  TEST_ASSERT_EQUAL_INT32(20480, cfg.counts_per_step_q12.raw); // 5.0 * 4096 = 20480
+  TEST_ASSERT_EQUAL_INT32(13107, cfg.inv_counts_per_step_q16.raw); // 0.2 * 65536 = 13107.2 -> 13107
+  TEST_ASSERT_EQUAL_INT32(8, cfg.inv_torque_span_v_q16.raw); // 65536 / 8000 = 8.19 -> 8
+
+  // Verify round-trip load refreshes cached values
+  ConfigStore_Save(&mock_flash_driver, MOCK_PAGE_ADDR, &cfg);
+  EmulatorConfig_t loaded = {0};
+  bool ok = ConfigStore_Load(&mock_flash_driver, MOCK_PAGE_ADDR, &loaded);
+  TEST_ASSERT_TRUE(ok);
+  TEST_ASSERT_EQUAL_INT32(819, loaded.kp_q12.raw);
+  TEST_ASSERT_EQUAL_INT32(6144, loaded.kff_q12.raw);
+  TEST_ASSERT_EQUAL_INT32(41, loaded.kfree_q12.raw);
+  TEST_ASSERT_EQUAL_INT32(20480, loaded.counts_per_step_q12.raw);
+  TEST_ASSERT_EQUAL_INT32(13107, loaded.inv_counts_per_step_q16.raw);
+  TEST_ASSERT_EQUAL_INT32(8, loaded.inv_torque_span_v_q16.raw);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_crc32_standard_check);
@@ -206,5 +238,6 @@ int main(void) {
   RUN_TEST(test_flash_erase_failure_handled);
   RUN_TEST(test_flash_write_failure_handled);
   RUN_TEST(test_null_safety);
+  RUN_TEST(test_cached_fixed_point_refresh);
   return UNITY_END();
 }

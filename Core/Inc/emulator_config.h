@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "mathutil.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,6 +30,15 @@ typedef struct {
   // Pre-calculated Kinematic Conversions
   float counts_per_step;      // Pre-calculated ratio: (float) ratio_epr / (float) ratio_spr
   float inv_counts_per_step;  // Pre-calculated inverse ratio: (float) ratio_spr / (float) ratio_epr
+
+  // Cached Fixed-Point Parameters (Precomputed for real-time ISR)
+  q12_t kp_q12;                  // kp in Q12 format (kp * 4096)
+  q12_t kp_velocity_q12;         // kp velocity gain in counts/sec (kp * 1000 * 4096)
+  q12_t kff_q12;                 // kff in Q12 format (kff * 4096)
+  q12_t kfree_q12;               // kfree in Q12 format (kfree * 4096)
+  q12_t counts_per_step_q12;     // (ratio_epr / ratio_spr) in Q12 format
+  q16_t inv_counts_per_step_q16; // (ratio_spr / ratio_epr) in Q16 format
+  q16_t inv_torque_span_v_q16;   // 1 / (torque_v_max - torque_v_knee) in Q16 format
 } EmulatorConfig_t;
 
 #define DEFAULT_EMULATOR_CONFIG { \
@@ -45,6 +55,13 @@ typedef struct {
   .kfree = 0.005f, \
   .counts_per_step = 4.0f, \
   .inv_counts_per_step = 0.25f, \
+  .kp_q12 = { .raw = 410 }, \
+  .kp_velocity_q12 = { .raw = 409600 }, \
+  .kff_q12 = { .raw = 4096 }, \
+  .kfree_q12 = { .raw = 20 }, \
+  .counts_per_step_q12 = { .raw = 16384 }, \
+  .inv_counts_per_step_q16 = { .raw = 16384 }, \
+  .inv_torque_span_v_q16 = { .raw = 9 }, \
 }
 
 #ifdef __cplusplus
