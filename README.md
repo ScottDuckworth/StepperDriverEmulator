@@ -178,12 +178,15 @@ $$
 V_{\text{target}} = K_{\text{ff}} \cdot V_{\text{in}} + K_{\text{p}} \cdot e_{\text{eff}} \quad [C / \text{ms}]
 $$
 
-where:
-* $V_{\text{in}}$ is the instantaneous measured input step velocity scaled to encoder counts/ms:
-  $$
-  V_{\text{in}} = \pm \left( \frac{48{,}000}{\text{period}} \right) \cdot \left( \frac{\text{epr}}{\text{spr}} \right) \quad [C / \text{ms}]
-  $$
-  (where `period` is the timer tick count captured by the 48 MHz timer **TIM2** on pin PA5, and the sign matches the direction sampled on PA4: `+` forward, `-` reverse).
+where $V_{\text{in}}$ is the instantaneous measured input step velocity scaled to encoder counts/ms, evaluated from the 48 MHz timer (**TIM2**) input capture on pin PA5:
+
+$$
+V_{\text{in}} = \pm \left( \frac{48{,}000}{\text{period}} \right) \cdot \left( \frac{\text{epr}}{\text{spr}} \right) \quad [C / \text{ms}]
+$$
+
+(where `period` is the timer tick count captured on PA5, and the sign matches the direction sampled on PA4: `+` forward, `-` reverse).
+
+The tracking error parameters are:
 * $e = P_{\text{cmd}} - P_{\text{enc}}$ is the instantaneous position tracking error in encoder counts ($[C]$).
 * $e_{\text{eff}}$ is the effective tracking error processed through a soft-knee jitter attenuation filter.
 

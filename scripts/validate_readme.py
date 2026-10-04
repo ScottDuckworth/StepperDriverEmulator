@@ -33,6 +33,10 @@ def validate_latex(readme_path: Path) -> list[str]:
         for match in re.finditer(r"\\text\{([^}]*_[^}]*)\}", line):
             errors.append(f"Line {line_num}: Underscore found inside '\\text{{{match.group(1)}}}'. Avoid underscores in \\text{{}} for GitHub compatibility.")
 
+        # Check for indented $$ delimiters (causes GitHub math rendering to fail inside lists)
+        if line.strip().startswith("$$") and (line.startswith(" ") or line.startswith("\t")):
+            errors.append(f"Line {line_num}: Indented display math delimiter '$$' found. GitHub requires display math delimiters to be unindented (column 0).")
+
         # Count $$ delimiters on non-code lines
         dollar_count += line.count("$$")
 
