@@ -71,7 +71,7 @@ static PositionCounters_t position;
 static volatile uint32_t step_period_buf[STEP_BUF_SIZE];
 static uint16_t step_buf_tail = 0;
 static uint32_t blanking_accum = 168; // Primed for standstill
-static float step_blank_us = 3.5f;    // Default 3.5 us blanking (supports up to 285 kHz)
+static q12_t step_blank_us_q12 = { .raw = 14336 }; // Default 3.5 us blanking (3.5 * 4096 = 14336)
 static uint32_t min_blanking_ticks = 168; // 3.5 us @ 48 MHz
 static volatile uint32_t step_period_cnt = 0;
 static volatile int32_t load_tension = 0;
@@ -156,19 +156,20 @@ void ReportString(const char* var, const char* value) {
   WriteString("\r\n");
 }
 
-void ReportFloat(const char* var, float value) {
-  int size;
-  char output[24];
-  if (value < 0.0f) {
-    float abs_val = -value;
-    int32_t int_part = (int32_t) abs_val;
-    int32_t frac_part = (int32_t) ((abs_val - (float) int_part) * 10000.0f + 0.5f);
-    size = snprintf(output, sizeof(output), " -%ld.%04ld\r\n", int_part, frac_part);
-  } else {
-    int32_t int_part = (int32_t) value;
-    int32_t frac_part = (int32_t) ((value - (float) int_part) * 10000.0f + 0.5f);
-    size = snprintf(output, sizeof(output), " %ld.%04ld\r\n", int_part, frac_part);
-  }
+void ReportQ12(const char* var, q12_t value) {
+  char formatted[20];
+  char output[28];
+  MathUtil_FormatQ12(formatted, sizeof(formatted), value, 4);
+  int size = snprintf(output, sizeof(output), " %s\r\n", formatted);
+  WriteString(var);
+  WriteData((uint8_t*) output, size);
+}
+
+void ReportQ16(const char* var, q16_t value) {
+  char formatted[20];
+  char output[28];
+  MathUtil_FormatQ16(formatted, sizeof(formatted), value, 4);
+  int size = snprintf(output, sizeof(output), " %s\r\n", formatted);
   WriteString(var);
   WriteData((uint8_t*) output, size);
 }
@@ -362,18 +363,18 @@ void ReportStallThreshold(void) {
   ReportU32("stall", GetStallThreshold());
 }
 
-float GetKfree(void) {
-  return config.kfree;
+q12_t GetKfree(void) {
+  return config.kfree_q12;
 }
 
-void SetKfree(float k) {
-  config.kfree = k;
+void SetKfree(q12_t k) {
+  config.kfree_q12 = k;
   ConfigStore_RefreshCachedValues(&config);
   ReportKfree();
 }
 
 void ReportKfree(void) {
-  ReportFloat("kfree", GetKfree());
+  ReportQ12("kfree", GetKfree());
 }
 
 bool GetStallTrip(void) {
@@ -384,52 +385,52 @@ void ReportStallTrip(void) {
   ReportU8("stall_trip", GetStallTrip());
 }
 
-float GetKp(void) {
-  return config.kp;
+q12_t GetKp(void) {
+  return config.kp_q12;
 }
 
-void SetKp(float kp) {
-  config.kp = kp;
+void SetKp(q12_t kp) {
+  config.kp_q12 = kp;
   ConfigStore_RefreshCachedValues(&config);
   ReportKp();
 }
 
 void ReportKp(void) {
-  ReportFloat("kp", GetKp());
+  ReportQ12("kp", GetKp());
 }
 
-float GetKff(void) {
-  return config.kff;
+q12_t GetKff(void) {
+  return config.kff_q12;
 }
 
-void SetKff(float kff) {
-  config.kff = kff;
+void SetKff(q12_t kff) {
+  config.kff_q12 = kff;
   ConfigStore_RefreshCachedValues(&config);
   ReportKff();
 }
 
 void ReportKff(void) {
-  ReportFloat("kff", GetKff());
+  ReportQ12("kff", GetKff());
 }
 
-float GetStepBlanking(void) {
-  return step_blank_us;
+q12_t GetStepBlanking(void) {
+  return step_blank_us_q12;
 }
 
-void SetStepBlanking(float blank_us) {
-  if (blank_us < 0.5f) blank_us = 0.5f;
-  if (blank_us > 1000.0f) blank_us = 1000.0f;
-  step_blank_us = blank_us;
-  min_blanking_ticks = (uint32_t)(blank_us * 48.0f);
+void SetStepBlanking(q12_t blank_us) {
+  if (blank_us.raw < 2048) blank_us.raw = 2048;       // 0.5 us min
+  if (blank_us.raw > 4096000) blank_us.raw = 4096000; // 1000.0 us max
+  step_blank_us_q12 = blank_us;
+  min_blanking_ticks = (uint32_t)((blank_us.raw * 3) >> 8);
   if (min_blanking_ticks < 24) min_blanking_ticks = 24;
 
   // Adapt hardware timer filter IC1F/CKD to match blanking window
-  if (blank_us <= 5.0f) {
+  if (blank_us.raw <= 20480) { // <= 5.0 us
     TIM2->CR1 &= ~TIM_CR1_CKD; // CKD = 0 (div 1)
     TIM2->CCMR1 = (TIM2->CCMR1 & ~(TIM_CCMR1_IC1F | TIM_CCMR1_IC2F))
                 | (0b1000 << TIM_CCMR1_IC1F_Pos)  // 1.0 us filter (fDTS/8, N=6)
                 | (0b1000 << TIM_CCMR1_IC2F_Pos);
-  } else if (blank_us <= 15.0f) {
+  } else if (blank_us.raw <= 61440) { // <= 15.0 us
     TIM2->CR1 &= ~TIM_CR1_CKD; // CKD = 0 (div 1)
     TIM2->CCMR1 = (TIM2->CCMR1 & ~(TIM_CCMR1_IC1F | TIM_CCMR1_IC2F))
                 | (0b1111 << TIM_CCMR1_IC1F_Pos)  // 5.33 us filter (fDTS/32, N=8)
@@ -444,7 +445,7 @@ void SetStepBlanking(float blank_us) {
 }
 
 void ReportStepBlanking(void) {
-  ReportFloat("blank", GetStepBlanking());
+  ReportQ12("blank", GetStepBlanking());
 }
 
 int64_t GetEncoderPosition(void) {

@@ -20,79 +20,78 @@ void test_mathutil_calc_gcd(void) {
   TEST_ASSERT_EQUAL_UINT16(65535, MathUtil_CalcGCD(65535, 0));
 }
 
-/* --- Fixed-Point Float Ratio Tests --- */
+/* --- Decimal String Parsing and Formatting Tests --- */
 
-void test_mathutil_calc_ratio_float_div_by_zero(void) {
-  TEST_ASSERT_EQUAL_FLOAT(0.0f, MathUtil_CalcRatioFloat(0, 0));
-  TEST_ASSERT_EQUAL_FLOAT(0.0f, MathUtil_CalcRatioFloat(100, 0));
-  TEST_ASSERT_EQUAL_FLOAT(0.0f, MathUtil_CalcRatioFloat(65535, 0));
+void test_mathutil_str_to_q12(void) {
+  q12_t q;
+  TEST_ASSERT_TRUE(MathUtil_StrToQ12("0", &q));
+  TEST_ASSERT_EQUAL_INT32(0, q.raw);
+
+  TEST_ASSERT_TRUE(MathUtil_StrToQ12("1", &q));
+  TEST_ASSERT_EQUAL_INT32(4096, q.raw);
+
+  TEST_ASSERT_TRUE(MathUtil_StrToQ12("-1", &q));
+  TEST_ASSERT_EQUAL_INT32(-4096, q.raw);
+
+  TEST_ASSERT_TRUE(MathUtil_StrToQ12("0.1", &q));
+  TEST_ASSERT_EQUAL_INT32(410, q.raw); // 0.1 * 4096 = 409.6 -> 410
+
+  TEST_ASSERT_TRUE(MathUtil_StrToQ12("0.005", &q));
+  TEST_ASSERT_EQUAL_INT32(20, q.raw); // 0.005 * 4096 = 20.48 -> 20
+
+  TEST_ASSERT_TRUE(MathUtil_StrToQ12("3.5", &q));
+  TEST_ASSERT_EQUAL_INT32(14336, q.raw); // 3.5 * 4096 = 14336
+
+  TEST_ASSERT_TRUE(MathUtil_StrToQ12("  0.25  ", &q));
+  TEST_ASSERT_EQUAL_INT32(1024, q.raw);
+
+  TEST_ASSERT_FALSE(MathUtil_StrToQ12("", &q));
+  TEST_ASSERT_FALSE(MathUtil_StrToQ12("abc", &q));
+  TEST_ASSERT_FALSE(MathUtil_StrToQ12("1.2.3", &q));
+  TEST_ASSERT_FALSE(MathUtil_StrToQ12("1.2a", &q));
 }
 
-void test_mathutil_calc_ratio_float_integers(void) {
-  TEST_ASSERT_EQUAL_FLOAT(0.0f, MathUtil_CalcRatioFloat(0, 100));
-  TEST_ASSERT_EQUAL_FLOAT(1.0f, MathUtil_CalcRatioFloat(1, 1));
-  TEST_ASSERT_EQUAL_FLOAT(4.0f, MathUtil_CalcRatioFloat(4, 1));
-  TEST_ASSERT_EQUAL_FLOAT(1.0f, MathUtil_CalcRatioFloat(1000, 1000));
-  TEST_ASSERT_EQUAL_FLOAT(4.0f, MathUtil_CalcRatioFloat(4000, 1000));
-  TEST_ASSERT_EQUAL_FLOAT(100.0f, MathUtil_CalcRatioFloat(10000, 100));
+void test_mathutil_str_to_q16(void) {
+  q16_t q;
+  TEST_ASSERT_TRUE(MathUtil_StrToQ16("0", &q));
+  TEST_ASSERT_EQUAL_INT32(0, q.raw);
+
+  TEST_ASSERT_TRUE(MathUtil_StrToQ16("1", &q));
+  TEST_ASSERT_EQUAL_INT32(65536, q.raw);
+
+  TEST_ASSERT_TRUE(MathUtil_StrToQ16("-1", &q));
+  TEST_ASSERT_EQUAL_INT32(-65536, q.raw);
+
+  TEST_ASSERT_TRUE(MathUtil_StrToQ16("0.25", &q));
+  TEST_ASSERT_EQUAL_INT32(16384, q.raw);
+
+  TEST_ASSERT_TRUE(MathUtil_StrToQ16("0.005", &q));
+  TEST_ASSERT_EQUAL_INT32(328, q.raw); // 0.005 * 65536 = 327.68 -> 328
+
+  TEST_ASSERT_FALSE(MathUtil_StrToQ16("", &q));
+  TEST_ASSERT_FALSE(MathUtil_StrToQ16("xyz", &q));
 }
 
-void test_mathutil_calc_ratio_float_fractions(void) {
-  TEST_ASSERT_EQUAL_FLOAT(0.5f, MathUtil_CalcRatioFloat(1, 2));
-  TEST_ASSERT_EQUAL_FLOAT(0.25f, MathUtil_CalcRatioFloat(1, 4));
-  TEST_ASSERT_EQUAL_FLOAT(0.125f, MathUtil_CalcRatioFloat(1, 8));
-  TEST_ASSERT_EQUAL_FLOAT(0.0625f, MathUtil_CalcRatioFloat(1, 16));
-  TEST_ASSERT_EQUAL_FLOAT(0.25f, MathUtil_CalcRatioFloat(1000, 4000));
-  TEST_ASSERT_EQUAL_FLOAT(0.1953125f, MathUtil_CalcRatioFloat(200, 1024));
-  TEST_ASSERT_FLOAT_WITHIN(1e-6f, 5.12f, MathUtil_CalcRatioFloat(1024, 200));
-  TEST_ASSERT_FLOAT_WITHIN(1e-6f, 5.12f, MathUtil_CalcRatioFloat(128, 25));
-}
+void test_mathutil_format_q12_and_q16(void) {
+  char buf[32];
 
-void test_mathutil_calc_ratio_float_accuracy(void) {
-  // Test non-power-of-two fractional ratios against standard IEEE float division
-  static const struct {
-    uint16_t num;
-    uint16_t den;
-  } test_cases[] = {
-    {1, 3},
-    {2, 3},
-    {1, 7},
-    {5, 7},
-    {3, 11},
-    {17, 19},
-    {200, 1000},
-    {800, 1000},
-    {1600, 200},
-    {200, 1600},
-    {2048, 10000},
-    {32768, 65535},
-    {65535, 32768}
-  };
+  MathUtil_FormatQ12(buf, sizeof(buf), (q12_t){.raw = 4096}, 4);
+  TEST_ASSERT_EQUAL_STRING("1.0000", buf);
 
-  for (size_t i = 0; i < sizeof(test_cases) / sizeof(test_cases[0]); ++i) {
-    float expected = (float) test_cases[i].num / (float) test_cases[i].den;
-    float actual = MathUtil_CalcRatioFloat(test_cases[i].num, test_cases[i].den);
-    TEST_ASSERT_FLOAT_WITHIN(1e-6f, expected, actual);
-  }
-}
+  MathUtil_FormatQ12(buf, sizeof(buf), (q12_t){.raw = 410}, 4);
+  TEST_ASSERT_EQUAL_STRING("0.1001", buf); // 410 / 4096 = 0.100097... -> 0.1001
 
-/* --- Fixed-Point Conversions and Arithmetic Tests --- */
+  MathUtil_FormatQ12(buf, sizeof(buf), (q12_t){.raw = 14336}, 4);
+  TEST_ASSERT_EQUAL_STRING("3.5000", buf);
 
-void test_mathutil_float_to_q12_and_q16(void) {
-  TEST_ASSERT_EQUAL_INT32(0, MathUtil_FloatToQ12(0.0f).raw);
-  TEST_ASSERT_EQUAL_INT32(4096, MathUtil_FloatToQ12(1.0f).raw);
-  TEST_ASSERT_EQUAL_INT32(-4096, MathUtil_FloatToQ12(-1.0f).raw);
-  TEST_ASSERT_EQUAL_INT32(410, MathUtil_FloatToQ12(0.1f).raw);   // 0.1 * 4096 = 409.6 -> 410
-  TEST_ASSERT_EQUAL_INT32(20, MathUtil_FloatToQ12(0.005f).raw);  // 0.005 * 4096 = 20.48 -> 20
+  MathUtil_FormatQ12(buf, sizeof(buf), (q12_t){.raw = -4096}, 4);
+  TEST_ASSERT_EQUAL_STRING("-1.0000", buf);
 
-  TEST_ASSERT_EQUAL_INT32(0, MathUtil_FloatToQ16(0.0f).raw);
-  TEST_ASSERT_EQUAL_INT32(65536, MathUtil_FloatToQ16(1.0f).raw);
-  TEST_ASSERT_EQUAL_INT32(-65536, MathUtil_FloatToQ16(-1.0f).raw);
-  TEST_ASSERT_EQUAL_INT32(16384, MathUtil_FloatToQ16(0.25f).raw);
-  TEST_ASSERT_EQUAL_INT32(328, MathUtil_FloatToQ16(0.005f).raw);  // 0.005 * 65536 = 327.68 -> 328
+  MathUtil_FormatQ16(buf, sizeof(buf), (q16_t){.raw = 16384}, 4);
+  TEST_ASSERT_EQUAL_STRING("0.2500", buf);
 
-  TEST_ASSERT_FLOAT_WITHIN(1e-4f, 1.0f, MathUtil_Q12ToFloat((q12_t){.raw = 4096}));
-  TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.25f, MathUtil_Q16ToFloat((q16_t){.raw = 16384}));
+  MathUtil_FormatQ16(buf, sizeof(buf), (q16_t){.raw = 65536}, 4);
+  TEST_ASSERT_EQUAL_STRING("1.0000", buf);
 }
 
 void test_mathutil_calc_ratio_q12_and_q16(void) {
@@ -159,11 +158,9 @@ void test_mathutil_clamp_i32(void) {
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_mathutil_calc_gcd);
-  RUN_TEST(test_mathutil_calc_ratio_float_div_by_zero);
-  RUN_TEST(test_mathutil_calc_ratio_float_integers);
-  RUN_TEST(test_mathutil_calc_ratio_float_fractions);
-  RUN_TEST(test_mathutil_calc_ratio_float_accuracy);
-  RUN_TEST(test_mathutil_float_to_q12_and_q16);
+  RUN_TEST(test_mathutil_str_to_q12);
+  RUN_TEST(test_mathutil_str_to_q16);
+  RUN_TEST(test_mathutil_format_q12_and_q16);
   RUN_TEST(test_mathutil_calc_ratio_q12_and_q16);
   RUN_TEST(test_mathutil_mul_q12_and_q16);
   RUN_TEST(test_mathutil_clamp_i32);

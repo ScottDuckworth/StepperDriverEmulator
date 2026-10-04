@@ -107,18 +107,19 @@ void ReportU8(const char* var, uint8_t value) {
   WriteString(buf);
 }
 
-void ReportFloat(const char* var, float value) {
+void ReportQ12(const char* var, q12_t value) {
+  char formatted[20];
   char buf[32];
-  if (value < 0.0f) {
-    float abs_val = -value;
-    int32_t int_part = (int32_t) abs_val;
-    int32_t frac_part = (int32_t) ((abs_val - (float) int_part) * 10000.0f + 0.5f);
-    snprintf(buf, sizeof(buf), "%s -%" PRId32 ".%04" PRId32 "\r\n", var, int_part, frac_part);
-  } else {
-    int32_t int_part = (int32_t) value;
-    int32_t frac_part = (int32_t) ((value - (float) int_part) * 10000.0f + 0.5f);
-    snprintf(buf, sizeof(buf), "%s %" PRId32 ".%04" PRId32 "\r\n", var, int_part, frac_part);
-  }
+  MathUtil_FormatQ12(formatted, sizeof(formatted), value, 4);
+  snprintf(buf, sizeof(buf), "%s %s\r\n", var, formatted);
+  WriteString(buf);
+}
+
+void ReportQ16(const char* var, q16_t value) {
+  char formatted[20];
+  char buf[32];
+  MathUtil_FormatQ16(formatted, sizeof(formatted), value, 4);
+  snprintf(buf, sizeof(buf), "%s %s\r\n", var, formatted);
   WriteString(buf);
 }
 
@@ -152,9 +153,9 @@ uint32_t GetStallThreshold(void) { return mock_config.stall_threshold; }
 void SetStallThreshold(uint32_t threshold) { mock_config.stall_threshold = threshold; ReportStallThreshold(); }
 void ReportStallThreshold(void) { ReportU32("stall", GetStallThreshold()); }
 
-float GetKfree(void) { return mock_config.kfree; }
-void SetKfree(float kfree) { mock_config.kfree = kfree; ReportKfree(); }
-void ReportKfree(void) { ReportFloat("kfree", GetKfree()); }
+q12_t GetKfree(void) { return mock_config.kfree_q12; }
+void SetKfree(q12_t kfree) { mock_config.kfree_q12 = kfree; ReportKfree(); }
+void ReportKfree(void) { ReportQ12("kfree", GetKfree()); }
 
 bool GetStallTrip(void) { return mock_stall_trip; }
 void ReportStallTrip(void) { ReportU8("stall_trip", GetStallTrip()); }
@@ -172,8 +173,8 @@ bool SetRatio(uint16_t spr, uint16_t epr) {
   uint16_t g = MathUtil_CalcGCD(spr, epr);
   mock_config.ratio_spr = spr / g;
   mock_config.ratio_epr = epr / g;
-  mock_config.counts_per_step = (float) mock_config.ratio_epr / (float) mock_config.ratio_spr;
-  mock_config.inv_counts_per_step = (float) mock_config.ratio_spr / (float) mock_config.ratio_epr;
+  mock_config.counts_per_step_q12 = MathUtil_CalcRatioQ12(mock_config.ratio_epr, mock_config.ratio_spr);
+  mock_config.inv_counts_per_step_q16 = MathUtil_CalcRatioQ16(mock_config.ratio_spr, mock_config.ratio_epr);
   ReportRatio();
   return true;
 }
@@ -189,13 +190,13 @@ void ReportRatio(void) {
   if (size > 0) WriteData((const uint8_t*) buf, (uint16_t) size);
 }
 
-float GetKp(void) { return mock_config.kp; }
-void SetKp(float kp) { mock_config.kp = kp; ReportKp(); }
-void ReportKp(void) { ReportFloat("kp", GetKp()); }
+q12_t GetKp(void) { return mock_config.kp_q12; }
+void SetKp(q12_t kp) { mock_config.kp_q12 = kp; ReportKp(); }
+void ReportKp(void) { ReportQ12("kp", GetKp()); }
 
-float GetKff(void) { return mock_config.kff; }
-void SetKff(float kff) { mock_config.kff = kff; ReportKff(); }
-void ReportKff(void) { ReportFloat("kff", GetKff()); }
+q12_t GetKff(void) { return mock_config.kff_q12; }
+void SetKff(q12_t kff) { mock_config.kff_q12 = kff; ReportKff(); }
+void ReportKff(void) { ReportQ12("kff", GetKff()); }
 
 void SetLimit1(bool active) { mock_lim1 = active; ReportLimit1(); }
 void SetLimit2(bool active) { mock_lim2 = active; ReportLimit2(); }
@@ -214,11 +215,11 @@ int64_t GetEncoderPosition(void) { return mock_pos; }
 void SetEncoderPosition(int64_t pos) { mock_pos = pos; ReportEncoderPosition(); }
 void ReportEncoderPosition(void) { ReportI64("pos", GetEncoderPosition()); }
 
-static float mock_blank = 3.5f;
+static q12_t mock_blank = { .raw = 14336 };
 
-float GetStepBlanking(void) { return mock_blank; }
-void SetStepBlanking(float blank_us) { mock_blank = blank_us; ReportStepBlanking(); }
-void ReportStepBlanking(void) { ReportFloat("blank", GetStepBlanking()); }
+q12_t GetStepBlanking(void) { return mock_blank; }
+void SetStepBlanking(q12_t blank_us) { mock_blank = blank_us; ReportStepBlanking(); }
+void ReportStepBlanking(void) { ReportQ12("blank", GetStepBlanking()); }
 
 bool SaveConfig(void) {
   return mock_save_success;
@@ -245,7 +246,7 @@ void setUp(void) {
   mock_blink = false;
   mock_stall_trip = false;
   mock_save_success = true;
-  mock_blank = 3.5f;
+  mock_blank = (q12_t){ .raw = 14336 };
   clear_output();
 }
 
@@ -255,11 +256,11 @@ void tearDown(void) {}
 
 void test_cmd_blank_set_and_query(void) {
   send_cmd("blank 5.0\r\n");
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 5.0f, mock_blank);
+  TEST_ASSERT_EQUAL_INT32(20480, mock_blank.raw);
   TEST_ASSERT_EQUAL_STRING("blank 5.0000\r\n", captured_output);
 
   send_cmd("blank 3.5\r\n");
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 3.5f, mock_blank);
+  TEST_ASSERT_EQUAL_INT32(14336, mock_blank.raw);
   TEST_ASSERT_EQUAL_STRING("blank 3.5000\r\n", captured_output);
 
   send_cmd("blank\r\n");
@@ -302,7 +303,7 @@ void test_cmd_stall_set_and_query(void) {
 
 void test_cmd_kfree_set_and_query(void) {
   send_cmd("kfree 0.0125\r\n");
-  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.0125f, mock_config.kfree);
+  TEST_ASSERT_EQUAL_INT32(51, mock_config.kfree_q12.raw);
   TEST_ASSERT_EQUAL_STRING("kfree 0.0125\r\n", captured_output);
 
   send_cmd("kfree\r\n");
@@ -336,16 +337,16 @@ void test_cmd_ratio_set_and_query(void) {
   send_cmd("ratio 1000 4000\r\n");
   TEST_ASSERT_EQUAL_UINT16(1, mock_config.ratio_spr);
   TEST_ASSERT_EQUAL_UINT16(4, mock_config.ratio_epr);
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 4.0f, mock_config.counts_per_step);
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.25f, mock_config.inv_counts_per_step);
+  TEST_ASSERT_EQUAL_INT32(16384, mock_config.counts_per_step_q12.raw);
+  TEST_ASSERT_EQUAL_INT32(16384, mock_config.inv_counts_per_step_q16.raw);
   TEST_ASSERT_EQUAL_STRING("ratio 1 4\r\n", captured_output);
 
   // Set with ratio 200 1024 -> reduced to 25 128 (GCD 8)
   send_cmd("ratio 200 1024\r\n");
   TEST_ASSERT_EQUAL_UINT16(25, mock_config.ratio_spr);
   TEST_ASSERT_EQUAL_UINT16(128, mock_config.ratio_epr);
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 5.12f, mock_config.counts_per_step);
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 25.0f / 128.0f, mock_config.inv_counts_per_step);
+  TEST_ASSERT_EQUAL_INT32(20971, mock_config.counts_per_step_q12.raw);
+  TEST_ASSERT_EQUAL_INT32(12800, mock_config.inv_counts_per_step_q16.raw);
   TEST_ASSERT_EQUAL_STRING("ratio 25 128\r\n", captured_output);
 
   // Query ratio
@@ -366,11 +367,11 @@ void test_cmd_ratio_set_and_query(void) {
 
 void test_cmd_kp_kff_set_and_query(void) {
   send_cmd("kp 0.25\r\n");
-  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.25f, mock_config.kp);
+  TEST_ASSERT_EQUAL_INT32(1024, mock_config.kp_q12.raw);
   TEST_ASSERT_EQUAL_STRING("kp 0.2500\r\n", captured_output);
 
   send_cmd("kff 1.5\r\n");
-  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 1.5f, mock_config.kff);
+  TEST_ASSERT_EQUAL_INT32(6144, mock_config.kff_q12.raw);
   TEST_ASSERT_EQUAL_STRING("kff 1.5000\r\n", captured_output);
 
   send_cmd("kp\r\n");
@@ -451,12 +452,12 @@ void test_cmd_r_state_report(void) {
   send_cmd("r\r\n");
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "odr 1000\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "ratio 1 4\r\n"));
-  TEST_ASSERT_NOT_NULL(strstr(captured_output, "kp 0.1000\r\n"));
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "kp 0.1001\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "kff 1.0000\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "blank 3.5000\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "tcurve 1000 1000 8000 200\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "stall 4000\r\n"));
-  TEST_ASSERT_NOT_NULL(strstr(captured_output, "kfree 0.0050\r\n"));
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "kfree 0.0049\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "stall_trip 0\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "blink 0\r\n"));
 }

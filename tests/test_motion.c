@@ -7,8 +7,8 @@ static EmulatorConfig_t config;
 
 void setUp(void) {
   config = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
-  config.kp = 0.5f;
-  config.kfree = 1.0f;
+  config.kp_q12 = (q12_t){ .raw = 2048 };   // kp = 0.5
+  config.kfree_q12 = (q12_t){ .raw = 4096 }; // kfree = 1.0
   ConfigStore_RefreshCachedValues(&config);
 }
 
@@ -107,7 +107,7 @@ void test_freewheel_velocity_zero_tension(void) {
 }
 
 void test_freewheel_velocity_proportional(void) {
-  config.kfree = 0.005f;
+  config.kfree_q12 = (q12_t){ .raw = 20 }; // 0.005 * 4096 = 20
   ConfigStore_RefreshCachedValues(&config);
   // 1000 * 0.005 = 5 counts/sec (with Q12: 1000 * 20 = 20000 >> 12 = 4 counts/sec)
   TEST_ASSERT_INT32_WITHIN(1, 5, Motion_CalcFreewheelVelocity(&config, 1000));
@@ -116,7 +116,7 @@ void test_freewheel_velocity_proportional(void) {
 
 void test_freewheel_velocity_clamping(void) {
   config.torque_v_max = 8000;
-  config.kfree = 0.005f;
+  config.kfree_q12 = (q12_t){ .raw = 20 };
   ConfigStore_RefreshCachedValues(&config);
   // Large tension would produce 50,000 counts/sec -> clamped to +8000
   TEST_ASSERT_EQUAL_INT32(8000, Motion_CalcFreewheelVelocity(&config, 10000000));
@@ -125,7 +125,7 @@ void test_freewheel_velocity_clamping(void) {
 
 void test_slip_velocity_holding_torque(void) {
   config.torque_t0 = 1000;
-  config.kfree = 0.005f;
+  config.kfree_q12 = (q12_t){ .raw = 20 };
   ConfigStore_RefreshCachedValues(&config);
 
   // Below holding torque shelf -> rotor does not slip (returns 0)
@@ -138,7 +138,7 @@ void test_slip_velocity_holding_torque(void) {
 void test_slip_velocity_exceeding_holding_torque(void) {
   config.torque_t0 = 1000;
   config.torque_v_max = 8000;
-  config.kfree = 0.005f;
+  config.kfree_q12 = (q12_t){ .raw = 20 };
   ConfigStore_RefreshCachedValues(&config);
 
   // Tension 3000 exceeds t0 (1000) by 2000 -> slip = 2000 * 0.005 = 10 counts/sec
@@ -150,7 +150,7 @@ void test_slip_velocity_exceeding_holding_torque(void) {
 }
 
 void test_slip_velocity_at_dynamic_torque(void) {
-  config.kfree = 0.005f;
+  config.kfree_q12 = (q12_t){ .raw = 20 };
   config.torque_v_max = 8000;
   ConfigStore_RefreshCachedValues(&config);
 
@@ -499,8 +499,8 @@ void test_planner_default_config_gains(void) {
 
   Motion_PlanStep(&def_cfg, &req, &res);
 
-  // Default Kp is 0.1, so error of 100 yields target_velocity of 10,000 counts/sec
-  TEST_ASSERT_EQUAL_INT32(10000, res.target_velocity);
+  // Default Kp is 0.1 (410 in Q12), so error of 100 yields ~10,000 counts/sec (10009 counts/sec)
+  TEST_ASSERT_INT32_WITHIN(10, 10000, res.target_velocity);
 }
 
 void test_planner_continuous_streaming_zero_error(void) {
@@ -657,8 +657,8 @@ void test_planner_standstill_single_step_kp_pacing(void) {
   // Single step from standstill: step_period_cnt = 0 (no frequency known)
   // error = 4 counts (1 step at 4000 epr / 1000 spr)
   EmulatorConfig_t test_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
-  test_cfg.kp = 0.05f; // User sets kp = 0.05
-  test_cfg.kff = 1.0f;
+  test_cfg.kp_q12 = (q12_t){ .raw = 205 }; // kp = 0.05 (0.05 * 4096 = 205)
+  test_cfg.kff_q12 = (q12_t){ .raw = 4096 };
   ConfigStore_RefreshCachedValues(&test_cfg);
 
   Motion_PlanStepRequest_t req = {
@@ -682,7 +682,7 @@ void test_planner_standstill_single_step_kp_pacing(void) {
   TEST_ASSERT_EQUAL_INT32(200, res.target_velocity);
 
   // With kp = 0.1: velocity is 0.1 * 1000 * 4 = 400 counts/sec
-  test_cfg.kp = 0.1f;
+  test_cfg.kp_q12 = (q12_t){ .raw = 410 };
   ConfigStore_RefreshCachedValues(&test_cfg);
   Motion_PlanStep(&test_cfg, &req, &res);
   TEST_ASSERT_EQUAL_INT32(400, res.target_velocity);
@@ -692,8 +692,8 @@ void test_planner_prevents_reversals_during_streaming(void) {
   // During forward streaming (input_rate = 80 counts/sec, 20 Hz):
   // Even if kp * error is negative and large (e.g. kp = 0.5, error = -4 -> -2,000 counts/sec),
   // target_velocity must NOT become negative and dir must remain positive (1).
-  config.kp = 0.5f;
-  config.kff = 1.0f;
+  config.kp_q12 = (q12_t){ .raw = 2048 };
+  config.kff_q12 = (q12_t){ .raw = 4096 };
   ConfigStore_RefreshCachedValues(&config);
 
   Motion_PlanStepRequest_t req = {

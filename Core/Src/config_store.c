@@ -17,7 +17,7 @@ uint32_t ConfigStore_CalcCRC32(const void* data, size_t length) {
 bool ConfigStore_Validate(const EmulatorConfig_t* cfg) {
   if (!cfg) return false;
   if (cfg->ratio_spr == 0 || cfg->ratio_epr == 0) return false;
-  if (cfg->kp < 0.0f || cfg->kff < 0.0f || cfg->kfree < 0.0f) return false;
+  if (cfg->kp_q12.raw < 0 || cfg->kff_q12.raw < 0 || cfg->kfree_q12.raw < 0) return false;
   if (cfg->torque_v_max < cfg->torque_v_knee) return false;
   return true;
 }
@@ -25,16 +25,7 @@ bool ConfigStore_Validate(const EmulatorConfig_t* cfg) {
 void ConfigStore_RefreshCachedValues(EmulatorConfig_t* cfg) {
   if (!cfg) return;
 
-  // Float representations for CLI reporting
-  cfg->counts_per_step = MathUtil_CalcRatioFloat(cfg->ratio_epr, cfg->ratio_spr);
-  cfg->inv_counts_per_step = MathUtil_CalcRatioFloat(cfg->ratio_spr, cfg->ratio_epr);
-
-  // Cached fixed-point fields for zero-float ISR execution
-  cfg->kp_q12 = MathUtil_FloatToQ12(cfg->kp);
-  cfg->kp_velocity_q12 = MathUtil_FloatToQ12(cfg->kp * 1000.0f);
-  cfg->kff_q12 = MathUtil_FloatToQ12(cfg->kff);
-  cfg->kfree_q12 = MathUtil_FloatToQ12(cfg->kfree);
-
+  cfg->kp_velocity_q12 = MathUtil_FromRawQ12(cfg->kp_q12.raw * 1000);
   cfg->counts_per_step_q12 = MathUtil_CalcRatioQ12(cfg->ratio_epr, cfg->ratio_spr);
   cfg->inv_counts_per_step_q16 = MathUtil_CalcRatioQ16(cfg->ratio_spr, cfg->ratio_epr);
 

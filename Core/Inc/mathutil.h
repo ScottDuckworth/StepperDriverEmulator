@@ -6,6 +6,8 @@ extern "C" {
 #endif
 
 #include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
 
 /*
  * Strongly typed fixed-point representation structures.
@@ -28,27 +30,13 @@ typedef struct {
 uint16_t MathUtil_CalcGCD(uint16_t a, uint16_t b);
 
 /*
- * MathUtil_CalcRatioFloat:
- * Computes (float) num / (float) den using 32-bit integer arithmetic.
- * Employs two-stage fixed-point division (Q16.16 followed by a second Q16
- * remainder stage) to achieve 32-bit fractional resolution, then converts
- * to float via multiplication by power-of-two constants (1/65536.0f and
- * 1/4294967296.0f).
- *
- * This avoids linking the software floating-point division library (__aeabi_fdiv),
- * saving Flash space on Cortex-M0 while preserving exact float accuracy.
+ * Decimal string parsing and formatting for Q12 / Q16 fixed-point numbers.
+ * Allows zero-float CLI input parsing and output reporting.
  */
-float MathUtil_CalcRatioFloat(uint16_t num, uint16_t den);
-
-/*
- * Fixed-point conversion helpers:
- * Precomputes Q12 (scale 4096) and Q16 (scale 65536) values
- * from float values during configuration loading or updates.
- */
-q12_t MathUtil_FloatToQ12(float val);
-q16_t MathUtil_FloatToQ16(float val);
-float MathUtil_Q12ToFloat(q12_t q);
-float MathUtil_Q16ToFloat(q16_t q);
+bool MathUtil_StrToQ12(const char* str, q12_t* out);
+bool MathUtil_StrToQ16(const char* str, q16_t* out);
+void MathUtil_FormatQ12(char* buf, size_t buf_sz, q12_t val, uint8_t decimals);
+void MathUtil_FormatQ16(char* buf, size_t buf_sz, q16_t val, uint8_t decimals);
 
 /*
  * Fixed-point raw and integer constructor/conversion helpers:

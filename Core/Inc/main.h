@@ -85,13 +85,14 @@ void Motion_Wakeup_Handler(void);
 void DMA_HalfTransfer_Handler(void);
 void DMA_TransferComplete_Handler(void);
 
-float GetKp(void);
-void SetKp(float kp);
-float GetKff(void);
-void SetKff(float kff);
+q12_t GetKp(void);
+void SetKp(q12_t kp);
+q12_t GetKff(void);
+void SetKff(q12_t kff);
 void ReportKp(void);
 void ReportKff(void);
-void ReportFloat(const char* var, float value);
+void ReportQ12(const char* var, q12_t value);
+void ReportQ16(const char* var, q16_t value);
 
 EmulatorConfig_t* GetConfig(void);
 
@@ -134,12 +135,12 @@ uint32_t GetStallThreshold(void);
 void SetStallThreshold(uint32_t threshold);
 void ReportStallThreshold(void);
 
-float GetKfree(void);
-void SetKfree(float kfree);
+q12_t GetKfree(void);
+void SetKfree(q12_t kfree);
 void ReportKfree(void);
 
-float GetStepBlanking(void);
-void SetStepBlanking(float blank_us);
+q12_t GetStepBlanking(void);
+void SetStepBlanking(q12_t blank_us);
 void ReportStepBlanking(void);
 
 

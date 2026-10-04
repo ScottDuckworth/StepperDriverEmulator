@@ -14,12 +14,33 @@ import struct
 from pathlib import Path
 
 DISALLOWED_SYMBOLS: dict[str, str] = {
-    # Single-precision float division
-    "__aeabi_fdiv": "Single-precision float division (causes ~140 cycles/div and ~556 bytes Flash bloat)",
+    # Single-precision float operations
+    "__aeabi_fadd": "Single-precision float addition",
+    "__addsf3":     "GCC single-precision float addition",
+    "__aeabi_fsub": "Single-precision float subtraction",
+    "__subsf3":     "GCC single-precision float subtraction",
+    "__aeabi_fmul": "Single-precision float multiplication",
+    "__mulsf3":     "GCC single-precision float multiplication",
+    "__aeabi_fdiv": "Single-precision float division",
     "__divsf3":     "GCC single-precision float division",
+    "__aeabi_fcmpeq": "Single-precision float comparison (eq)",
+    "__aeabi_fcmplt": "Single-precision float comparison (lt)",
+    "__aeabi_fcmple": "Single-precision float comparison (le)",
+    "__aeabi_fcmpge": "Single-precision float comparison (ge)",
+    "__aeabi_fcmpgt": "Single-precision float comparison (gt)",
+    "__aeabi_f2iz":   "Single-precision float to signed integer conversion",
+    "__aeabi_f2uiz":  "Single-precision float to unsigned integer conversion",
+    "__aeabi_i2f":    "Signed integer to single-precision float conversion",
+    "__aeabi_ui2f":   "Unsigned integer to single-precision float conversion",
 
-    # Double-precision float division
-    "__aeabi_ddiv": "Double-precision float division (causes slow software emulation)",
+    # Double-precision float operations
+    "__aeabi_dadd": "Double-precision float addition",
+    "__adddf3":     "GCC double-precision float addition",
+    "__aeabi_dsub": "Double-precision float subtraction",
+    "__subdf3":     "GCC double-precision float subtraction",
+    "__aeabi_dmul": "Double-precision float multiplication",
+    "__muldf3":     "GCC double-precision float multiplication",
+    "__aeabi_ddiv": "Double-precision float division",
     "__divdf3":     "GCC double-precision float division",
 
     # 64-bit integer division / modulo
@@ -98,13 +119,13 @@ def main() -> int:
 
     print(f"=== Disallowed Symbols Check: {elf_path.name} ===")
     if violations:
-        print(f"\n[FAIL] Found {len(violations)} disallowed division symbol(s) in {elf_path.name}:", file=sys.stderr)
+        print(f"\n[FAIL] Found {len(violations)} disallowed symbol(s) in {elf_path.name}:", file=sys.stderr)
         for sym_name, desc, addr in violations:
             print(f"  - {sym_name} @ 0x{addr:08x}: {desc}", file=sys.stderr)
         print("\nFix: Use 32-bit integer arithmetic, fixed-point math, or multiply by inverted constants.", file=sys.stderr)
         return 1
 
-    print("\n[PASS] No float division or int64 division symbols found in binary.")
+    print("\n[PASS] No software floating-point or 64-bit integer division symbols found in binary.")
     return 0
 
 

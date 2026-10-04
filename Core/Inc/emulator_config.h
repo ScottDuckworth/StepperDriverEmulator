@@ -22,20 +22,13 @@ typedef struct {
   int32_t torque_t_min;       // Minimum pull-out torque at and above v_max
   uint32_t stall_threshold;   // Rotor lag error threshold before tripping stall fault (encoder counts, 0 = disabled)
 
-  // Floating-point Control Gains & Physical Coefficients
-  float kp;                   // Proportional gain for position tracking error
-  float kff;                  // Feedforward velocity gain for input pulse rate
-  float kfree;                // Viscous freewheeling velocity coefficient under load tension
+  // Control Gains & Physical Coefficients (Q12 Fixed-Point)
+  q12_t kp_q12;                  // Proportional gain for position tracking error (kp * 4096)
+  q12_t kff_q12;                 // Feedforward velocity gain for input pulse rate (kff * 4096)
+  q12_t kfree_q12;               // Viscous freewheeling velocity coefficient under load tension (kfree * 4096)
 
-  // Pre-calculated Kinematic Conversions
-  float counts_per_step;      // Pre-calculated ratio: (float) ratio_epr / (float) ratio_spr
-  float inv_counts_per_step;  // Pre-calculated inverse ratio: (float) ratio_spr / (float) ratio_epr
-
-  // Cached Fixed-Point Parameters (Precomputed for real-time ISR)
-  q12_t kp_q12;                  // kp in Q12 format (kp * 4096)
+  // Cached Kinematic & Torque Parameters (Precomputed for real-time ISR)
   q12_t kp_velocity_q12;         // kp velocity gain in counts/sec (kp * 1000 * 4096)
-  q12_t kff_q12;                 // kff in Q12 format (kff * 4096)
-  q12_t kfree_q12;               // kfree in Q12 format (kfree * 4096)
   q12_t counts_per_step_q12;     // (ratio_epr / ratio_spr) in Q12 format
   q16_t inv_counts_per_step_q16; // (ratio_spr / ratio_epr) in Q16 format
   q16_t inv_torque_span_v_q16;   // 1 / (torque_v_max - torque_v_knee) in Q16 format
@@ -50,15 +43,10 @@ typedef struct {
   .torque_v_max = 8000, \
   .torque_t_min = 200, \
   .stall_threshold = 4000, \
-  .kp = 0.1f, \
-  .kff = 1.0f, \
-  .kfree = 0.005f, \
-  .counts_per_step = 4.0f, \
-  .inv_counts_per_step = 0.25f, \
   .kp_q12 = { .raw = 410 }, \
-  .kp_velocity_q12 = { .raw = 409600 }, \
   .kff_q12 = { .raw = 4096 }, \
   .kfree_q12 = { .raw = 20 }, \
+  .kp_velocity_q12 = { .raw = 409600 }, \
   .counts_per_step_q12 = { .raw = 16384 }, \
   .inv_counts_per_step_q16 = { .raw = 16384 }, \
   .inv_torque_span_v_q16 = { .raw = 9 }, \

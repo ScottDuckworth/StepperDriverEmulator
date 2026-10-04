@@ -54,35 +54,8 @@ static bool StrToU8(const char* str, uint8_t* dst) {
   return true;
 }
 
-static bool StrToFloat(const char* str, float* dst) {
-  if (!str || !*str) return false;
-  float sign = 1.0f;
-  if (*str == '-') {
-    sign = -1.0f;
-    str++;
-  } else if (*str == '+') {
-    str++;
-  }
-  float val = 0.0f;
-  bool has_digits = false;
-  while (*str >= '0' && *str <= '9') {
-    val = val * 10.0f + (float)(*str - '0');
-    str++;
-    has_digits = true;
-  }
-  if (*str == '.') {
-    str++;
-    float scale = 0.1f;
-    while (*str >= '0' && *str <= '9') {
-      val += (float)(*str - '0') * scale;
-      scale *= 0.1f;
-      str++;
-      has_digits = true;
-    }
-  }
-  if (!has_digits || *str != '\0') return false;
-  *dst = sign * val;
-  return true;
+static bool StrToDecimalQ12(const char* str, q12_t* dst) {
+  return MathUtil_StrToQ12(str, dst);
 }
 
 static void InvalidUsage(const char* usage) {
@@ -156,8 +129,8 @@ static void Cmd_kfree(const Command_t* self) {
     return;
   }
   if (argc != 2) { InvalidUsage(self->usage); return; }
-  float value;
-  if (!StrToFloat(argv[1], &value)) { InvalidValue("float", argv[1]); return; }
+  q12_t value;
+  if (!StrToDecimalQ12(argv[1], &value)) { InvalidValue("float", argv[1]); return; }
   SetKfree(value);
 }
 
@@ -209,8 +182,8 @@ static void Cmd_kp(const Command_t* self) {
     return;
   }
   if (argc != 2) { InvalidUsage(self->usage); return; }
-  float value;
-  if (!StrToFloat(argv[1], &value)) { InvalidValue("float", argv[1]); return; }
+  q12_t value;
+  if (!StrToDecimalQ12(argv[1], &value)) { InvalidValue("float", argv[1]); return; }
   SetKp(value);
 }
 
@@ -220,8 +193,8 @@ static void Cmd_kff(const Command_t* self) {
     return;
   }
   if (argc != 2) { InvalidUsage(self->usage); return; }
-  float value;
-  if (!StrToFloat(argv[1], &value)) { InvalidValue("float", argv[1]); return; }
+  q12_t value;
+  if (!StrToDecimalQ12(argv[1], &value)) { InvalidValue("float", argv[1]); return; }
   SetKff(value);
 }
 
@@ -231,8 +204,8 @@ static void Cmd_blank(const Command_t* self) {
     return;
   }
   if (argc != 2) { InvalidUsage(self->usage); return; }
-  float value;
-  if (!StrToFloat(argv[1], &value)) { InvalidValue("float", argv[1]); return; }
+  q12_t value;
+  if (!StrToDecimalQ12(argv[1], &value)) { InvalidValue("float", argv[1]); return; }
   SetStepBlanking(value);
 }
 
