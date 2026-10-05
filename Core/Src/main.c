@@ -263,6 +263,52 @@ void ReportTension(void) {
   ReportI32("t", GetTension());
 }
 
+void GetDefaultHardwareName(char* out_name, size_t max_len) {
+  if (!out_name || max_len == 0) return;
+#if defined(UNIT_TEST)
+  strncpy(out_name, "001122334455", max_len);
+  out_name[max_len - 1] = '\0';
+#else
+  uint32_t deviceserial0 = *(uint32_t *) UID_BASE;
+  uint32_t deviceserial1 = *(uint32_t *) (UID_BASE + 4U);
+  uint32_t deviceserial2 = *(uint32_t *) (UID_BASE + 8U);
+  deviceserial0 += deviceserial2;
+
+  static const char hex_digits[] = "0123456789ABCDEF";
+  char serial[13];
+  for (int i = 0; i < 8; i++) {
+    serial[i] = hex_digits[(deviceserial0 >> (28 - i * 4)) & 0xF];
+  }
+  for (int i = 0; i < 4; i++) {
+    serial[8 + i] = hex_digits[(deviceserial1 >> (28 - i * 4)) & 0xF];
+  }
+  serial[12] = '\0';
+  strncpy(out_name, serial, max_len);
+  out_name[max_len - 1] = '\0';
+#endif
+}
+
+const char* GetName(void) {
+  if (config.persistent.name[0] == '\0') {
+    GetDefaultHardwareName(config.persistent.name, sizeof(config.persistent.name));
+  }
+  return config.persistent.name;
+}
+
+void SetName(const char* name) {
+  if (name && name[0] != '\0') {
+    strncpy(config.persistent.name, name, sizeof(config.persistent.name) - 1);
+    config.persistent.name[sizeof(config.persistent.name) - 1] = '\0';
+  } else {
+    GetDefaultHardwareName(config.persistent.name, sizeof(config.persistent.name));
+  }
+  ReportName();
+}
+
+void ReportName(void) {
+  ReportString("name", GetName());
+}
+
 uint16_t GetOdr(void) {
   return config.persistent.odr;
 }
@@ -1108,6 +1154,9 @@ int main(void)
 
   ConfigStore_Load(ConfigStore_GetStm32FlashDriver(), CONFIG_FLASH_PAGE_ADDR, &config);
   ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
+  if (config.persistent.name[0] == '\0') {
+    GetDefaultHardwareName(config.persistent.name, sizeof(config.persistent.name));
+  }
 
   UpdatePositionCounters();
   position.commanded_pos = 0;

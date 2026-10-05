@@ -191,8 +191,21 @@ static void Cmd_blank(const Command_t* self) {
   SetStepBlanking(value);
 }
 
+static void Cmd_name(const Command_t* self) {
+  if (argc == 1) {
+    ReportName();
+    return;
+  }
+  if (argc != 2) {
+    InvalidUsage(self->usage);
+    return;
+  }
+  SetName(argv[1]);
+}
+
 static void Cmd_r(const Command_t* self) {
   if (argc != 1) { InvalidUsage(self->usage); return; }
+  ReportName();
   ReportOdr();
   ReportRatio();
   ReportKp();
@@ -224,6 +237,7 @@ static void Cmd_save(const Command_t* self) {
 static void Cmd_help(const Command_t* self);
 
 static const Command_t commands[] = {
+    {"name", "name [string]", Cmd_name},
     {"lim1", "lim1 <uint8>", Cmd_lim1},
     {"lim2", "lim2 <uint8>", Cmd_lim2},
     {"t", "t [int32]", Cmd_t},

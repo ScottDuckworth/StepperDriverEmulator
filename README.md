@@ -336,6 +336,7 @@ Commands are sent via the USB Virtual COM Port (terminated with `\r` or `\n`).
 
 | Command | Syntax | Description | Example Command | Serial Response |
 | :--- | :--- | :--- | :--- | :--- |
+| `name` | `name [string]` | Query or set controller name (up to 31 chars; defaults to 12-char USB CDC hardware UID) | `name Joint1` | `name Joint1\r\n` |
 | `t` | `t [int32]` | Query or set load tension/torque (signed: `+` pulls forward, `-` pulls reverse; e.g. `t -1200` opposes forward motion) | `t -1200` | `t -1200\r\n` |
 | `tcurve` | `tcurve [T0] [V_knee] [V_max] [T_min]` | Query or set torque-speed parameters | `tcurve 1000 1000 8000 200` | `tcurve 1000 1000 8000 200\r\n` |
 | `stall` | `stall [uint32]` | Query or set stall threshold (`0` = disable) | `stall 4000` | `stall 4000\r\n` |
@@ -354,13 +355,14 @@ Commands are sent via the USB Virtual COM Port (terminated with `\r` or `\n`).
 | `r` | `r` | Dump full configuration and runtime status | `r` | Multi-line report (see below) |
 | `help` | `help` | Print command usage list | `help` | Usage list (see below) |
 
-> **Note on Queries:** Commands that accept optional parameters (`pos`, `t`, `tcurve`, `stall`, `kfree`, `blank`, `blink`, `odr`, `ratio`, `kp`, `kff`) return the current value when issued with no arguments (e.g. typing `pos` replies `pos 0\r\n`, typing `t` replies `t 0\r\n`, typing `ratio` replies `ratio 1 4\r\n`, typing `odr` replies `odr 1000\r\n`).
+> **Note on Queries:** Commands that accept optional parameters (`name`, `pos`, `t`, `tcurve`, `stall`, `kfree`, `blank`, `blink`, `odr`, `ratio`, `kp`, `kff`) return the current value when issued with no arguments (e.g. typing `name` replies `name Joint1\r\n`, typing `pos` replies `pos 0\r\n`, typing `t` replies `t 0\r\n`, typing `ratio` replies `ratio 1 4\r\n`, typing `odr` replies `odr 1000\r\n`).
 
 ### Full State Report (`r` command)
 
 Executes `r` to print all parameters and live hardware states:
 
 ```text
+name 002B001F3438
 odr 1000
 ratio 1 4
 kp 0.1001
@@ -473,8 +475,8 @@ Memory footprint of the Release build (`build/Release/StepperDriverEmulator.elf`
 
 | Memory Region | Used Bytes | Total Bytes | Utilization | Free Space |
 | :--- | :--- | :--- | :--- | :--- |
-| **Flash** (`.text` + `.rodata` + `.data`) | 26,744 B | 31,744 B | **84.25%** | 5,000 B free |
-| **RAM** (`.data` + `.bss` + stack) | 5,500 B | 6,144 B | **89.52%** | 644 B free |
+| **Flash** (`.text` + `.rodata` + `.data`) | 27,200 B | 31,744 B | **85.69%** | 4,544 B free |
+| **RAM** (`.data` + `.bss` + stack) | 5,532 B | 6,144 B | **90.04%** | 612 B free |
 
 * **Flash Savings:** Complete elimination of soft-float runtime helpers (`__aeabi_fmul`, `__aeabi_fadd`, `__aeabi_fsub`, `__aeabi_fdiv`, `__aeabi_f2iz`, `__aeabi_i2f`, etc.) reclaimed **3,972 bytes** of Flash memory.
 * **Deterministic Timing:** Disallowance of software floating point and 64-bit integer division eliminates variable, data-dependent software emulation loops from the motion control path.

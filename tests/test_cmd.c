@@ -146,6 +146,33 @@ bool GetBlinkMode(void) { return mock_blink; }
 void SetBlinkMode(bool enable) { mock_blink = enable; ReportBlinkMode(); }
 void ReportBlinkMode(void) { ReportU8("blink", GetBlinkMode()); }
 
+void GetDefaultHardwareName(char* out_name, size_t max_len) {
+  if (!out_name || max_len == 0) return;
+  strncpy(out_name, "001122334455", max_len);
+  out_name[max_len - 1] = '\0';
+}
+
+const char* GetName(void) {
+  if (mock_config.persistent.name[0] == '\0') {
+    GetDefaultHardwareName(mock_config.persistent.name, sizeof(mock_config.persistent.name));
+  }
+  return mock_config.persistent.name;
+}
+
+void SetName(const char* name) {
+  if (name && name[0] != '\0') {
+    strncpy(mock_config.persistent.name, name, sizeof(mock_config.persistent.name) - 1);
+    mock_config.persistent.name[sizeof(mock_config.persistent.name) - 1] = '\0';
+  } else {
+    GetDefaultHardwareName(mock_config.persistent.name, sizeof(mock_config.persistent.name));
+  }
+  ReportName();
+}
+
+void ReportName(void) {
+  ReportString("name", GetName());
+}
+
 uint16_t GetOdr(void) { return mock_config.persistent.odr; }
 void SetOdr(uint16_t odr) { mock_config.persistent.odr = odr; ReportOdr(); }
 void ReportOdr(void) { ReportU16("odr", GetOdr()); }
@@ -484,8 +511,29 @@ void test_cmd_pos_report_int64(void) {
   TEST_ASSERT_EQUAL_STRING("pos -9223372036854775808\r\n", captured_output);
 }
 
+void test_cmd_name_set_and_query(void) {
+  // Query default name (hardware ID mock)
+  send_cmd("name\r\n");
+  TEST_ASSERT_EQUAL_STRING("name 001122334455\r\n", captured_output);
+
+  // Set new name
+  send_cmd("name StepperX\r\n");
+  TEST_ASSERT_EQUAL_STRING("StepperX", mock_config.persistent.name);
+  TEST_ASSERT_EQUAL_STRING("name StepperX\r\n", captured_output);
+
+  // Query updated name
+  send_cmd("name\r\n");
+  TEST_ASSERT_EQUAL_STRING("name StepperX\r\n", captured_output);
+
+  // Name longer than 31 chars should truncate safely to 31 chars
+  send_cmd("name 12345678901234567890123456789012345\r\n");
+  TEST_ASSERT_EQUAL_STRING("1234567890123456789012345678901", mock_config.persistent.name);
+  TEST_ASSERT_EQUAL_STRING("name 1234567890123456789012345678901\r\n", captured_output);
+}
+
 void test_cmd_r_state_report(void) {
   send_cmd("r\r\n");
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "name 001122334455\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "odr 1000\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "ratio 1 4\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "kp 0.1001\r\n"));
@@ -520,6 +568,7 @@ void test_cmd_pvt(void) {
 
 void test_cmd_help(void) {
   send_cmd("help\r\n");
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "name [string]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "t [int32]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "tcurve [T0] [V_knee] [V_max] [T_min]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "stall [uint32]"));
@@ -549,6 +598,9 @@ void test_cmd_save_invalid_usage(void) {
 }
 
 void test_cmd_error_invalid_usage(void) {
+  send_cmd("name foo bar\r\n");
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid usage: name [string]\r\n"));
+
   send_cmd("t 1 2 3\r\n");
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid usage: t [int32]\r\n"));
 
@@ -589,6 +641,7 @@ void test_cmd_error_unknown_command(void) {
 
 int main(void) {
   UNITY_BEGIN();
+  RUN_TEST(test_cmd_name_set_and_query);
   RUN_TEST(test_cmd_blank_set_and_query);
   RUN_TEST(test_cmd_t_set_and_query);
   RUN_TEST(test_cmd_tcurve_set_and_query);

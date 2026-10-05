@@ -96,6 +96,11 @@ void ReportQ16(const char* var, q16_t value);
 
 EmulatorConfig_t* GetConfig(void);
 
+const char* GetName(void);
+void SetName(const char* name);
+void ReportName(void);
+void GetDefaultHardwareName(char* out_name, size_t max_len);
+
 uint16_t GetOdr(void);
 void SetOdr(uint16_t odr);
 void ReportOdr(void);

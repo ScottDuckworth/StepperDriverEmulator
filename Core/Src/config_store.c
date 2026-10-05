@@ -19,6 +19,7 @@ bool ConfigStore_Validate(const PersistentConfig_t* cfg) {
   if (cfg->ratio_spr == 0 || cfg->ratio_epr == 0) return false;
   if (cfg->kp.raw < 0 || cfg->kff.raw < 0 || cfg->kfree.raw < 0) return false;
   if (cfg->torque_v_max < cfg->torque_v_knee) return false;
+  if (memchr(cfg->name, '\0', sizeof(cfg->name)) == NULL) return false;
   return true;
 }
 

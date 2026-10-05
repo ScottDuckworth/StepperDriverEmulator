@@ -81,6 +81,7 @@ void test_save_and_load_roundtrip(void) {
   original_cfg.kp = (q12_t){ .raw = 1024 };
   original_cfg.kff = (q12_t){ .raw = 3891 };
   original_cfg.kfree = (q12_t){ .raw = 33 };
+  strcpy(original_cfg.name, "CustomAxis");
 
   bool save_ok = ConfigStore_Save(&mock_flash_driver, MOCK_PAGE_ADDR, &original_cfg);
   TEST_ASSERT_TRUE(save_ok);
@@ -90,6 +91,7 @@ void test_save_and_load_roundtrip(void) {
   TEST_ASSERT_TRUE(load_p_ok);
 
   // Assert exact match of all persistent fields
+  TEST_ASSERT_EQUAL_STRING("CustomAxis", loaded_p_cfg.name);
   TEST_ASSERT_EQUAL_UINT16(1, loaded_p_cfg.ratio_spr);
   TEST_ASSERT_EQUAL_UINT16(4, loaded_p_cfg.ratio_epr);
   TEST_ASSERT_EQUAL_UINT16(250, loaded_p_cfg.odr);
@@ -168,6 +170,10 @@ void test_validation_rejects_invalid_config(void) {
   bad_cfg = (PersistentConfig_t) DEFAULT_PERSISTENT_CONFIG;
   bad_cfg.torque_v_knee = 5000;
   bad_cfg.torque_v_max = 2000; // v_max < v_knee
+  TEST_ASSERT_FALSE(ConfigStore_Validate(&bad_cfg));
+
+  bad_cfg = (PersistentConfig_t) DEFAULT_PERSISTENT_CONFIG;
+  memset(bad_cfg.name, 'A', sizeof(bad_cfg.name)); // Missing null-terminator
   TEST_ASSERT_FALSE(ConfigStore_Validate(&bad_cfg));
 }
 

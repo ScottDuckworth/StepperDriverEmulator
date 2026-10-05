@@ -9,7 +9,12 @@
 extern "C" {
 #endif
 
+#define CONTROLLER_NAME_MAX_LEN 32
+
 typedef struct {
+  // Controller Identification
+  char name[CONTROLLER_NAME_MAX_LEN]; // Controller identifier string (null-terminated, up to 31 chars)
+
   // Timing and Resolution
   uint16_t odr;               // Output Data Rate for periodic position reports (ms, 0 = disabled)
   uint16_t ratio_spr;         // Canonical step ratio (reduced by GCD)
@@ -47,6 +52,7 @@ typedef struct {
 } EmulatorConfig_t;
 
 #define DEFAULT_PERSISTENT_CONFIG { \
+  .name = {0}, \
   .odr = 1000, \
   .ratio_spr = 1, \
   .ratio_epr = 4, \
