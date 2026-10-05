@@ -152,11 +152,11 @@ void ReportOdr(void) { ReportU16("odr", GetOdr()); }
 
 bool SetRatio(uint16_t spr, uint16_t epr) {
   if (spr == 0 || epr == 0) return false;
-  uint16_t g = MathUtil_CalcGCD(spr, epr);
+  uint16_t g = MathUtil_GCD(spr, epr);
   mock_config.ratio_spr = spr / g;
   mock_config.ratio_epr = epr / g;
-  mock_config.counts_per_step_q12 = MathUtil_CalcRatioQ12(mock_config.ratio_epr, mock_config.ratio_spr);
-  mock_config.inv_counts_per_step_q16 = MathUtil_CalcRatioQ16(mock_config.ratio_spr, mock_config.ratio_epr);
+  mock_config.counts_per_step_q12 = MathUtil_RatioQ12(mock_config.ratio_epr, mock_config.ratio_spr);
+  mock_config.inv_counts_per_step_q16 = MathUtil_RatioQ16(mock_config.ratio_spr, mock_config.ratio_epr);
   ReportRatio();
   return true;
 }

@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-uint16_t MathUtil_CalcGCD(uint16_t a, uint16_t b) {
+uint16_t MathUtil_GCD(uint16_t a, uint16_t b) {
   while (b != 0) {
     uint16_t t = b;
     b = a % b;
@@ -12,12 +12,12 @@ uint16_t MathUtil_CalcGCD(uint16_t a, uint16_t b) {
   return a;
 }
 
-q12_t MathUtil_CalcRatioQ12(uint16_t num, uint16_t den) {
+q12_t MathUtil_RatioQ12(uint16_t num, uint16_t den) {
   if (den == 0) return (q12_t){ .raw = 0 };
   return (q12_t){ .raw = (int32_t)(((uint32_t) num << 12) / den) };
 }
 
-q16_t MathUtil_CalcRatioQ16(uint16_t num, uint16_t den) {
+q16_t MathUtil_RatioQ16(uint16_t num, uint16_t den) {
   if (den == 0) return (q16_t){ .raw = 0 };
   return (q16_t){ .raw = (int32_t)(((uint32_t) num << 16) / den) };
 }

@@ -23,11 +23,11 @@ typedef struct {
 } q16_t;
 
 /*
- * MathUtil_CalcGCD:
+ * MathUtil_GCD:
  * Computes the Greatest Common Divisor using the Euclidean algorithm.
  * Handles zero values gracefully (GCD(0, x) = x, GCD(0, 0) = 0).
  */
-uint16_t MathUtil_CalcGCD(uint16_t a, uint16_t b);
+uint16_t MathUtil_GCD(uint16_t a, uint16_t b);
 
 /*
  * Decimal string parsing and formatting for integer and fixed-point types.
@@ -111,8 +111,8 @@ static inline int32_t MathUtil_Q16ToInt(q16_t q) {
  * Fixed-point ratio helpers:
  * Computes (num / den) in Q12 and Q16 formats without floats.
  */
-q12_t MathUtil_CalcRatioQ12(uint16_t num, uint16_t den);
-q16_t MathUtil_CalcRatioQ16(uint16_t num, uint16_t den);
+q12_t MathUtil_RatioQ12(uint16_t num, uint16_t den);
+q16_t MathUtil_RatioQ16(uint16_t num, uint16_t den);
 
 /*
  * Fixed-point multiplication helpers:

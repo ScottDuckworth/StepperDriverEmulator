@@ -26,8 +26,8 @@ void ConfigStore_RefreshCachedValues(EmulatorConfig_t* cfg) {
   if (!cfg) return;
 
   cfg->kp_velocity_q12 = MathUtil_FromRawQ12(cfg->kp_q12.raw * 1000);
-  cfg->counts_per_step_q12 = MathUtil_CalcRatioQ12(cfg->ratio_epr, cfg->ratio_spr);
-  cfg->inv_counts_per_step_q16 = MathUtil_CalcRatioQ16(cfg->ratio_spr, cfg->ratio_epr);
+  cfg->counts_per_step_q12 = MathUtil_RatioQ12(cfg->ratio_epr, cfg->ratio_spr);
+  cfg->inv_counts_per_step_q16 = MathUtil_RatioQ16(cfg->ratio_spr, cfg->ratio_epr);
 
   uint32_t span_v = (cfg->torque_v_max > cfg->torque_v_knee) ? (cfg->torque_v_max - cfg->torque_v_knee) : 0;
   cfg->inv_torque_span_v_q16 = (span_v > 0) ? MathUtil_FromRawQ16((int32_t)(65536U / span_v)) : MathUtil_FromRawQ16(0);

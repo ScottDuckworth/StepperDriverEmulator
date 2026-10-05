@@ -278,7 +278,7 @@ void ReportOdr(void) {
 
 bool SetRatio(uint16_t spr, uint16_t epr) {
   if (spr == 0 || epr == 0) return false;
-  uint16_t g = MathUtil_CalcGCD(spr, epr);
+  uint16_t g = MathUtil_GCD(spr, epr);
   __disable_irq();
   config.ratio_spr = spr / g;
   config.ratio_epr = epr / g;

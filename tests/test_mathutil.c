@@ -7,17 +7,17 @@ void tearDown(void) {}
 
 /* --- Greatest Common Divisor (GCD) Tests --- */
 
-void test_mathutil_calc_gcd(void) {
-  TEST_ASSERT_EQUAL_UINT16(0, MathUtil_CalcGCD(0, 0));
-  TEST_ASSERT_EQUAL_UINT16(5, MathUtil_CalcGCD(0, 5));
-  TEST_ASSERT_EQUAL_UINT16(5, MathUtil_CalcGCD(5, 0));
-  TEST_ASSERT_EQUAL_UINT16(1000, MathUtil_CalcGCD(1000, 4000));
-  TEST_ASSERT_EQUAL_UINT16(8, MathUtil_CalcGCD(200, 1024));
-  TEST_ASSERT_EQUAL_UINT16(1, MathUtil_CalcGCD(17, 19));
-  TEST_ASSERT_EQUAL_UINT16(60, MathUtil_CalcGCD(360, 60));
-  TEST_ASSERT_EQUAL_UINT16(1000, MathUtil_CalcGCD(1000, 1000));
-  TEST_ASSERT_EQUAL_UINT16(65535, MathUtil_CalcGCD(65535, 65535));
-  TEST_ASSERT_EQUAL_UINT16(65535, MathUtil_CalcGCD(65535, 0));
+void test_mathutil_gcd(void) {
+  TEST_ASSERT_EQUAL_UINT16(0, MathUtil_GCD(0, 0));
+  TEST_ASSERT_EQUAL_UINT16(5, MathUtil_GCD(0, 5));
+  TEST_ASSERT_EQUAL_UINT16(5, MathUtil_GCD(5, 0));
+  TEST_ASSERT_EQUAL_UINT16(1000, MathUtil_GCD(1000, 4000));
+  TEST_ASSERT_EQUAL_UINT16(8, MathUtil_GCD(200, 1024));
+  TEST_ASSERT_EQUAL_UINT16(1, MathUtil_GCD(17, 19));
+  TEST_ASSERT_EQUAL_UINT16(60, MathUtil_GCD(360, 60));
+  TEST_ASSERT_EQUAL_UINT16(1000, MathUtil_GCD(1000, 1000));
+  TEST_ASSERT_EQUAL_UINT16(65535, MathUtil_GCD(65535, 65535));
+  TEST_ASSERT_EQUAL_UINT16(65535, MathUtil_GCD(65535, 0));
 }
 
 /* --- Decimal String Parsing and Formatting Tests --- */
@@ -207,20 +207,20 @@ void test_mathutil_format_q12_and_q16(void) {
   TEST_ASSERT_EQUAL_STRING("1.0000", buf);
 }
 
-void test_mathutil_calc_ratio_q12_and_q16(void) {
-  TEST_ASSERT_EQUAL_INT32(0, MathUtil_CalcRatioQ12(0, 0).raw);
-  TEST_ASSERT_EQUAL_INT32(0, MathUtil_CalcRatioQ12(100, 0).raw);
-  TEST_ASSERT_EQUAL_INT32(4096, MathUtil_CalcRatioQ12(1, 1).raw);
-  TEST_ASSERT_EQUAL_INT32(16384, MathUtil_CalcRatioQ12(4, 1).raw);
-  TEST_ASSERT_EQUAL_INT32(2048, MathUtil_CalcRatioQ12(1, 2).raw);
-  TEST_ASSERT_EQUAL_INT32(16384, MathUtil_CalcRatioQ12(4000, 1000).raw);
+void test_mathutil_ratio_q12_and_q16(void) {
+  TEST_ASSERT_EQUAL_INT32(0, MathUtil_RatioQ12(0, 0).raw);
+  TEST_ASSERT_EQUAL_INT32(0, MathUtil_RatioQ12(100, 0).raw);
+  TEST_ASSERT_EQUAL_INT32(4096, MathUtil_RatioQ12(1, 1).raw);
+  TEST_ASSERT_EQUAL_INT32(16384, MathUtil_RatioQ12(4, 1).raw);
+  TEST_ASSERT_EQUAL_INT32(2048, MathUtil_RatioQ12(1, 2).raw);
+  TEST_ASSERT_EQUAL_INT32(16384, MathUtil_RatioQ12(4000, 1000).raw);
 
-  TEST_ASSERT_EQUAL_INT32(0, MathUtil_CalcRatioQ16(0, 0).raw);
-  TEST_ASSERT_EQUAL_INT32(0, MathUtil_CalcRatioQ16(100, 0).raw);
-  TEST_ASSERT_EQUAL_INT32(65536, MathUtil_CalcRatioQ16(1, 1).raw);
-  TEST_ASSERT_EQUAL_INT32(262144, MathUtil_CalcRatioQ16(4, 1).raw);
-  TEST_ASSERT_EQUAL_INT32(16384, MathUtil_CalcRatioQ16(1, 4).raw);
-  TEST_ASSERT_EQUAL_INT32(16384, MathUtil_CalcRatioQ16(1000, 4000).raw);
+  TEST_ASSERT_EQUAL_INT32(0, MathUtil_RatioQ16(0, 0).raw);
+  TEST_ASSERT_EQUAL_INT32(0, MathUtil_RatioQ16(100, 0).raw);
+  TEST_ASSERT_EQUAL_INT32(65536, MathUtil_RatioQ16(1, 1).raw);
+  TEST_ASSERT_EQUAL_INT32(262144, MathUtil_RatioQ16(4, 1).raw);
+  TEST_ASSERT_EQUAL_INT32(16384, MathUtil_RatioQ16(1, 4).raw);
+  TEST_ASSERT_EQUAL_INT32(16384, MathUtil_RatioQ16(1000, 4000).raw);
 }
 
 void test_mathutil_mul_q12_and_q16(void) {
@@ -270,14 +270,14 @@ void test_mathutil_clamp_i32(void) {
 
 int main(void) {
   UNITY_BEGIN();
-  RUN_TEST(test_mathutil_calc_gcd);
+  RUN_TEST(test_mathutil_gcd);
   RUN_TEST(test_mathutil_parse_unsigned);
   RUN_TEST(test_mathutil_parse_signed);
   RUN_TEST(test_mathutil_parse_q12);
   RUN_TEST(test_mathutil_parse_q16);
   RUN_TEST(test_mathutil_format_integers);
   RUN_TEST(test_mathutil_format_q12_and_q16);
-  RUN_TEST(test_mathutil_calc_ratio_q12_and_q16);
+  RUN_TEST(test_mathutil_ratio_q12_and_q16);
   RUN_TEST(test_mathutil_mul_q12_and_q16);
   RUN_TEST(test_mathutil_clamp_i32);
   return UNITY_END();
