@@ -215,6 +215,22 @@ int64_t GetEncoderPosition(void) { return mock_pos; }
 void SetEncoderPosition(int64_t pos) { mock_pos = pos; ReportEncoderPosition(); }
 void ReportEncoderPosition(void) { ReportI64("pos", GetEncoderPosition()); }
 
+static int32_t mock_velocity = 0;
+static int32_t mock_motor_torque = 1000;
+static int32_t mock_net_torque = 1000;
+
+void GetInstantaneousMotionState(int32_t* out_velocity_hz, int32_t* out_motor_torque, int32_t* out_net_torque) {
+  if (out_velocity_hz) *out_velocity_hz = mock_velocity;
+  if (out_motor_torque) *out_motor_torque = mock_motor_torque;
+  if (out_net_torque) *out_net_torque = mock_net_torque;
+}
+
+void ReportPvt(void) {
+  char buf[80];
+  snprintf(buf, sizeof(buf), "pvt %lld %ld %ld %ld\r\n", (long long) mock_pos, (long) mock_velocity, (long) mock_motor_torque, (long) mock_net_torque);
+  WriteString(buf);
+}
+
 static q12_t mock_blank = { .raw = 14336 };
 
 q12_t GetStepBlanking(void) { return mock_blank; }
@@ -241,6 +257,9 @@ void setUp(void) {
   mock_config = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
   mock_tension = 0;
   mock_pos = 0;
+  mock_velocity = 0;
+  mock_motor_torque = 1000;
+  mock_net_torque = 1000;
   mock_lim1 = false;
   mock_lim2 = false;
   mock_blink = false;
@@ -495,6 +514,26 @@ void test_cmd_r_state_report(void) {
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "kfree 0.0049\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "stall_trip 0\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "blink 0\r\n"));
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "pos 0\r\n"));
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "pvt 0 0 1000 1000\r\n"));
+}
+
+void test_cmd_pvt(void) {
+  mock_pos = 12345;
+  mock_velocity = 20000;
+  mock_motor_torque = 850;
+  mock_net_torque = 350;
+
+  send_cmd("pvt\r\n");
+  TEST_ASSERT_EQUAL_STRING("pvt 12345 20000 850 350\r\n", captured_output);
+
+  mock_velocity = -15000;
+  send_cmd("pvt\r\n");
+  TEST_ASSERT_EQUAL_STRING("pvt 12345 -15000 850 350\r\n", captured_output);
+
+  mock_velocity = 0;
+  send_cmd("pvt\r\n");
+  TEST_ASSERT_EQUAL_STRING("pvt 12345 0 850 350\r\n", captured_output);
 }
 
 void test_cmd_help(void) {
@@ -504,6 +543,7 @@ void test_cmd_help(void) {
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "stall [uint32]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "blank [float]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "pos [int64]"));
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "pvt"));
   TEST_ASSERT_NULL(strstr(captured_output, "zero"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "ratio [spr] [epr]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "save"));
@@ -532,6 +572,9 @@ void test_cmd_error_invalid_usage(void) {
 
   send_cmd("pos 1 2\r\n");
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid usage: pos [int64]\r\n"));
+
+  send_cmd("pvt 123\r\n");
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid usage: pvt\r\n"));
 }
 
 void test_cmd_error_invalid_value(void) {
@@ -575,6 +618,7 @@ int main(void) {
   RUN_TEST(test_cmd_kp_kff_set_and_query);
   RUN_TEST(test_cmd_lim1_lim2);
   RUN_TEST(test_cmd_pos);
+  RUN_TEST(test_cmd_pvt);
   RUN_TEST(test_cmd_pos_report_int64);
   RUN_TEST(test_cmd_r_state_report);
   RUN_TEST(test_cmd_help);

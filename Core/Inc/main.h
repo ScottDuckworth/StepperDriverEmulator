@@ -158,6 +158,8 @@ void ReportU32(const char* var, uint32_t value);
 void ReportU16(const char* var, uint16_t value);
 void ReportU8(const char* var, uint8_t value);
 void ReportEncoderPosition(void);
+void GetInstantaneousMotionState(int32_t* out_velocity_hz, int32_t* out_motor_torque, int32_t* out_net_torque);
+void ReportPvt(void);
 void ReportStepPosition(void);
 void ReportStepReverse(void);
 void ReportStepEnabled(void);

@@ -43,6 +43,7 @@ typedef struct {
   int8_t half_1_delta;          /* Encoder counts emitted in chunk 1 */
   int64_t planned_encoder_pos;  /* Advanced planned position after priming both chunks */
   bool stall_trip_event;        /* True if stall tripped during startup priming */
+  int32_t target_velocity;      /* Planned output velocity in counts/sec */
 } Motion_StartResult_t;
 
 /* Motion step planning parameters */
@@ -81,6 +82,7 @@ typedef struct {
   uint16_t psc;                 /* Timer prescaler calculated for pacing */
   uint16_t arr;                 /* Timer auto-reload value calculated for pacing */
   bool stall_trip_event;        /* True if a new stall trip condition occurred */
+  int32_t target_velocity;      /* Planned output velocity in counts/sec */
 } Motion_ChunkResult_t;
 
 /* Parameters for evaluating whether motion should terminate into idle */

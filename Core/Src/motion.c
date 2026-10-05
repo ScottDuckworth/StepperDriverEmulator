@@ -110,6 +110,7 @@ bool Motion_PrepareStart(const EmulatorConfig_t* cfg,
     out_res->half_1_delta = c_res1.delta;
     out_res->planned_encoder_pos = planned_pos;
     out_res->stall_trip_event = stall_event;
+    out_res->target_velocity = c_res0.target_velocity;
   }
   return true;
 }
@@ -300,6 +301,7 @@ bool Motion_PlanAndEmitChunk(const EmulatorConfig_t* cfg,
     out_res->psc = psc;
     out_res->arr = arr;
     out_res->stall_trip_event = plan_res.stall_trip_event;
+    out_res->target_velocity = plan_res.target_velocity;
   }
   return true;
 }

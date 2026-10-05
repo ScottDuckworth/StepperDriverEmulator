@@ -86,6 +86,7 @@ static int8_t half_1_delta = 0;
 static volatile bool motion_active = false;
 static volatile int64_t planned_encoder_pos = 0;
 static volatile uint8_t startup_sync_count = 0;
+static volatile int32_t current_motion_velocity = 0;
 
 
 #define usb_output_data UserTxBufferFS
@@ -174,10 +175,8 @@ void ReportQ16(const char* var, q16_t value) {
   WriteData((uint8_t*) output, size);
 }
 
-void ReportI64(const char* var, int64_t value) {
-  char buf[32];
-  char* p = buf;
-  *p++ = ' ';
+static void FormatI64Digits(char* dst, int64_t value) {
+  char* p = dst;
   uint64_t mag;
   if (value < 0) {
     *p++ = '-';
@@ -208,10 +207,16 @@ void ReportI64(const char* var, int64_t value) {
   while (d_cnt > 0) {
     *p++ = digits[--d_cnt];
   }
-  *p++ = '\r';
-  *p++ = '\n';
+  *p = '\0';
+}
+
+void ReportI64(const char* var, int64_t value) {
+  char digits[24];
+  FormatI64Digits(digits, value);
   WriteString(var);
-  WriteData((uint8_t*) buf, (uint16_t)(p - buf));
+  WriteString(" ");
+  WriteString(digits);
+  WriteString("\r\n");
 }
 
 void ReportI32(const char* var, int32_t value) {
@@ -472,6 +477,7 @@ void SetEncoderPosition(int64_t pos) {
   TIM3->CR1 &= ~TIM_CR1_CEN;
   DMA1_Channel3->CCR &= ~DMA_CCR_EN;
   motion_active = false;
+  current_motion_velocity = 0;
   TIM2->SR = ~TIM_SR_CC1IF;
   TIM2->DIER = TIM_DIER_CC1DE | TIM_DIER_CC1IE;
   __enable_irq();
@@ -480,6 +486,48 @@ void SetEncoderPosition(int64_t pos) {
 
 void ReportEncoderPosition(void) {
   ReportI64("pos", GetEncoderPosition());
+}
+
+void GetInstantaneousMotionState(int32_t* out_velocity_hz, int32_t* out_motor_torque, int32_t* out_net_torque) {
+  __disable_irq();
+  bool active = motion_active;
+  int32_t vel = active ? current_motion_velocity : 0;
+  bool is_free = stall_tripped || !GetStepEnabled();
+  int32_t tension = load_tension;
+  __enable_irq();
+
+  int32_t t_motor;
+  if (is_free) {
+    t_motor = 0;
+  } else if (!active) {
+    t_motor = config.torque_t0;
+  } else {
+    uint32_t speed = (vel >= 0) ? (uint32_t) vel : (uint32_t)(-vel);
+    t_motor = Motion_CalcMotorTorque(&config, speed);
+  }
+
+  int dir = (vel > 0) ? 1 : ((vel < 0) ? -1 : 0);
+  int32_t t_net = Motion_CalcNetTorque(t_motor, dir, tension);
+
+  if (out_velocity_hz) *out_velocity_hz = vel;
+  if (out_motor_torque) *out_motor_torque = t_motor;
+  if (out_net_torque) *out_net_torque = t_net;
+}
+
+void ReportPvt(void) {
+  int64_t pos = GetEncoderPosition();
+  int32_t vel = 0, t_motor = 0, t_net = 0;
+  GetInstantaneousMotionState(&vel, &t_motor, &t_net);
+
+  char pos_str[24];
+  FormatI64Digits(pos_str, pos);
+
+  char tail[48];
+  snprintf(tail, sizeof(tail), " %ld %ld %ld\r\n", (long) vel, (long) t_motor, (long) t_net);
+
+  WriteString("pvt ");
+  WriteString(pos_str);
+  WriteString(tail);
 }
 
 bool GetStepReverse(void) {
@@ -589,6 +637,7 @@ bool MaybeStartMotion(void) {
 
   motion_active = true;
   startup_sync_count = 1;
+  current_motion_velocity = res.target_velocity;
   planned_encoder_pos = res.planned_encoder_pos;
   half_0_delta = res.half_0_delta;
   half_1_delta = res.half_1_delta;
@@ -650,6 +699,7 @@ void Motion_Wakeup_Handler(void) {
     };
     Motion_PlanStepResult_t res;
     Motion_PlanStep(&config, &req, &res);
+    current_motion_velocity = res.target_velocity;
 
     if (res.stall_trip_event) {
       stall_tripped = true;
@@ -725,6 +775,7 @@ static int8_t FillQuadChunk(uint32_t* chunk) {
   Motion_ChunkResult_t res = {0};
   Motion_PlanAndEmitChunk(&config, &plan_req, &chunk_req, &res);
   planned_encoder_pos += res.delta;
+  current_motion_velocity = res.target_velocity;
 
   if (res.stall_trip_event) {
     stall_tripped = true;
@@ -761,6 +812,7 @@ static void CheckMotionIdle(void) {
       TIM3->CR1 &= ~TIM_CR1_CEN;
       DMA1_Channel3->CCR &= ~DMA_CCR_EN;
       motion_active = false;
+      current_motion_velocity = 0;
       startup_sync_count = 0;
       step_period_cnt = 0;
       if (GetStepEnabled()) {
@@ -792,6 +844,7 @@ void InitMotion(void) {
   half_0_delta = 0;
   half_1_delta = 0;
   motion_active = false;
+  current_motion_velocity = 0;
   startup_sync_count = 0;
   step_period_cnt = 0;
   planned_encoder_pos = position.encoder_pos;
@@ -1064,7 +1117,7 @@ int main(void)
 
     if (config.odr != 0 && now != last_output && (now - last_output) % config.odr == 0) {
       last_output = now;
-      ReportEncoderPosition();
+      ReportPvt();
     }
 
     USB_Flush();

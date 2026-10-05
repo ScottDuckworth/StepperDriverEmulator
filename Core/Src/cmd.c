@@ -189,6 +189,14 @@ static void Cmd_pos(const Command_t* self) {
   SetEncoderPosition(value);
 }
 
+static void Cmd_pvt(const Command_t* self) {
+  if (argc != 1) {
+    InvalidUsage(self->usage);
+    return;
+  }
+  ReportPvt();
+}
+
 static void Cmd_blink(const Command_t* self) {
   if (argc == 1) {
     ReportBlinkMode();
@@ -277,6 +285,7 @@ static void Cmd_r(const Command_t* self) {
   ReportStepReverse();
   ReportStepEnabled();
   ReportEncoderPosition();
+  ReportPvt();
 }
 
 static void Cmd_save(const Command_t* self) {
@@ -299,6 +308,7 @@ static const Command_t commands[] = {
     {"kfree", "kfree [float]", Cmd_kfree},
     {"blank", "blank [float]", Cmd_blank},
     {"pos", "pos [int64]", Cmd_pos},
+    {"pvt", "pvt", Cmd_pvt},
     {"blink", "blink [0|1]", Cmd_blink},
     {"odr", "odr <uint16>", Cmd_odr},
     {"ratio", "ratio [spr] [epr]", Cmd_ratio},
