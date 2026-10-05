@@ -154,6 +154,32 @@ static inline int32_t MathUtil_ClampI32(int32_t val, int32_t min_val, int32_t ma
   return val;
 }
 
+/*
+ * Absolute value utilities:
+ */
+
+/* Computes the absolute value of a signed 32-bit integer. */
+static inline int32_t MathUtil_AbsI32(int32_t val) {
+  return (val < 0) ? -val : val;
+}
+
+/* Computes the absolute value of a signed 64-bit integer. */
+static inline int64_t MathUtil_AbsI64(int64_t val) {
+  return (val < 0) ? -val : val;
+}
+
+/* Computes the absolute value of a Q12 fixed-point value. */
+static inline q12_t MathUtil_AbsQ12(q12_t val) {
+  q12_t q = { .raw = (val.raw < 0) ? -val.raw : val.raw };
+  return q;
+}
+
+/* Computes the absolute value of a Q16 fixed-point value. */
+static inline q16_t MathUtil_AbsQ16(q16_t val) {
+  q16_t q = { .raw = (val.raw < 0) ? -val.raw : val.raw };
+  return q;
+}
+
 #ifdef __cplusplus
 }
 #endif

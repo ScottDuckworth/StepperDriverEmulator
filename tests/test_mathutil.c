@@ -268,6 +268,30 @@ void test_mathutil_clamp_i32(void) {
   TEST_ASSERT_EQUAL_INT32(-10, MathUtil_ClampI32(-15, -10, 10));
 }
 
+void test_mathutil_abs(void) {
+  // 32-bit signed integer
+  TEST_ASSERT_EQUAL_INT32(0, MathUtil_AbsI32(0));
+  TEST_ASSERT_EQUAL_INT32(42, MathUtil_AbsI32(42));
+  TEST_ASSERT_EQUAL_INT32(42, MathUtil_AbsI32(-42));
+  TEST_ASSERT_EQUAL_INT32(2147483647, MathUtil_AbsI32(2147483647));
+  TEST_ASSERT_EQUAL_INT32(2147483647, MathUtil_AbsI32(-2147483647));
+
+  // 64-bit signed integer
+  TEST_ASSERT_EQUAL_INT64(0, MathUtil_AbsI64(0));
+  TEST_ASSERT_EQUAL_INT64(1000000000000LL, MathUtil_AbsI64(1000000000000LL));
+  TEST_ASSERT_EQUAL_INT64(1000000000000LL, MathUtil_AbsI64(-1000000000000LL));
+
+  // Q12
+  TEST_ASSERT_EQUAL_INT32(0, MathUtil_AbsQ12((q12_t){ .raw = 0 }).raw);
+  TEST_ASSERT_EQUAL_INT32(4096, MathUtil_AbsQ12((q12_t){ .raw = 4096 }).raw);
+  TEST_ASSERT_EQUAL_INT32(4096, MathUtil_AbsQ12((q12_t){ .raw = -4096 }).raw);
+
+  // Q16
+  TEST_ASSERT_EQUAL_INT32(0, MathUtil_AbsQ16((q16_t){ .raw = 0 }).raw);
+  TEST_ASSERT_EQUAL_INT32(65536, MathUtil_AbsQ16((q16_t){ .raw = 65536 }).raw);
+  TEST_ASSERT_EQUAL_INT32(65536, MathUtil_AbsQ16((q16_t){ .raw = -65536 }).raw);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_mathutil_gcd);
@@ -280,6 +304,7 @@ int main(void) {
   RUN_TEST(test_mathutil_ratio_q12_and_q16);
   RUN_TEST(test_mathutil_mul_q12_and_q16);
   RUN_TEST(test_mathutil_clamp_i32);
+  RUN_TEST(test_mathutil_abs);
   return UNITY_END();
 }
 

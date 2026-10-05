@@ -389,7 +389,7 @@ size_t MathUtil_FormatQ12(char* buf, size_t buf_sz, q12_t val, uint8_t decimals)
   if (decimals > 4) decimals = 4;
 
   bool negative = (val.raw < 0);
-  uint32_t abs_raw = (uint32_t)(negative ? -val.raw : val.raw);
+  uint32_t abs_raw = (uint32_t) MathUtil_AbsQ12(val).raw;
   uint32_t int_part = abs_raw >> 12;
   uint32_t rem = abs_raw & 0xFFFU;
 
@@ -425,7 +425,7 @@ size_t MathUtil_FormatQ16(char* buf, size_t buf_sz, q16_t val, uint8_t decimals)
   if (decimals > 4) decimals = 4;
 
   bool negative = (val.raw < 0);
-  uint32_t abs_raw = (uint32_t)(negative ? -val.raw : val.raw);
+  uint32_t abs_raw = (uint32_t) MathUtil_AbsQ16(val).raw;
   uint32_t int_part = abs_raw >> 16;
   uint32_t rem = abs_raw & 0xFFFFU;
 

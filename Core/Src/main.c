@@ -471,7 +471,7 @@ void GetInstantaneousMotionState(int32_t* out_velocity_hz, int32_t* out_motor_to
   } else if (!active) {
     t_motor = config.torque_t0;
   } else {
-    uint32_t speed = (vel >= 0) ? (uint32_t) vel : (uint32_t)(-vel);
+    uint32_t speed = (uint32_t) MathUtil_AbsI32(vel);
     t_motor = Motion_CalcMotorTorque(&config, speed);
   }
 
@@ -691,7 +691,7 @@ void Motion_Wakeup_Handler(void) {
         pace_velocity = 4000;
       }
     } else {
-      pace_velocity = (res.target_velocity >= 0) ? (uint32_t) res.target_velocity : (uint32_t)(-res.target_velocity);
+      pace_velocity = (uint32_t) MathUtil_AbsI32(res.target_velocity);
     }
     uint16_t psc = 0;
     uint16_t arr = 0;
@@ -767,7 +767,7 @@ static int8_t FillQuadChunk(uint32_t* chunk) {
       pace_velocity = 4000;
     }
   } else {
-    pace_velocity = (plan_res.target_velocity >= 0) ? (uint32_t) plan_res.target_velocity : (uint32_t)(-plan_res.target_velocity);
+    pace_velocity = (uint32_t) MathUtil_AbsI32(plan_res.target_velocity);
   }
 
   uint16_t psc = 0;

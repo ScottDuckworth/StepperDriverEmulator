@@ -18,7 +18,7 @@ int32_t Motion_CalcMotorTorque(const EmulatorConfig_t* cfg, uint32_t speed_count
 
 int32_t Motion_CalcNetTorque(int32_t t_motor, int dir, int32_t load_tension) {
   (void) dir;
-  int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
+  int32_t abs_tension = MathUtil_AbsI32(load_tension);
   return t_motor - abs_tension;
 }
 
@@ -31,7 +31,7 @@ int32_t Motion_CalcFreewheelVelocity(const EmulatorConfig_t* cfg, int32_t load_t
 
 int32_t Motion_CalcSlipVelocity(const EmulatorConfig_t* cfg, int32_t load_tension, int32_t t_motor) {
   if (!cfg) return 0;
-  int32_t abs_tension = (load_tension >= 0) ? load_tension : -load_tension;
+  int32_t abs_tension = MathUtil_AbsI32(load_tension);
   if (abs_tension <= t_motor) {
     return 0;
   }
@@ -48,7 +48,7 @@ bool Motion_ShouldStart(const EmulatorConfig_t* cfg, const Motion_StartRequest_t
   if (req->is_freewheeling) {
     return (req->load_tension != 0);
   }
-  int32_t abs_tension = (req->load_tension >= 0) ? req->load_tension : -req->load_tension;
+  int32_t abs_tension = MathUtil_AbsI32(req->load_tension);
   return (req->commanded_pos != req->encoder_pos) || (req->step_dcnt != 0) || (abs_tension > cfg->torque_t0);
 }
 
@@ -181,7 +181,7 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
       }
     }
 
-    int32_t abs_err = (eff_error >= 0) ? eff_error : -eff_error;
+    int32_t abs_err = MathUtil_AbsI32(eff_error);
     if (abs_err <= step_counts) {
       eff_error = MathUtil_MulQ16(eff_error * abs_err, cfg->inv_counts_per_step);
     }
@@ -203,7 +203,7 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
     if (target_velocity > 0) {
       target_velocity = 0;
     } else {
-      int32_t abs_rate = -input_rate;
+      int32_t abs_rate = MathUtil_AbsI32(input_rate);
       int32_t step_counts = MathUtil_Q12ToInt(cfg->counts_per_step);
       int32_t min_v = -(abs_rate + (abs_rate >> 2) + MathUtil_MulQ12(step_counts, cfg->kp_velocity));
       if (target_velocity < min_v) {
@@ -226,10 +226,10 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
     dir = (error > 0) ? 1 : -1;
   }
 
-  uint32_t speed_hz = (target_velocity >= 0) ? (uint32_t) target_velocity : (uint32_t)(-target_velocity);
+  uint32_t speed_hz = (uint32_t) MathUtil_AbsI32(target_velocity);
   int32_t t_motor = Motion_CalcMotorTorque(cfg, speed_hz);
   int32_t t_net = Motion_CalcNetTorque(t_motor, dir, req->load_tension);
-  uint32_t abs_error = (error < 0) ? (0U - (uint32_t) error) : (uint32_t) error;
+  uint32_t abs_error = (uint32_t) MathUtil_AbsI32(error);
 
   if (t_net >= 0) {
     // Sufficient torque: motor drives normally toward target
@@ -288,7 +288,7 @@ bool Motion_PlanAndEmitChunk(const EmulatorConfig_t* cfg,
       pace_velocity = 4000;
     }
   } else {
-    pace_velocity = (plan_res.target_velocity >= 0) ? (uint32_t) plan_res.target_velocity : (uint32_t)(-plan_res.target_velocity);
+    pace_velocity = (uint32_t) MathUtil_AbsI32(plan_res.target_velocity);
   }
 
   uint16_t psc = 0;
@@ -325,7 +325,7 @@ bool Motion_ShouldStop(const EmulatorConfig_t* cfg, const Motion_StopRequest_t* 
   if (req->time_since_last_step_ms < req->step_timeout_ms) {
     return false;
   }
-  int32_t abs_tension = (req->load_tension >= 0) ? req->load_tension : -req->load_tension;
+  int32_t abs_tension = MathUtil_AbsI32(req->load_tension);
   return (req->commanded_pos == req->encoder_pos &&
           req->encoder_pos == req->planned_encoder_pos &&
           req->step_dcnt == 0 &&
