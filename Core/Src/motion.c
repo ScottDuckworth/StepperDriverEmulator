@@ -24,7 +24,7 @@ int32_t Motion_CalcNetTorque(int32_t t_motor, int dir, int32_t load_tension) {
 
 int32_t Motion_CalcFreewheelVelocity(const EmulatorConfig_t* cfg, int32_t load_tension) {
   if (!cfg) return 0;
-  int32_t v_free = MathUtil_MulQ12(load_tension, cfg->kfree_q12);
+  int32_t v_free = MathUtil_MulQ12(load_tension, cfg->kfree);
   int32_t v_max = (int32_t) cfg->torque_v_max;
   return MathUtil_ClampI32(v_free, -v_max, v_max);
 }
@@ -35,7 +35,7 @@ int32_t Motion_CalcSlipVelocity(const EmulatorConfig_t* cfg, int32_t load_tensio
   if (abs_tension <= t_motor) {
     return 0;
   }
-  int32_t v_slip = MathUtil_MulQ12(abs_tension - t_motor, cfg->kfree_q12);
+  int32_t v_slip = MathUtil_MulQ12(abs_tension - t_motor, cfg->kfree);
   int32_t v_max = (int32_t) cfg->torque_v_max;
   if (v_slip > v_max) {
     v_slip = v_max;
@@ -146,7 +146,7 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
   int32_t input_rate = 0;
   if ((req->now - req->last_step_time) <= step_timeout_ms && req->step_period_cnt >= 160 && cfg->ratio_spr > 0) {
     uint32_t step_hz = 48000000U / req->step_period_cnt;
-    input_rate = MathUtil_MulQ12((int32_t) step_hz, cfg->counts_per_step_q12);
+    input_rate = MathUtil_MulQ12((int32_t) step_hz, cfg->counts_per_step);
     if (req->step_reverse) {
       input_rate = -input_rate;
     }
@@ -164,9 +164,8 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
   // and prevents cyclic pacing frequency modulation across the phase, while restoring
   // gain (Kp) remains active for true tracking lag (> 1 step) or overshoot (< 0).
   if (input_rate != 0) {
-    int32_t step_counts = MathUtil_Q12ToInt(cfg->counts_per_step_q12);
-    q12_t ff_window_q12 = MathUtil_MulQ12_Q12(cfg->kff_q12, cfg->counts_per_step_q12);
-    int32_t ff_window = MathUtil_Q12ToInt(ff_window_q12);
+    int32_t step_counts = MathUtil_Q12ToInt(cfg->counts_per_step);
+    int32_t ff_window = MathUtil_Q12ToInt(MathUtil_MulQ12_Q12(cfg->kff, cfg->counts_per_step));
 
     if (input_rate > 0) {
       if (eff_error > ff_window) {
@@ -184,18 +183,18 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
 
     int32_t abs_err = (eff_error >= 0) ? eff_error : -eff_error;
     if (abs_err <= step_counts) {
-      eff_error = MathUtil_MulQ16(eff_error * abs_err, cfg->inv_counts_per_step_q16);
+      eff_error = MathUtil_MulQ16(eff_error * abs_err, cfg->inv_counts_per_step);
     }
   }
 
-  int32_t target_velocity = MathUtil_MulQ12(input_rate, cfg->kff_q12) +
-                            MathUtil_MulQ12(eff_error, cfg->kp_velocity_q12);
+  int32_t target_velocity = MathUtil_MulQ12(input_rate, cfg->kff) +
+                            MathUtil_MulQ12(eff_error, cfg->kp_velocity);
   if (input_rate > 0) {
     if (target_velocity < 0) {
       target_velocity = 0;
     } else {
-      int32_t step_counts = MathUtil_Q12ToInt(cfg->counts_per_step_q12);
-      int32_t max_v = input_rate + (input_rate >> 2) + MathUtil_MulQ12(step_counts, cfg->kp_velocity_q12);
+      int32_t step_counts = MathUtil_Q12ToInt(cfg->counts_per_step);
+      int32_t max_v = input_rate + (input_rate >> 2) + MathUtil_MulQ12(step_counts, cfg->kp_velocity);
       if (target_velocity > max_v) {
         target_velocity = max_v;
       }
@@ -205,8 +204,8 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
       target_velocity = 0;
     } else {
       int32_t abs_rate = -input_rate;
-      int32_t step_counts = MathUtil_Q12ToInt(cfg->counts_per_step_q12);
-      int32_t min_v = -(abs_rate + (abs_rate >> 2) + MathUtil_MulQ12(step_counts, cfg->kp_velocity_q12));
+      int32_t step_counts = MathUtil_Q12ToInt(cfg->counts_per_step);
+      int32_t min_v = -(abs_rate + (abs_rate >> 2) + MathUtil_MulQ12(step_counts, cfg->kp_velocity));
       if (target_velocity < min_v) {
         target_velocity = min_v;
       }
@@ -284,7 +283,7 @@ bool Motion_PlanAndEmitChunk(const EmulatorConfig_t* cfg,
 
   uint32_t pace_velocity = 0;
   if (plan_res.target_velocity == 0) {
-    pace_velocity = (uint32_t) MathUtil_MulQ12(1000, cfg->counts_per_step_q12);
+    pace_velocity = (uint32_t) MathUtil_MulQ12(1000, cfg->counts_per_step);
     if (pace_velocity == 0) {
       pace_velocity = 4000;
     }

@@ -71,7 +71,7 @@ static PositionCounters_t position;
 static volatile uint32_t step_period_buf[STEP_BUF_SIZE];
 static uint16_t step_buf_tail = 0;
 static uint32_t blanking_accum = 168; // Primed for standstill
-static q12_t step_blank_us_q12 = { .raw = 14336 }; // Default 3.5 us blanking (3.5 * 4096 = 14336)
+static q12_t step_blank_us = { .raw = 14336 }; // Default 3.5 us blanking (3.5 * 4096 = 14336)
 static uint32_t min_blanking_ticks = 168; // 3.5 us @ 48 MHz
 static volatile uint32_t step_period_cnt = 0;
 static volatile int32_t load_tension = 0;
@@ -338,11 +338,11 @@ void ReportStallThreshold(void) {
 }
 
 q12_t GetKfree(void) {
-  return config.kfree_q12;
+  return config.kfree;
 }
 
 void SetKfree(q12_t k) {
-  config.kfree_q12 = k;
+  config.kfree = k;
   ConfigStore_RefreshCachedValues(&config);
   ReportKfree();
 }
@@ -360,11 +360,11 @@ void ReportStallTrip(void) {
 }
 
 q12_t GetKp(void) {
-  return config.kp_q12;
+  return config.kp;
 }
 
 void SetKp(q12_t kp) {
-  config.kp_q12 = kp;
+  config.kp = kp;
   ConfigStore_RefreshCachedValues(&config);
   ReportKp();
 }
@@ -374,11 +374,11 @@ void ReportKp(void) {
 }
 
 q12_t GetKff(void) {
-  return config.kff_q12;
+  return config.kff;
 }
 
 void SetKff(q12_t kff) {
-  config.kff_q12 = kff;
+  config.kff = kff;
   ConfigStore_RefreshCachedValues(&config);
   ReportKff();
 }
@@ -388,13 +388,13 @@ void ReportKff(void) {
 }
 
 q12_t GetStepBlanking(void) {
-  return step_blank_us_q12;
+  return step_blank_us;
 }
 
 void SetStepBlanking(q12_t blank_us) {
   if (blank_us.raw < 2048) blank_us.raw = 2048;       // 0.5 us min
   if (blank_us.raw > 4096000) blank_us.raw = 4096000; // 1000.0 us max
-  step_blank_us_q12 = blank_us;
+  step_blank_us = blank_us;
   min_blanking_ticks = (uint32_t)((blank_us.raw * 3) >> 8);
   if (min_blanking_ticks < 24) min_blanking_ticks = 24;
 
@@ -682,7 +682,7 @@ void Motion_Wakeup_Handler(void) {
 
     uint32_t pace_velocity = 0;
     if (res.target_velocity == 0) {
-      pace_velocity = (uint32_t) MathUtil_MulQ12(1000, config.counts_per_step_q12);
+      pace_velocity = (uint32_t) MathUtil_MulQ12(1000, config.counts_per_step);
       if (pace_velocity == 0) {
         pace_velocity = 4000;
       }

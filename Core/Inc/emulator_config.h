@@ -22,16 +22,16 @@ typedef struct {
   int32_t torque_t_min;       // Minimum pull-out torque at and above v_max
   uint32_t stall_threshold;   // Rotor lag error threshold before tripping stall fault (encoder counts, 0 = disabled)
 
-  // Control Gains & Physical Coefficients (Q12 Fixed-Point)
-  q12_t kp_q12;                  // Proportional gain for position tracking error (kp * 4096)
-  q12_t kff_q12;                 // Feedforward velocity gain for input pulse rate (kff * 4096)
-  q12_t kfree_q12;               // Viscous freewheeling velocity coefficient under load tension (kfree * 4096)
+  // Control Gains & Physical Coefficients
+  q12_t kp;                  // Proportional gain for position tracking error (kp * 4096)
+  q12_t kff;                 // Feedforward velocity gain for input pulse rate (kff * 4096)
+  q12_t kfree;               // Viscous freewheeling velocity coefficient under load tension (kfree * 4096)
 
   // Cached Kinematic & Torque Parameters (Precomputed for real-time ISR)
-  q12_t kp_velocity_q12;         // kp velocity gain in counts/sec (kp * 1000 * 4096)
-  q12_t counts_per_step_q12;     // (ratio_epr / ratio_spr) in Q12 format
-  q16_t inv_counts_per_step_q16; // (ratio_spr / ratio_epr) in Q16 format
-  q16_t inv_torque_span_v_q16;   // 1 / (torque_v_max - torque_v_knee) in Q16 format
+  q12_t kp_velocity;         // kp velocity gain in counts/sec (kp * 1000 * 4096)
+  q12_t counts_per_step;     // (ratio_epr / ratio_spr)
+  q16_t inv_counts_per_step; // (ratio_spr / ratio_epr)
+  q16_t inv_torque_span_v;   // 1 / (torque_v_max - torque_v_knee)
 } EmulatorConfig_t;
 
 #define DEFAULT_EMULATOR_CONFIG { \
@@ -43,13 +43,13 @@ typedef struct {
   .torque_v_max = 8000, \
   .torque_t_min = 200, \
   .stall_threshold = 4000, \
-  .kp_q12 = { .raw = 410 }, \
-  .kff_q12 = { .raw = 4096 }, \
-  .kfree_q12 = { .raw = 20 }, \
-  .kp_velocity_q12 = { .raw = 409600 }, \
-  .counts_per_step_q12 = { .raw = 16384 }, \
-  .inv_counts_per_step_q16 = { .raw = 16384 }, \
-  .inv_torque_span_v_q16 = { .raw = 9 }, \
+  .kp = { .raw = 410 }, \
+  .kff = { .raw = 4096 }, \
+  .kfree = { .raw = 20 }, \
+  .kp_velocity = { .raw = 409600 }, \
+  .counts_per_step = { .raw = 16384 }, \
+  .inv_counts_per_step = { .raw = 16384 }, \
+  .inv_torque_span_v = { .raw = 9 }, \
 }
 
 #ifdef __cplusplus

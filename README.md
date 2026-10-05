@@ -410,6 +410,24 @@ The firmware operates on an ARM Cortex-M0 core running at 48 MHz (20.833 ns per 
 * **TIM2 Input Capture Bypass:** High-frequency step inputs (> 1 kHz) are paced through dynamic timer chunk synthesis, avoiding per-pulse CPU interrupt overhead.
 * **Pure Integer Motion Core:** All position tracking, feedforward synthesis, soft-knee filtering, and torque calculations execute strictly using 32-bit and 64-bit fixed-point math ($Q12$ and $Q16$). No floating-point emulation routines or 64-bit integer divisions are executed during real-time streaming.
 
+### Fixed-Point Data Types & Precision Strategy
+
+To maintain deterministic execution within the real-time ISR without floating-point hardware or 64-bit software emulation, the motion engine employs discrete, strongly typed fixed-point representations (`q12_t` and `q16_t` in `mathutil.h`):
+
+| Type | Representation | Why Used |
+| :--- | :--- | :--- |
+| **`q12_t`** | General rates & gains (`kp`, `kff`, `kfree`, `counts_per_step`, `step_blank_us`) | Prevents 32-bit overflow when multiplied by large velocities (up to 200,000 counts/s) on Cortex-M0. |
+| **`q16_t`** | Inverses (`inv_counts_per_step`, `inv_torque_span_v`) | Provides 16× higher resolution to prevent small fractional reciprocals from quantizing to 0 or 1; safe from 32-bit overflow because the operands are strictly bounded. |
+
+#### Design Rationale
+
+* **32-bit Dynamic Range on Cortex-M0 (`q12_t`):**
+  The ARM Cortex-M0 core features a single-cycle 32-bit hardware multiplier (`muls`) but lacks a 64-bit hardware multiplier (`smull`) and hardware divider (`sdiv`). Operating at 50 kHz step pulses with 4 counts/step yields a maximum velocity of $V_{\mathrm{in}} = 200,000\text{ counts/s}$. Scaling this velocity by a $Q12$ gain produces an intermediate product of $200,000 \times 4096 = 819,200,000$, which safely fits within signed 32-bit limits ($< 2.14 \times 10^9$). Using $Q16$ generally would produce $200,000 \times 65,536 = 1.31 \times 10^{10}$, causing 32-bit integer overflow and requiring slow 64-bit software emulation (`__aeabi_lmul`). Thus, `q12_t` is the optimal system default.
+
+* **Quantization Prevention for Reciprocals (`q16_t`):**
+  Parameters representing mathematical inverses (such as $\mathrm{inv\_torque\_span\_v} = 1 / (V_{\mathrm{max}} - V_{\mathrm{knee}})$ and $\mathrm{inv\_counts\_per\_step} = 1 / \mathrm{counts\_per\_step}$) evaluate to small fractions $\ll 1.0$. For example, a torque derating span of 8,000 counts/s has a reciprocal of $0.000125$. In $Q12$ ($1\text{ LSB} \approx 0.000244$), this fraction truncates to 0 or rounds to 1 (50% to 100% quantization error). In $Q16$ ($1\text{ LSB} \approx 0.0000153$), the value is represented accurately as 8. Because these inverses are exclusively multiplied by bounded, small quantities (such as quadratic error $\le (\text{counts per step})^2$ or speed offsets $\le \text{span}$), their intermediate products never exceed 32 bits, allowing $Q16$ precision to be used safely without overflow risk.
+
+
 ### Interrupt Execution Budget & Call Tree Breakdown
 
 Interrupt latency and execution cycles were characterized via static disassembly and Control Flow Graph (CFG) analysis using `scripts/estimate_isr_cycles.py` on the ARM Cortex-M0 Release binary:

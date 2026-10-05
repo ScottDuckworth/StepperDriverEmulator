@@ -135,8 +135,8 @@ uint32_t GetStallThreshold(void) { return mock_config.stall_threshold; }
 void SetStallThreshold(uint32_t threshold) { mock_config.stall_threshold = threshold; ReportStallThreshold(); }
 void ReportStallThreshold(void) { ReportU32("stall", GetStallThreshold()); }
 
-q12_t GetKfree(void) { return mock_config.kfree_q12; }
-void SetKfree(q12_t kfree) { mock_config.kfree_q12 = kfree; ReportKfree(); }
+q12_t GetKfree(void) { return mock_config.kfree; }
+void SetKfree(q12_t kfree) { mock_config.kfree = kfree; ReportKfree(); }
 void ReportKfree(void) { ReportQ12("kfree", GetKfree()); }
 
 bool GetStallTrip(void) { return mock_stall_trip; }
@@ -155,8 +155,8 @@ bool SetRatio(uint16_t spr, uint16_t epr) {
   uint16_t g = MathUtil_GCD(spr, epr);
   mock_config.ratio_spr = spr / g;
   mock_config.ratio_epr = epr / g;
-  mock_config.counts_per_step_q12 = MathUtil_RatioQ12(mock_config.ratio_epr, mock_config.ratio_spr);
-  mock_config.inv_counts_per_step_q16 = MathUtil_RatioQ16(mock_config.ratio_spr, mock_config.ratio_epr);
+  mock_config.counts_per_step = MathUtil_RatioQ12(mock_config.ratio_epr, mock_config.ratio_spr);
+  mock_config.inv_counts_per_step = MathUtil_RatioQ16(mock_config.ratio_spr, mock_config.ratio_epr);
   ReportRatio();
   return true;
 }
@@ -172,12 +172,12 @@ void ReportRatio(void) {
   if (size > 0) WriteData((const uint8_t*) buf, (uint16_t) size);
 }
 
-q12_t GetKp(void) { return mock_config.kp_q12; }
-void SetKp(q12_t kp) { mock_config.kp_q12 = kp; ReportKp(); }
+q12_t GetKp(void) { return mock_config.kp; }
+void SetKp(q12_t kp) { mock_config.kp = kp; ReportKp(); }
 void ReportKp(void) { ReportQ12("kp", GetKp()); }
 
-q12_t GetKff(void) { return mock_config.kff_q12; }
-void SetKff(q12_t kff) { mock_config.kff_q12 = kff; ReportKff(); }
+q12_t GetKff(void) { return mock_config.kff; }
+void SetKff(q12_t kff) { mock_config.kff = kff; ReportKff(); }
 void ReportKff(void) { ReportQ12("kff", GetKff()); }
 
 void SetLimit1(bool active) { mock_lim1 = active; ReportLimit1(); }
@@ -304,7 +304,7 @@ void test_cmd_stall_set_and_query(void) {
 
 void test_cmd_kfree_set_and_query(void) {
   send_cmd("kfree 0.0125\r\n");
-  TEST_ASSERT_EQUAL_INT32(51, mock_config.kfree_q12.raw);
+  TEST_ASSERT_EQUAL_INT32(51, mock_config.kfree.raw);
   TEST_ASSERT_EQUAL_STRING("kfree 0.0125\r\n", captured_output);
 
   send_cmd("kfree\r\n");
@@ -338,16 +338,16 @@ void test_cmd_ratio_set_and_query(void) {
   send_cmd("ratio 1000 4000\r\n");
   TEST_ASSERT_EQUAL_UINT16(1, mock_config.ratio_spr);
   TEST_ASSERT_EQUAL_UINT16(4, mock_config.ratio_epr);
-  TEST_ASSERT_EQUAL_INT32(16384, mock_config.counts_per_step_q12.raw);
-  TEST_ASSERT_EQUAL_INT32(16384, mock_config.inv_counts_per_step_q16.raw);
+  TEST_ASSERT_EQUAL_INT32(16384, mock_config.counts_per_step.raw);
+  TEST_ASSERT_EQUAL_INT32(16384, mock_config.inv_counts_per_step.raw);
   TEST_ASSERT_EQUAL_STRING("ratio 1 4\r\n", captured_output);
 
   // Set with ratio 200 1024 -> reduced to 25 128 (GCD 8)
   send_cmd("ratio 200 1024\r\n");
   TEST_ASSERT_EQUAL_UINT16(25, mock_config.ratio_spr);
   TEST_ASSERT_EQUAL_UINT16(128, mock_config.ratio_epr);
-  TEST_ASSERT_EQUAL_INT32(20971, mock_config.counts_per_step_q12.raw);
-  TEST_ASSERT_EQUAL_INT32(12800, mock_config.inv_counts_per_step_q16.raw);
+  TEST_ASSERT_EQUAL_INT32(20971, mock_config.counts_per_step.raw);
+  TEST_ASSERT_EQUAL_INT32(12800, mock_config.inv_counts_per_step.raw);
   TEST_ASSERT_EQUAL_STRING("ratio 25 128\r\n", captured_output);
 
   // Query ratio
@@ -368,11 +368,11 @@ void test_cmd_ratio_set_and_query(void) {
 
 void test_cmd_kp_kff_set_and_query(void) {
   send_cmd("kp 0.25\r\n");
-  TEST_ASSERT_EQUAL_INT32(1024, mock_config.kp_q12.raw);
+  TEST_ASSERT_EQUAL_INT32(1024, mock_config.kp.raw);
   TEST_ASSERT_EQUAL_STRING("kp 0.2500\r\n", captured_output);
 
   send_cmd("kff 1.5\r\n");
-  TEST_ASSERT_EQUAL_INT32(6144, mock_config.kff_q12.raw);
+  TEST_ASSERT_EQUAL_INT32(6144, mock_config.kff.raw);
   TEST_ASSERT_EQUAL_STRING("kff 1.5000\r\n", captured_output);
 
   send_cmd("kp\r\n");

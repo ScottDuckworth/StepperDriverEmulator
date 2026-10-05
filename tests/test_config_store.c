@@ -78,9 +78,9 @@ void test_save_and_load_roundtrip(void) {
   original_cfg.torque_v_max = 9000;
   original_cfg.torque_t_min = 350;
   original_cfg.stall_threshold = 2000;
-  original_cfg.kp_q12 = (q12_t){ .raw = 1024 };
-  original_cfg.kff_q12 = (q12_t){ .raw = 3891 };
-  original_cfg.kfree_q12 = (q12_t){ .raw = 33 };
+  original_cfg.kp = (q12_t){ .raw = 1024 };
+  original_cfg.kff = (q12_t){ .raw = 3891 };
+  original_cfg.kfree = (q12_t){ .raw = 33 };
 
   bool save_ok = ConfigStore_Save(&mock_flash_driver, MOCK_PAGE_ADDR, &original_cfg);
   TEST_ASSERT_TRUE(save_ok);
@@ -98,11 +98,11 @@ void test_save_and_load_roundtrip(void) {
   TEST_ASSERT_EQUAL_UINT32(9000, loaded_cfg.torque_v_max);
   TEST_ASSERT_EQUAL_INT32(350, loaded_cfg.torque_t_min);
   TEST_ASSERT_EQUAL_UINT32(2000, loaded_cfg.stall_threshold);
-  TEST_ASSERT_EQUAL_INT32(1024, loaded_cfg.kp_q12.raw);
-  TEST_ASSERT_EQUAL_INT32(3891, loaded_cfg.kff_q12.raw);
-  TEST_ASSERT_EQUAL_INT32(33, loaded_cfg.kfree_q12.raw);
-  TEST_ASSERT_EQUAL_INT32(16384, loaded_cfg.counts_per_step_q12.raw);
-  TEST_ASSERT_EQUAL_INT32(16384, loaded_cfg.inv_counts_per_step_q16.raw);
+  TEST_ASSERT_EQUAL_INT32(1024, loaded_cfg.kp.raw);
+  TEST_ASSERT_EQUAL_INT32(3891, loaded_cfg.kff.raw);
+  TEST_ASSERT_EQUAL_INT32(33, loaded_cfg.kfree.raw);
+  TEST_ASSERT_EQUAL_INT32(16384, loaded_cfg.counts_per_step.raw);
+  TEST_ASSERT_EQUAL_INT32(16384, loaded_cfg.inv_counts_per_step.raw);
 }
 
 void test_crc_bitflip_detected(void) {
@@ -153,11 +153,11 @@ void test_validation_rejects_invalid_config(void) {
   TEST_ASSERT_FALSE(ConfigStore_Validate(&bad_cfg));
 
   bad_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
-  bad_cfg.kp_q12 = (q12_t){ .raw = -500 };
+  bad_cfg.kp = (q12_t){ .raw = -500 };
   TEST_ASSERT_FALSE(ConfigStore_Validate(&bad_cfg));
 
   bad_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
-  bad_cfg.kfree_q12 = (q12_t){ .raw = -10 };
+  bad_cfg.kfree = (q12_t){ .raw = -10 };
   TEST_ASSERT_FALSE(ConfigStore_Validate(&bad_cfg));
 
   bad_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
@@ -194,9 +194,9 @@ void test_null_safety(void) {
 
 void test_cached_fixed_point_refresh(void) {
   EmulatorConfig_t cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
-  cfg.kp_q12 = (q12_t){ .raw = 819 };
-  cfg.kff_q12 = (q12_t){ .raw = 6144 };
-  cfg.kfree_q12 = (q12_t){ .raw = 41 };
+  cfg.kp = (q12_t){ .raw = 819 };
+  cfg.kff = (q12_t){ .raw = 6144 };
+  cfg.kfree = (q12_t){ .raw = 41 };
   cfg.ratio_spr = 200;
   cfg.ratio_epr = 1000; // 5 counts per step
   cfg.torque_v_knee = 2000;
@@ -204,26 +204,26 @@ void test_cached_fixed_point_refresh(void) {
 
   ConfigStore_RefreshCachedValues(&cfg);
 
-  TEST_ASSERT_EQUAL_INT32(819, cfg.kp_q12.raw);
-  TEST_ASSERT_EQUAL_INT32(819000, cfg.kp_velocity_q12.raw);   // 819 * 1000 = 819000
-  TEST_ASSERT_EQUAL_INT32(6144, cfg.kff_q12.raw);
-  TEST_ASSERT_EQUAL_INT32(41, cfg.kfree_q12.raw);
-  TEST_ASSERT_EQUAL_INT32(20480, cfg.counts_per_step_q12.raw); // 5.0 * 4096 = 20480
-  TEST_ASSERT_EQUAL_INT32(13107, cfg.inv_counts_per_step_q16.raw); // 0.2 * 65536 = 13107.2 -> 13107
-  TEST_ASSERT_EQUAL_INT32(8, cfg.inv_torque_span_v_q16.raw); // 65536 / 8000 = 8.19 -> 8
+  TEST_ASSERT_EQUAL_INT32(819, cfg.kp.raw);
+  TEST_ASSERT_EQUAL_INT32(819000, cfg.kp_velocity.raw);   // 819 * 1000 = 819000
+  TEST_ASSERT_EQUAL_INT32(6144, cfg.kff.raw);
+  TEST_ASSERT_EQUAL_INT32(41, cfg.kfree.raw);
+  TEST_ASSERT_EQUAL_INT32(20480, cfg.counts_per_step.raw); // 5.0 * 4096 = 20480
+  TEST_ASSERT_EQUAL_INT32(13107, cfg.inv_counts_per_step.raw); // 0.2 * 65536 = 13107.2 -> 13107
+  TEST_ASSERT_EQUAL_INT32(8, cfg.inv_torque_span_v.raw); // 65536 / 8000 = 8.19 -> 8
 
   // Verify round-trip load refreshes cached values
   ConfigStore_Save(&mock_flash_driver, MOCK_PAGE_ADDR, &cfg);
   EmulatorConfig_t loaded = {0};
   bool ok = ConfigStore_Load(&mock_flash_driver, MOCK_PAGE_ADDR, &loaded);
   TEST_ASSERT_TRUE(ok);
-  TEST_ASSERT_EQUAL_INT32(819, loaded.kp_q12.raw);
-  TEST_ASSERT_EQUAL_INT32(819000, loaded.kp_velocity_q12.raw);
-  TEST_ASSERT_EQUAL_INT32(6144, loaded.kff_q12.raw);
-  TEST_ASSERT_EQUAL_INT32(41, loaded.kfree_q12.raw);
-  TEST_ASSERT_EQUAL_INT32(20480, loaded.counts_per_step_q12.raw);
-  TEST_ASSERT_EQUAL_INT32(13107, loaded.inv_counts_per_step_q16.raw);
-  TEST_ASSERT_EQUAL_INT32(8, loaded.inv_torque_span_v_q16.raw);
+  TEST_ASSERT_EQUAL_INT32(819, loaded.kp.raw);
+  TEST_ASSERT_EQUAL_INT32(819000, loaded.kp_velocity.raw);
+  TEST_ASSERT_EQUAL_INT32(6144, loaded.kff.raw);
+  TEST_ASSERT_EQUAL_INT32(41, loaded.kfree.raw);
+  TEST_ASSERT_EQUAL_INT32(20480, loaded.counts_per_step.raw);
+  TEST_ASSERT_EQUAL_INT32(13107, loaded.inv_counts_per_step.raw);
+  TEST_ASSERT_EQUAL_INT32(8, loaded.inv_torque_span_v.raw);
 }
 
 int main(void) {
