@@ -113,7 +113,7 @@ EmulatorConfig_t* GetConfig(void) {
 }
 
 bool SaveConfig(void) {
-  return ConfigStore_Save(ConfigStore_GetStm32FlashDriver(), CONFIG_FLASH_PAGE_ADDR, &config);
+  return ConfigStore_Save(ConfigStore_GetStm32FlashDriver(), CONFIG_FLASH_PAGE_ADDR, &config.persistent);
 }
 
 static int8_t USB_ReceiveCallback(uint8_t* buf, uint32_t* len) {
@@ -264,11 +264,11 @@ void ReportTension(void) {
 }
 
 uint16_t GetOdr(void) {
-  return config.odr;
+  return config.persistent.odr;
 }
 
 void SetOdr(uint16_t odr) {
-  config.odr = odr;
+  config.persistent.odr = odr;
   ReportOdr();
 }
 
@@ -280,9 +280,9 @@ bool SetRatio(uint16_t spr, uint16_t epr) {
   if (spr == 0 || epr == 0) return false;
   uint16_t g = MathUtil_GCD(spr, epr);
   __disable_irq();
-  config.ratio_spr = spr / g;
-  config.ratio_epr = epr / g;
-  ConfigStore_RefreshCachedValues(&config);
+  config.persistent.ratio_spr = spr / g;
+  config.persistent.ratio_epr = epr / g;
+  ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
   position.step_rem = 0;
   __enable_irq();
   ReportRatio();
@@ -290,46 +290,46 @@ bool SetRatio(uint16_t spr, uint16_t epr) {
 }
 
 void GetRatio(uint16_t* out_spr, uint16_t* out_epr) {
-  if (out_spr) *out_spr = config.ratio_spr;
-  if (out_epr) *out_epr = config.ratio_epr;
+  if (out_spr) *out_spr = config.persistent.ratio_spr;
+  if (out_epr) *out_epr = config.persistent.ratio_epr;
 }
 
 void ReportRatio(void) {
   char buf[32];
-  int size = snprintf(buf, sizeof(buf), "ratio %u %u\r\n", config.ratio_spr, config.ratio_epr);
+  int size = snprintf(buf, sizeof(buf), "ratio %u %u\r\n", config.persistent.ratio_spr, config.persistent.ratio_epr);
   WriteData((uint8_t*) buf, size);
 }
 
 void GetTorqueCurve(int32_t* t0, uint32_t* v_knee, uint32_t* v_max, int32_t* t_min) {
-  if (t0) *t0 = config.torque_t0;
-  if (v_knee) *v_knee = config.torque_v_knee;
-  if (v_max) *v_max = config.torque_v_max;
-  if (t_min) *t_min = config.torque_t_min;
+  if (t0) *t0 = config.persistent.torque_t0;
+  if (v_knee) *v_knee = config.persistent.torque_v_knee;
+  if (v_max) *v_max = config.persistent.torque_v_max;
+  if (t_min) *t_min = config.persistent.torque_t_min;
 }
 
 void SetTorqueCurve(int32_t t0, uint32_t v_knee, uint32_t v_max, int32_t t_min) {
   if (v_max <= v_knee) v_max = v_knee + 1;
-  config.torque_t0 = t0;
-  config.torque_v_knee = v_knee;
-  config.torque_v_max = v_max;
-  config.torque_t_min = t_min;
-  ConfigStore_RefreshCachedValues(&config);
+  config.persistent.torque_t0 = t0;
+  config.persistent.torque_v_knee = v_knee;
+  config.persistent.torque_v_max = v_max;
+  config.persistent.torque_t_min = t_min;
+  ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
   ReportTorqueCurve();
 }
 
 void ReportTorqueCurve(void) {
   char buf[48];
   int size = snprintf(buf, sizeof(buf), "tcurve %ld %lu %lu %ld\r\n",
-                      config.torque_t0, config.torque_v_knee, config.torque_v_max, config.torque_t_min);
+                      config.persistent.torque_t0, config.persistent.torque_v_knee, config.persistent.torque_v_max, config.persistent.torque_t_min);
   WriteData((uint8_t*) buf, size);
 }
 
 uint32_t GetStallThreshold(void) {
-  return config.stall_threshold;
+  return config.persistent.stall_threshold;
 }
 
 void SetStallThreshold(uint32_t threshold) {
-  config.stall_threshold = threshold;
+  config.persistent.stall_threshold = threshold;
   ReportStallThreshold();
 }
 
@@ -338,12 +338,12 @@ void ReportStallThreshold(void) {
 }
 
 q12_t GetKfree(void) {
-  return config.kfree;
+  return config.persistent.kfree;
 }
 
 void SetKfree(q12_t k) {
-  config.kfree = k;
-  ConfigStore_RefreshCachedValues(&config);
+  config.persistent.kfree = k;
+  ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
   ReportKfree();
 }
 
@@ -360,12 +360,12 @@ void ReportStallTrip(void) {
 }
 
 q12_t GetKp(void) {
-  return config.kp;
+  return config.persistent.kp;
 }
 
 void SetKp(q12_t kp) {
-  config.kp = kp;
-  ConfigStore_RefreshCachedValues(&config);
+  config.persistent.kp = kp;
+  ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
   ReportKp();
 }
 
@@ -374,12 +374,12 @@ void ReportKp(void) {
 }
 
 q12_t GetKff(void) {
-  return config.kff;
+  return config.persistent.kff;
 }
 
 void SetKff(q12_t kff) {
-  config.kff = kff;
-  ConfigStore_RefreshCachedValues(&config);
+  config.persistent.kff = kff;
+  ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
   ReportKff();
 }
 
@@ -469,7 +469,7 @@ void GetInstantaneousMotionState(int32_t* out_velocity_hz, int32_t* out_motor_to
   if (is_free) {
     t_motor = 0;
   } else if (!active) {
-    t_motor = config.torque_t0;
+    t_motor = config.persistent.torque_t0;
   } else {
     uint32_t speed = (uint32_t) MathUtil_AbsI32(vel);
     t_motor = Motion_CalcMotorTorque(&config, speed);
@@ -568,7 +568,7 @@ static void UpdatePositionCounters(void) {
   if (valid_steps != 0) {
     last_step_time = now;
     int32_t step_delta = position.step_reverse ? -(int32_t) valid_steps : (int32_t) valid_steps;
-    int32_t count_delta = Position_ConvertStepDeltaToCounts(step_delta, config.ratio_spr, config.ratio_epr, &position.step_rem);
+    int32_t count_delta = Position_ConvertStepDeltaToCounts(step_delta, config.persistent.ratio_spr, config.persistent.ratio_epr, &position.step_rem);
     position.commanded_pos += count_delta;
   }
 }
@@ -686,7 +686,7 @@ void Motion_Wakeup_Handler(void) {
 
     uint32_t pace_velocity = 0;
     if (res.target_velocity == 0) {
-      pace_velocity = (uint32_t) MathUtil_MulQ12(1000, config.counts_per_step);
+      pace_velocity = (uint32_t) MathUtil_MulQ12(1000, config.cached.counts_per_step);
       if (pace_velocity == 0) {
         pace_velocity = 4000;
       }
@@ -762,7 +762,7 @@ static int8_t FillQuadChunk(uint32_t* chunk) {
 
   uint32_t pace_velocity = 0;
   if (plan_res.target_velocity == 0) {
-    pace_velocity = (uint32_t) MathUtil_MulQ12(1000, config.counts_per_step);
+    pace_velocity = (uint32_t) MathUtil_MulQ12(1000, config.cached.counts_per_step);
     if (pace_velocity == 0) {
       pace_velocity = 4000;
     }
@@ -1107,7 +1107,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   ConfigStore_Load(ConfigStore_GetStm32FlashDriver(), CONFIG_FLASH_PAGE_ADDR, &config);
-  ConfigStore_RefreshCachedValues(&config);
+  ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
 
   UpdatePositionCounters();
   position.commanded_pos = 0;
@@ -1128,7 +1128,7 @@ int main(void)
       USB_ReceiveReady();
     }
 
-    if (config.odr != 0 && now != last_output && (now - last_output) % config.odr == 0) {
+    if (config.persistent.odr != 0 && now != last_output && (now - last_output) % config.persistent.odr == 0) {
       last_output = now;
       ReportPvt();
     }

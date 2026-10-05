@@ -14,7 +14,7 @@ uint32_t ConfigStore_CalcCRC32(const void* data, size_t length) {
   return ~crc;
 }
 
-bool ConfigStore_Validate(const EmulatorConfig_t* cfg) {
+bool ConfigStore_Validate(const PersistentConfig_t* cfg) {
   if (!cfg) return false;
   if (cfg->ratio_spr == 0 || cfg->ratio_epr == 0) return false;
   if (cfg->kp.raw < 0 || cfg->kff.raw < 0 || cfg->kfree.raw < 0) return false;
@@ -22,34 +22,34 @@ bool ConfigStore_Validate(const EmulatorConfig_t* cfg) {
   return true;
 }
 
-void ConfigStore_RefreshCachedValues(EmulatorConfig_t* cfg) {
-  if (!cfg) return;
+void ConfigStore_ComputeCachedValues(const PersistentConfig_t* persistent, CachedConfig_t* cached) {
+  if (!persistent || !cached) return;
 
-  cfg->kp_velocity = MathUtil_FromRawQ12(cfg->kp.raw * 1000);
-  cfg->counts_per_step = MathUtil_RatioQ12(cfg->ratio_epr, cfg->ratio_spr);
-  cfg->inv_counts_per_step = MathUtil_RatioQ16(cfg->ratio_spr, cfg->ratio_epr);
+  cached->kp_velocity = MathUtil_FromRawQ12(persistent->kp.raw * 1000);
+  cached->counts_per_step = MathUtil_RatioQ12(persistent->ratio_epr, persistent->ratio_spr);
+  cached->inv_counts_per_step = MathUtil_RatioQ16(persistent->ratio_spr, persistent->ratio_epr);
 
-  cfg->step_counts_int = MathUtil_Q12ToInt(cfg->counts_per_step);
-  cfg->ff_window = MathUtil_Q12ToInt(MathUtil_MulQ12_Q12(cfg->kff, cfg->counts_per_step));
-  cfg->max_kp_step_v = MathUtil_MulQ12(cfg->step_counts_int, cfg->kp_velocity);
+  cached->step_counts_int = MathUtil_Q12ToInt(cached->counts_per_step);
+  cached->ff_window = MathUtil_Q12ToInt(MathUtil_MulQ12_Q12(persistent->kff, cached->counts_per_step));
+  cached->max_kp_step_v = MathUtil_MulQ12(cached->step_counts_int, cached->kp_velocity);
 
   // Precompute clock_counts_sec for direct step_period_cnt -> input_rate conversion.
   // Fits in uint32_t without overflow if (ratio_epr / ratio_spr) <= 89 counts/step.
-  if (cfg->ratio_spr > 0 && ((uint32_t) cfg->ratio_epr / (uint32_t) cfg->ratio_spr) <= 89U) {
-    uint32_t q = (uint32_t) cfg->ratio_epr / (uint32_t) cfg->ratio_spr;
-    uint32_t r = (uint32_t) cfg->ratio_epr % (uint32_t) cfg->ratio_spr;
-    uint32_t rem_high = (48000U * r) / (uint32_t) cfg->ratio_spr;
-    uint32_t rem_low = (48000U * r) % (uint32_t) cfg->ratio_spr;
-    uint32_t r_part = rem_high * 1000U + (rem_low * 1000U) / (uint32_t) cfg->ratio_spr;
-    cfg->clock_counts_sec = 48000000U * q + r_part;
+  if (persistent->ratio_spr > 0 && ((uint32_t) persistent->ratio_epr / (uint32_t) persistent->ratio_spr) <= 89U) {
+    uint32_t q = (uint32_t) persistent->ratio_epr / (uint32_t) persistent->ratio_spr;
+    uint32_t r = (uint32_t) persistent->ratio_epr % (uint32_t) persistent->ratio_spr;
+    uint32_t rem_high = (48000U * r) / (uint32_t) persistent->ratio_spr;
+    uint32_t rem_low = (48000U * r) % (uint32_t) persistent->ratio_spr;
+    uint32_t r_part = rem_high * 1000U + (rem_low * 1000U) / (uint32_t) persistent->ratio_spr;
+    cached->clock_counts_sec = 48000000U * q + r_part;
   } else {
-    cfg->clock_counts_sec = 0; // Fallback to dynamic MathUtil_MulQ12 in Motion_PlanStep
+    cached->clock_counts_sec = 0; // Fallback to dynamic MathUtil_MulQ12 in Motion_PlanStep
   }
 
-  uint32_t span_v = (cfg->torque_v_max > cfg->torque_v_knee) ? (cfg->torque_v_max - cfg->torque_v_knee) : 0;
-  cfg->inv_torque_span_v = (span_v > 0) ? MathUtil_FromRawQ16((int32_t)(65536U / span_v)) : MathUtil_FromRawQ16(0);
+  uint32_t span_v = (persistent->torque_v_max > persistent->torque_v_knee) ? (persistent->torque_v_max - persistent->torque_v_knee) : 0;
+  cached->inv_torque_span_v = (span_v > 0) ? MathUtil_FromRawQ16((int32_t)(65536U / span_v)) : MathUtil_FromRawQ16(0);
 
-  int32_t delta_t = cfg->torque_t0 - cfg->torque_t_min;
+  int32_t delta_t = persistent->torque_t0 - persistent->torque_t_min;
   if (span_v > 0 && delta_t > 0) {
     uint32_t dt = (uint32_t) delta_t;
     uint32_t slope;
@@ -60,13 +60,13 @@ void ConfigStore_RefreshCachedValues(EmulatorConfig_t* cfg) {
       uint32_t rem = dt % span_v;
       slope = (int_part << 16) + (rem * 65536U + (span_v / 2)) / span_v;
     }
-    cfg->torque_derate_slope = MathUtil_FromRawQ16((int32_t) slope);
+    cached->torque_derate_slope = MathUtil_FromRawQ16((int32_t) slope);
   } else {
-    cfg->torque_derate_slope = MathUtil_FromRawQ16(0);
+    cached->torque_derate_slope = MathUtil_FromRawQ16(0);
   }
 }
 
-bool ConfigStore_Load(const FlashDriver_t* flash, uint32_t page_addr, EmulatorConfig_t* out_cfg) {
+bool ConfigStore_LoadPersistent(const FlashDriver_t* flash, uint32_t page_addr, PersistentConfig_t* out_cfg) {
   if (!flash || !flash->read || !out_cfg) return false;
 
   ConfigRecord_t record;
@@ -80,11 +80,11 @@ bool ConfigStore_Load(const FlashDriver_t* flash, uint32_t page_addr, EmulatorCo
   if (record.version != CONFIG_STORE_VERSION) {
     return false;
   }
-  if (record.length != sizeof(EmulatorConfig_t)) {
+  if (record.length != sizeof(PersistentConfig_t)) {
     return false;
   }
 
-  uint32_t computed_crc = ConfigStore_CalcCRC32(&record.config, sizeof(EmulatorConfig_t));
+  uint32_t computed_crc = ConfigStore_CalcCRC32(&record.config, sizeof(PersistentConfig_t));
   if (computed_crc != record.crc32) {
     return false;
   }
@@ -94,22 +94,28 @@ bool ConfigStore_Load(const FlashDriver_t* flash, uint32_t page_addr, EmulatorCo
   }
 
   *out_cfg = record.config;
-  ConfigStore_RefreshCachedValues(out_cfg);
   return true;
 }
 
-bool ConfigStore_Save(const FlashDriver_t* flash, uint32_t page_addr, const EmulatorConfig_t* in_cfg) {
+bool ConfigStore_Load(const FlashDriver_t* flash, uint32_t page_addr, EmulatorConfig_t* out_cfg) {
+  if (!out_cfg) return false;
+  if (!ConfigStore_LoadPersistent(flash, page_addr, &out_cfg->persistent)) {
+    return false;
+  }
+  ConfigStore_ComputeCachedValues(&out_cfg->persistent, &out_cfg->cached);
+  return true;
+}
+
+bool ConfigStore_Save(const FlashDriver_t* flash, uint32_t page_addr, const PersistentConfig_t* in_cfg) {
   if (!flash || !flash->write || !flash->erase_page || !in_cfg) return false;
   if (!ConfigStore_Validate(in_cfg)) return false;
-
-  ConfigStore_RefreshCachedValues((EmulatorConfig_t*) in_cfg);
 
   ConfigRecord_t record;
   record.magic = CONFIG_STORE_MAGIC;
   record.version = CONFIG_STORE_VERSION;
-  record.length = (uint16_t) sizeof(EmulatorConfig_t);
+  record.length = (uint16_t) sizeof(PersistentConfig_t);
   record.config = *in_cfg;
-  record.crc32 = ConfigStore_CalcCRC32(&record.config, sizeof(EmulatorConfig_t));
+  record.crc32 = ConfigStore_CalcCRC32(&record.config, sizeof(PersistentConfig_t));
 
   if (!flash->erase_page(page_addr)) {
     return false;

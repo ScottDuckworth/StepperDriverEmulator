@@ -26,7 +26,9 @@ typedef struct {
   q12_t kp;                  // Proportional gain for position tracking error (kp * 4096)
   q12_t kff;                 // Feedforward velocity gain for input pulse rate (kff * 4096)
   q12_t kfree;               // Viscous freewheeling velocity coefficient under load tension (kfree * 4096)
+} PersistentConfig_t;
 
+typedef struct {
   // Cached Kinematic & Torque Parameters (Precomputed for real-time ISR)
   q12_t kp_velocity;         // kp velocity gain in counts/sec (kp * 1000 * 4096)
   q12_t counts_per_step;     // (ratio_epr / ratio_spr)
@@ -37,9 +39,14 @@ typedef struct {
   int32_t ff_window;         // Feedforward deadband window (MathUtil_Q12ToInt(kff * counts_per_step))
   int32_t max_kp_step_v;     // Maximum velocity offset for 1 step lag (step_counts_int * kp_velocity)
   uint32_t clock_counts_sec; // Timer tick scaling in counts/sec: (48000000 * ratio_epr) / ratio_spr (0 if ratio > 89)
+} CachedConfig_t;
+
+typedef struct {
+  PersistentConfig_t persistent;
+  CachedConfig_t cached;
 } EmulatorConfig_t;
 
-#define DEFAULT_EMULATOR_CONFIG { \
+#define DEFAULT_PERSISTENT_CONFIG { \
   .odr = 1000, \
   .ratio_spr = 1, \
   .ratio_epr = 4, \
@@ -51,15 +58,11 @@ typedef struct {
   .kp = { .raw = 410 }, \
   .kff = { .raw = 4096 }, \
   .kfree = { .raw = 20 }, \
-  .kp_velocity = { .raw = 409600 }, \
-  .counts_per_step = { .raw = 16384 }, \
-  .inv_counts_per_step = { .raw = 16384 }, \
-  .inv_torque_span_v = { .raw = 9 }, \
-  .torque_derate_slope = { .raw = 7490 }, \
-  .step_counts_int = 4, \
-  .ff_window = 4, \
-  .max_kp_step_v = 400, \
-  .clock_counts_sec = 192000000, \
+}
+
+#define DEFAULT_EMULATOR_CONFIG { \
+  .persistent = DEFAULT_PERSISTENT_CONFIG, \
+  .cached = {{0}}, \
 }
 
 #ifdef __cplusplus

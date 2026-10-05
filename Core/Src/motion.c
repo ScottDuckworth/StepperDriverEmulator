@@ -5,15 +5,15 @@
 
 int32_t Motion_CalcMotorTorque(const EmulatorConfig_t* cfg, uint32_t speed_counts_sec) {
   if (!cfg) return 0;
-  if (speed_counts_sec <= cfg->torque_v_knee) {
-    return cfg->torque_t0;
+  if (speed_counts_sec <= cfg->persistent.torque_v_knee) {
+    return cfg->persistent.torque_t0;
   }
-  if (speed_counts_sec >= cfg->torque_v_max || cfg->torque_v_max <= cfg->torque_v_knee) {
-    return cfg->torque_t_min;
+  if (speed_counts_sec >= cfg->persistent.torque_v_max || cfg->persistent.torque_v_max <= cfg->persistent.torque_v_knee) {
+    return cfg->persistent.torque_t_min;
   }
-  uint32_t delta_v = speed_counts_sec - cfg->torque_v_knee;
-  uint32_t derate = (delta_v * (uint32_t) cfg->torque_derate_slope.raw + 32768U) >> 16;
-  return cfg->torque_t0 - (int32_t) derate;
+  uint32_t delta_v = speed_counts_sec - cfg->persistent.torque_v_knee;
+  uint32_t derate = (delta_v * (uint32_t) cfg->cached.torque_derate_slope.raw + 32768U) >> 16;
+  return cfg->persistent.torque_t0 - (int32_t) derate;
 }
 
 int32_t Motion_CalcNetTorque(int32_t t_motor, int dir, int32_t load_tension) {
@@ -24,8 +24,8 @@ int32_t Motion_CalcNetTorque(int32_t t_motor, int dir, int32_t load_tension) {
 
 int32_t Motion_CalcFreewheelVelocity(const EmulatorConfig_t* cfg, int32_t load_tension) {
   if (!cfg) return 0;
-  int32_t v_free = MathUtil_MulQ12(load_tension, cfg->kfree);
-  int32_t v_max = (int32_t) cfg->torque_v_max;
+  int32_t v_free = MathUtil_MulQ12(load_tension, cfg->persistent.kfree);
+  int32_t v_max = (int32_t) cfg->persistent.torque_v_max;
   return MathUtil_ClampI32(v_free, -v_max, v_max);
 }
 
@@ -35,8 +35,8 @@ int32_t Motion_CalcSlipVelocity(const EmulatorConfig_t* cfg, int32_t load_tensio
   if (abs_tension <= t_motor) {
     return 0;
   }
-  int32_t v_slip = MathUtil_MulQ12(abs_tension - t_motor, cfg->kfree);
-  int32_t v_max = (int32_t) cfg->torque_v_max;
+  int32_t v_slip = MathUtil_MulQ12(abs_tension - t_motor, cfg->persistent.kfree);
+  int32_t v_max = (int32_t) cfg->persistent.torque_v_max;
   if (v_slip > v_max) {
     v_slip = v_max;
   }
@@ -49,7 +49,7 @@ bool Motion_ShouldStart(const EmulatorConfig_t* cfg, const Motion_StartRequest_t
     return (req->load_tension != 0);
   }
   int32_t abs_tension = MathUtil_AbsI32(req->load_tension);
-  return (req->commanded_pos != req->encoder_pos) || (req->step_dcnt != 0) || (abs_tension > cfg->torque_t0);
+  return (req->commanded_pos != req->encoder_pos) || (req->step_dcnt != 0) || (abs_tension > cfg->persistent.torque_t0);
 }
 
 bool Motion_PrepareStart(const EmulatorConfig_t* cfg,
@@ -144,12 +144,12 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
   uint32_t step_timeout_ms = Motion_CalcStepTimeoutMs(req->step_period_cnt);
 
   int32_t input_rate = 0;
-  if ((req->now - req->last_step_time) <= step_timeout_ms && req->step_period_cnt >= 160 && cfg->ratio_spr > 0) {
-    if (cfg->clock_counts_sec > 0) {
-      input_rate = (int32_t)(cfg->clock_counts_sec / req->step_period_cnt);
+  if ((req->now - req->last_step_time) <= step_timeout_ms && req->step_period_cnt >= 160 && cfg->persistent.ratio_spr > 0) {
+    if (cfg->cached.clock_counts_sec > 0) {
+      input_rate = (int32_t)(cfg->cached.clock_counts_sec / req->step_period_cnt);
     } else {
       uint32_t step_hz = 48000000U / req->step_period_cnt;
-      input_rate = MathUtil_MulQ12((int32_t) step_hz, cfg->counts_per_step);
+      input_rate = MathUtil_MulQ12((int32_t) step_hz, cfg->cached.counts_per_step);
     }
     if (req->step_reverse) {
       input_rate = -input_rate;
@@ -168,8 +168,8 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
   // and prevents cyclic pacing frequency modulation across the phase, while restoring
   // gain (Kp) remains active for true tracking lag (> 1 step) or overshoot (< 0).
   if (input_rate != 0) {
-    int32_t step_counts = cfg->step_counts_int;
-    int32_t ff_window = cfg->ff_window;
+    int32_t step_counts = cfg->cached.step_counts_int;
+    int32_t ff_window = cfg->cached.ff_window;
 
     if (input_rate > 0) {
       if (eff_error > ff_window) {
@@ -187,17 +187,17 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
 
     int32_t abs_err = MathUtil_AbsI32(eff_error);
     if (abs_err <= step_counts) {
-      eff_error = MathUtil_MulQ16(eff_error * abs_err, cfg->inv_counts_per_step);
+      eff_error = MathUtil_MulQ16(eff_error * abs_err, cfg->cached.inv_counts_per_step);
     }
   }
 
-  int32_t target_velocity = MathUtil_MulQ12(input_rate, cfg->kff) +
-                            MathUtil_MulQ12(eff_error, cfg->kp_velocity);
+  int32_t target_velocity = MathUtil_MulQ12(input_rate, cfg->persistent.kff) +
+                            MathUtil_MulQ12(eff_error, cfg->cached.kp_velocity);
   if (input_rate > 0) {
     if (target_velocity < 0) {
       target_velocity = 0;
     } else {
-      int32_t max_v = input_rate + (input_rate >> 2) + cfg->max_kp_step_v;
+      int32_t max_v = input_rate + (input_rate >> 2) + cfg->cached.max_kp_step_v;
       if (target_velocity > max_v) {
         target_velocity = max_v;
       }
@@ -207,7 +207,7 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
       target_velocity = 0;
     } else {
       int32_t abs_rate = MathUtil_AbsI32(input_rate);
-      int32_t min_v = -(abs_rate + (abs_rate >> 2) + cfg->max_kp_step_v);
+      int32_t min_v = -(abs_rate + (abs_rate >> 2) + cfg->cached.max_kp_step_v);
       if (target_velocity < min_v) {
         target_velocity = min_v;
       }
@@ -260,7 +260,7 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
   }
 
   // Under torque deficit, motor stalls and accumulates lag against commanded steps
-  if (cfg->stall_threshold > 0 && abs_error >= cfg->stall_threshold) {
+  if (cfg->persistent.stall_threshold > 0 && abs_error >= cfg->persistent.stall_threshold) {
     if (!req->stall_tripped) {
       res->stall_trip_event = true;
     }
@@ -285,7 +285,7 @@ bool Motion_PlanAndEmitChunk(const EmulatorConfig_t* cfg,
 
   uint32_t pace_velocity = 0;
   if (plan_res.target_velocity == 0) {
-    pace_velocity = (uint32_t) MathUtil_MulQ12(1000, cfg->counts_per_step);
+    pace_velocity = (uint32_t) MathUtil_MulQ12(1000, cfg->cached.counts_per_step);
     if (pace_velocity == 0) {
       pace_velocity = 4000;
     }
@@ -338,5 +338,5 @@ bool Motion_ShouldStop(const EmulatorConfig_t* cfg, const Motion_StopRequest_t* 
   return (req->commanded_pos == req->encoder_pos &&
           req->encoder_pos == req->planned_encoder_pos &&
           req->step_dcnt == 0 &&
-          abs_tension <= cfg->torque_t0);
+          abs_tension <= cfg->persistent.torque_t0);
 }

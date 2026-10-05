@@ -7,9 +7,9 @@ static EmulatorConfig_t config;
 
 void setUp(void) {
   config = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
-  config.kp = (q12_t){ .raw = 2048 };   // kp = 0.5
-  config.kfree = (q12_t){ .raw = 4096 }; // kfree = 1.0
-  ConfigStore_RefreshCachedValues(&config);
+  config.persistent.kp = (q12_t){ .raw = 2048 };   // kp = 0.5
+  config.persistent.kfree = (q12_t){ .raw = 4096 }; // kfree = 1.0
+  ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
 }
 
 void tearDown(void) {}
@@ -46,9 +46,9 @@ void test_torque_curve_above_max(void) {
 }
 
 void test_torque_curve_degenerate_vmax_less_than_knee(void) {
-  config.torque_v_knee = 3000;
-  config.torque_v_max = 2000; // Inverted / degenerate
-  ConfigStore_RefreshCachedValues(&config);
+  config.persistent.torque_v_knee = 3000;
+  config.persistent.torque_v_max = 2000; // Inverted / degenerate
+  ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
   // Below knee: should still return t0
   TEST_ASSERT_EQUAL_INT32(1000, Motion_CalcMotorTorque(&config, 1000));
   // At or above knee: should return t_min without division by zero
@@ -107,52 +107,52 @@ void test_freewheel_velocity_zero_tension(void) {
 }
 
 void test_freewheel_velocity_proportional(void) {
-  config.kfree = (q12_t){ .raw = 20 }; // 0.005 * 4096 = 20
-  ConfigStore_RefreshCachedValues(&config);
+  config.persistent.kfree = (q12_t){ .raw = 20 }; // 0.005 * 4096 = 20
+  ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
   // 1000 * 0.005 = 5 counts/sec (with Q12: 1000 * 20 = 20000 >> 12 = 4 counts/sec)
   TEST_ASSERT_INT32_WITHIN(1, 5, Motion_CalcFreewheelVelocity(&config, 1000));
   TEST_ASSERT_INT32_WITHIN(1, -5, Motion_CalcFreewheelVelocity(&config, -1000));
 }
 
 void test_freewheel_velocity_clamping(void) {
-  config.torque_v_max = 8000;
-  config.kfree = (q12_t){ .raw = 20 };
-  ConfigStore_RefreshCachedValues(&config);
+  config.persistent.torque_v_max = 8000;
+  config.persistent.kfree = (q12_t){ .raw = 20 };
+  ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
   // Large tension would produce 50,000 counts/sec -> clamped to +8000
   TEST_ASSERT_EQUAL_INT32(8000, Motion_CalcFreewheelVelocity(&config, 10000000));
   TEST_ASSERT_EQUAL_INT32(-8000, Motion_CalcFreewheelVelocity(&config, -10000000));
 }
 
 void test_slip_velocity_holding_torque(void) {
-  config.torque_t0 = 1000;
-  config.kfree = (q12_t){ .raw = 20 };
-  ConfigStore_RefreshCachedValues(&config);
+  config.persistent.torque_t0 = 1000;
+  config.persistent.kfree = (q12_t){ .raw = 20 };
+  ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
 
   // Below holding torque shelf -> rotor does not slip (returns 0)
-  TEST_ASSERT_EQUAL_INT32(0, Motion_CalcSlipVelocity(&config, 500, config.torque_t0));
-  TEST_ASSERT_EQUAL_INT32(0, Motion_CalcSlipVelocity(&config, -500, config.torque_t0));
-  TEST_ASSERT_EQUAL_INT32(0, Motion_CalcSlipVelocity(&config, 1000, config.torque_t0));
-  TEST_ASSERT_EQUAL_INT32(0, Motion_CalcSlipVelocity(&config, -1000, config.torque_t0));
+  TEST_ASSERT_EQUAL_INT32(0, Motion_CalcSlipVelocity(&config, 500, config.persistent.torque_t0));
+  TEST_ASSERT_EQUAL_INT32(0, Motion_CalcSlipVelocity(&config, -500, config.persistent.torque_t0));
+  TEST_ASSERT_EQUAL_INT32(0, Motion_CalcSlipVelocity(&config, 1000, config.persistent.torque_t0));
+  TEST_ASSERT_EQUAL_INT32(0, Motion_CalcSlipVelocity(&config, -1000, config.persistent.torque_t0));
 }
 
 void test_slip_velocity_exceeding_holding_torque(void) {
-  config.torque_t0 = 1000;
-  config.torque_v_max = 8000;
-  config.kfree = (q12_t){ .raw = 20 };
-  ConfigStore_RefreshCachedValues(&config);
+  config.persistent.torque_t0 = 1000;
+  config.persistent.torque_v_max = 8000;
+  config.persistent.kfree = (q12_t){ .raw = 20 };
+  ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
 
   // Tension 3000 exceeds t0 (1000) by 2000 -> slip = 2000 * 0.005 = 10 counts/sec
-  TEST_ASSERT_INT32_WITHIN(1, 10, Motion_CalcSlipVelocity(&config, 3000, config.torque_t0));
-  TEST_ASSERT_INT32_WITHIN(1, 10, Motion_CalcSlipVelocity(&config, -3000, config.torque_t0));
+  TEST_ASSERT_INT32_WITHIN(1, 10, Motion_CalcSlipVelocity(&config, 3000, config.persistent.torque_t0));
+  TEST_ASSERT_INT32_WITHIN(1, 10, Motion_CalcSlipVelocity(&config, -3000, config.persistent.torque_t0));
 
   // Huge tension -> clamped to v_max (8000)
-  TEST_ASSERT_EQUAL_INT32(8000, Motion_CalcSlipVelocity(&config, 5000000, config.torque_t0));
+  TEST_ASSERT_EQUAL_INT32(8000, Motion_CalcSlipVelocity(&config, 5000000, config.persistent.torque_t0));
 }
 
 void test_slip_velocity_at_dynamic_torque(void) {
-  config.kfree = (q12_t){ .raw = 20 };
-  config.torque_v_max = 8000;
-  ConfigStore_RefreshCachedValues(&config);
+  config.persistent.kfree = (q12_t){ .raw = 20 };
+  config.persistent.torque_v_max = 8000;
+  ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
 
   // At high speed where motor torque derates to 400:
   // Tension 300 <= t_motor 400 -> no slip
@@ -481,7 +481,7 @@ void test_planner_null_safety(void) {
 
 void test_planner_default_config_gains(void) {
   EmulatorConfig_t def_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
-  ConfigStore_RefreshCachedValues(&def_cfg);
+  ConfigStore_ComputeCachedValues(&def_cfg.persistent, &def_cfg.cached);
 
   Motion_PlanStepRequest_t req = {
       .commanded_pos = 100,
@@ -657,9 +657,9 @@ void test_planner_standstill_single_step_kp_pacing(void) {
   // Single step from standstill: step_period_cnt = 0 (no frequency known)
   // error = 4 counts (1 step at 4000 epr / 1000 spr)
   EmulatorConfig_t test_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
-  test_cfg.kp = (q12_t){ .raw = 205 }; // kp = 0.05 (0.05 * 4096 = 205)
-  test_cfg.kff = (q12_t){ .raw = 4096 };
-  ConfigStore_RefreshCachedValues(&test_cfg);
+  test_cfg.persistent.kp = (q12_t){ .raw = 205 }; // kp = 0.05 (0.05 * 4096 = 205)
+  test_cfg.persistent.kff = (q12_t){ .raw = 4096 };
+  ConfigStore_ComputeCachedValues(&test_cfg.persistent, &test_cfg.cached);
 
   Motion_PlanStepRequest_t req = {
       .commanded_pos = 4,
@@ -682,8 +682,8 @@ void test_planner_standstill_single_step_kp_pacing(void) {
   TEST_ASSERT_EQUAL_INT32(200, res.target_velocity);
 
   // With kp = 0.1: velocity is 0.1 * 1000 * 4 = 400 counts/sec
-  test_cfg.kp = (q12_t){ .raw = 410 };
-  ConfigStore_RefreshCachedValues(&test_cfg);
+  test_cfg.persistent.kp = (q12_t){ .raw = 410 };
+  ConfigStore_ComputeCachedValues(&test_cfg.persistent, &test_cfg.cached);
   Motion_PlanStep(&test_cfg, &req, &res);
   TEST_ASSERT_EQUAL_INT32(400, res.target_velocity);
 }
@@ -692,9 +692,9 @@ void test_planner_prevents_reversals_during_streaming(void) {
   // During forward streaming (input_rate = 80 counts/sec, 20 Hz):
   // Even if kp * error is negative and large (e.g. kp = 0.5, error = -4 -> -2,000 counts/sec),
   // target_velocity must NOT become negative and dir must remain positive (1).
-  config.kp = (q12_t){ .raw = 2048 };
-  config.kff = (q12_t){ .raw = 4096 };
-  ConfigStore_RefreshCachedValues(&config);
+  config.persistent.kp = (q12_t){ .raw = 2048 };
+  config.persistent.kff = (q12_t){ .raw = 4096 };
+  ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
 
   Motion_PlanStepRequest_t req = {
       .commanded_pos = 100,
@@ -728,7 +728,7 @@ void test_planner_prevents_reversals_during_streaming(void) {
 
 void test_planner_streaming_7khz(void) {
   EmulatorConfig_t test_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
-  ConfigStore_RefreshCachedValues(&test_cfg);
+  ConfigStore_ComputeCachedValues(&test_cfg.persistent, &test_cfg.cached);
 
   // 7 kHz step rate: 48 MHz / 6857 ticks = 7000.14 Hz
   // input_rate = 7000 * 4 = 28,000 counts/sec
@@ -765,7 +765,7 @@ void test_planner_streaming_7khz(void) {
 
 void test_planner_streaming_clamps_excessive_catchup_velocity(void) {
   EmulatorConfig_t test_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
-  ConfigStore_RefreshCachedValues(&test_cfg);
+  ConfigStore_ComputeCachedValues(&test_cfg.persistent, &test_cfg.cached);
 
   // 7 kHz step rate: input_rate = 28,000 counts/sec
   // If an accumulated lag of 280 counts (70 steps) occurs:
@@ -805,10 +805,10 @@ void test_planner_streaming_clamps_excessive_catchup_velocity(void) {
 
 void test_planner_streaming_high_ratio_fallback(void) {
   EmulatorConfig_t test_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
-  test_cfg.ratio_spr = 1;
-  test_cfg.ratio_epr = 100; // 100 counts/step > 89
-  ConfigStore_RefreshCachedValues(&test_cfg);
-  TEST_ASSERT_EQUAL_UINT32(0, test_cfg.clock_counts_sec);
+  test_cfg.persistent.ratio_spr = 1;
+  test_cfg.persistent.ratio_epr = 100; // 100 counts/step > 89
+  ConfigStore_ComputeCachedValues(&test_cfg.persistent, &test_cfg.cached);
+  TEST_ASSERT_EQUAL_UINT32(0, test_cfg.cached.clock_counts_sec);
 
   // 1 kHz step rate: 48 MHz / 48000 ticks = 1000 Hz
   // input_rate = 1000 * 100 = 100,000 counts/sec
@@ -866,7 +866,7 @@ void test_motion_calc_step_timeout_ms(void) {
 
 void test_motion_should_start(void) {
   EmulatorConfig_t test_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
-  test_cfg.torque_t0 = 1000;
+  test_cfg.persistent.torque_t0 = 1000;
 
   Motion_StartRequest_t req = {
       .commanded_pos = 100,
@@ -921,7 +921,7 @@ void test_motion_should_start(void) {
 
 void test_motion_should_stop(void) {
   EmulatorConfig_t test_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
-  test_cfg.torque_t0 = 1000;
+  test_cfg.persistent.torque_t0 = 1000;
 
   Motion_StopRequest_t req = {
       .commanded_pos = 100,

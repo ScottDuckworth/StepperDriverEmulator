@@ -167,8 +167,8 @@ void test_accumulate_step_position_reverse(void) {
 }
 
 void test_realign_position_counters(void) {
-  config.ratio_spr = 1;
-  config.ratio_epr = 4;
+  config.persistent.ratio_spr = 1;
+  config.persistent.ratio_epr = 4;
 
   PositionCounters_t pos = {
       .encoder_pos = 9999,
