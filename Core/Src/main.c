@@ -797,7 +797,7 @@ static void CheckMotionIdle(void) {
     return;
   }
 
-  uint32_t step_timeout_ms = (startup_sync_count == 0 && step_period_cnt >= 48000)
+  uint32_t step_timeout_ms = (startup_sync_count == 0)
                                  ? Motion_CalcStepTimeoutMs(step_period_cnt)
                                  : 50;
   if (!is_freewheeling && elapsed_ms < step_timeout_ms) {

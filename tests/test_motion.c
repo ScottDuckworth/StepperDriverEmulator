@@ -812,11 +812,26 @@ void test_motion_calc_step_timeout_ms(void) {
   // 1 kHz (period 48000 ticks = 1 ms): dynamic timeout 1 + 0 + 10 = 11 <= 50 -> 50 ms
   TEST_ASSERT_EQUAL_UINT32(50, Motion_CalcStepTimeoutMs(48000));
 
+  // Threshold just below 28 ms (1343999 ticks = 27 ms): 27 + 13 + 10 = 50 ms
+  TEST_ASSERT_EQUAL_UINT32(50, Motion_CalcStepTimeoutMs(1343999));
+
+  // Threshold at 28 ms (1344000 ticks = 28 ms): 28 + 14 + 10 = 52 ms
+  TEST_ASSERT_EQUAL_UINT32(52, Motion_CalcStepTimeoutMs(1344000));
+
   // 20 Hz (period 2400000 ticks = 50 ms): 50 + 25 + 10 = 85 ms
   TEST_ASSERT_EQUAL_UINT32(85, Motion_CalcStepTimeoutMs(2400000));
 
+  // Threshold just below 94 ms (4511999 ticks = 93 ms): 93 + 46 + 10 = 149 ms
+  TEST_ASSERT_EQUAL_UINT32(149, Motion_CalcStepTimeoutMs(4511999));
+
+  // Threshold at 94 ms (4512000 ticks = 94 ms): 94 + 47 + 10 = 151 -> clamped to 150 ms
+  TEST_ASSERT_EQUAL_UINT32(150, Motion_CalcStepTimeoutMs(4512000));
+
   // 10 Hz (period 4800000 ticks = 100 ms): 100 + 50 + 10 = 160 -> clamped to 150 ms
   TEST_ASSERT_EQUAL_UINT32(150, Motion_CalcStepTimeoutMs(4800000));
+
+  // Very large period (timer wrap / standstill)
+  TEST_ASSERT_EQUAL_UINT32(150, Motion_CalcStepTimeoutMs(0xFFFFFFFFU));
 }
 
 void test_motion_should_start(void) {

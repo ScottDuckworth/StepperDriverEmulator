@@ -141,7 +141,7 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
     return;
   }
 
-  uint32_t step_timeout_ms = (req->step_period_cnt < 48000) ? 50 : Motion_CalcStepTimeoutMs(req->step_period_cnt);
+  uint32_t step_timeout_ms = Motion_CalcStepTimeoutMs(req->step_period_cnt);
 
   int32_t input_rate = 0;
   if ((req->now - req->last_step_time) <= step_timeout_ms && req->step_period_cnt >= 160 && cfg->ratio_spr > 0) {
@@ -305,16 +305,23 @@ bool Motion_PlanAndEmitChunk(const EmulatorConfig_t* cfg,
   return true;
 }
 
+/*
+ * Computes adaptive inter-step timeout in milliseconds based on measured step period.
+ * Uses early exit clamps and reciprocal multiplication to avoid software division (__udivsi3).
+ */
 uint32_t Motion_CalcStepTimeoutMs(uint32_t step_period_cnt) {
-  uint32_t step_timeout_ms = 50;
-  if (step_period_cnt >= 48000) {
-    uint32_t period_ms = step_period_cnt / 48000;
-    uint32_t dynamic_timeout = period_ms + (period_ms >> 1) + 10;
-    if (dynamic_timeout > step_timeout_ms) {
-      step_timeout_ms = (dynamic_timeout < 150) ? dynamic_timeout : 150;
-    }
+  // Periods < 28 ms (1,344,000 counts @ 48 MHz) always result in dynamic_timeout <= 50 ms.
+  if (step_period_cnt < 1344000) {
+    return 50;
   }
-  return step_timeout_ms;
+  // Periods >= 94 ms (4,512,000 counts @ 48 MHz) always result in dynamic_timeout >= 151 ms.
+  if (step_period_cnt >= 4512000) {
+    return 150;
+  }
+  // Reciprocal multiplication for period_ms = step_period_cnt / 48000.
+  // 48000 = 375 * 128. For step_period_cnt < 4,512,000, ((step_period_cnt >> 7) * 11185) fits in uint32_t.
+  uint32_t period_ms = ((step_period_cnt >> 7) * 11185U) >> 22;
+  return period_ms + (period_ms >> 1) + 10;
 }
 
 bool Motion_ShouldStop(const EmulatorConfig_t* cfg, const Motion_StopRequest_t* req) {
