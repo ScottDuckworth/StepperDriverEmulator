@@ -279,7 +279,7 @@ bool Motion_PlanAndEmitChunk(const EmulatorConfig_t* cfg,
   Motion_PlanStep(cfg, plan_req, &plan_res);
 
   uint16_t chunk_sz = (plan_req->chunk_size > 0) ? plan_req->chunk_size : 16;
-  int8_t delta = GenerateQuadChunk(chunk_req->chunk, chunk_sz, chunk_req->inout_quad_state, plan_res.dir, plan_res.count_to_emit);
+  int8_t delta = Quadrature_GenerateChunk(chunk_req->chunk, chunk_sz, chunk_req->inout_quad_state, plan_res.dir, plan_res.count_to_emit);
 
   uint32_t pace_velocity = 0;
   if (plan_res.target_velocity == 0) {
@@ -293,7 +293,7 @@ bool Motion_PlanAndEmitChunk(const EmulatorConfig_t* cfg,
 
   uint16_t psc = 0;
   uint16_t arr = 0;
-  CalcTimerPacing(pace_velocity, &psc, &arr);
+  Quadrature_CalcTimerPacing(pace_velocity, &psc, &arr);
 
   if (out_res) {
     out_res->delta = delta;

@@ -442,13 +442,13 @@ Interrupt latency and execution cycles were characterized via static disassembly
 | `FillQuadChunk` | 216 | 270 | 5.62 µs | 9.8% | DMA chunk buffer dispatch and quadrature packing |
 | `__udivsi3` | 190 | 238 | 4.96 µs | 8.6% | 32-bit hardware-assisted unsigned division helper |
 | `CheckMotionIdle` | 183 | 229 | 4.77 µs | 8.3% | Step activity timeout and motion state transition detection |
-| `GenerateQuadChunk` | 148 | 185 | 3.85 µs | 6.7% | Gray-code quadrature transition bitmask synthesis |
+| `Quadrature_GenerateChunk` | 148 | 185 | 3.85 µs | 6.7% | Gray-code quadrature transition bitmask synthesis |
 | `UpdatePositionCounters` | 129 | 161 | 3.35 µs | 5.8% | 64-bit commanded step and encoder position accumulation |
 | `Motion_PlanAndEmitChunk` | 128 | 160 | 3.33 µs | 5.8% | Dynamic chunk sizing and direction control |
 | `Position_FilterStepWithBlanking` | 99 | 124 | 2.58 µs | 4.5% | Hardware step capture blanking filter |
 | `Motion_ShouldStop` | 86 | 108 | 2.25 µs | 3.9% | Boundary limit switch and deceleration check |
 | `Motion_CalcStepTimeoutMs` | 78 | 98 | 2.04 µs | 3.5% | Adaptive inter-step timeout computation |
-| `CalcTimerPacing` | 70 | 88 | 1.83 µs | 3.2% | TIM3 timer reload prescaler and auto-reload configuration |
+| `Quadrature_CalcTimerPacing` | 70 | 88 | 1.83 µs | 3.2% | TIM3 timer reload prescaler and auto-reload configuration |
 | Hardware Context Stacking (NVIC) | 31 | 39 | 0.81 µs | 1.4% | ARMv6-M hardware exception entry/exit overhead |
 | Other subroutines & handlers | 276 | 370 | 7.71 µs | 13.4% | DMA interrupt dispatcher, signed integer division, torque model |
 | **Total Steady-State ISR** | **2,181** | **2,765** | **57.60 µs** | **100.0%** | **Full real-time chunk synthesis pipeline** |

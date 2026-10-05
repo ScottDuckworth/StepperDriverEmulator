@@ -441,7 +441,7 @@ void SetEncoderPosition(int64_t pos) {
   startup_sync_count = 0;
   step_period_cnt = 0;
   for (int i = 0; i < TOTAL_BUFFER_SIZE; i++) {
-    quad_buffer[i] = GetQuadBsrrValue(current_quad_state);
+    quad_buffer[i] = Quadrature_GetBsrrValue(current_quad_state);
   }
   TIM3->CR1 &= ~TIM_CR1_CEN;
   DMA1_Channel3->CCR &= ~DMA_CCR_EN;
@@ -676,7 +676,7 @@ void Motion_Wakeup_Handler(void) {
     }
 
     if (*out_delta == 0) {
-      *out_delta = GenerateQuadChunk(chunk, CHUNK_SIZE, &current_quad_state, res.dir, res.count_to_emit);
+      *out_delta = Quadrature_GenerateChunk(chunk, CHUNK_SIZE, &current_quad_state, res.dir, res.count_to_emit);
       planned_encoder_pos += *out_delta;
     }
 
@@ -691,7 +691,7 @@ void Motion_Wakeup_Handler(void) {
     }
     uint16_t psc = 0;
     uint16_t arr = 0;
-    CalcTimerPacing(pace_velocity, &psc, &arr);
+    Quadrature_CalcTimerPacing(pace_velocity, &psc, &arr);
     TIM3->PSC = psc;
     TIM3->ARR = arr;
     TIM3->EGR = TIM_EGR_UG;
@@ -819,10 +819,10 @@ void InitMotion(void) {
   planned_encoder_pos = position.encoder_pos;
 
   for (int i = 0; i < TOTAL_BUFFER_SIZE; i++) {
-    quad_buffer[i] = GetQuadBsrrValue(0);
+    quad_buffer[i] = Quadrature_GetBsrrValue(0);
   }
 
-  GPIOB->BSRR = GetQuadBsrrValue(0);
+  GPIOB->BSRR = Quadrature_GetBsrrValue(0);
 
   TIM3->CR1 &= ~TIM_CR1_CEN;
   DMA1_Channel3->CCR &= ~DMA_CCR_EN;

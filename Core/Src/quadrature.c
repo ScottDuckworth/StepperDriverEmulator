@@ -7,7 +7,7 @@ static const uint32_t QUAD_BSRR_STATES[4] = {
     GPIO_BSRR_BR_4 | GPIO_BSRR_BS_5  // State 3: EA=0, EB=1
 };
 
-uint8_t NextQuadState(uint8_t current_state, int dir) {
+uint8_t Quadrature_NextState(uint8_t current_state, int dir) {
   if (dir > 0) {
     return (current_state + 1) & 3;
   } else if (dir < 0) {
@@ -16,11 +16,11 @@ uint8_t NextQuadState(uint8_t current_state, int dir) {
   return current_state & 3;
 }
 
-uint32_t GetQuadBsrrValue(uint8_t quad_state) {
+uint32_t Quadrature_GetBsrrValue(uint8_t quad_state) {
   return QUAD_BSRR_STATES[quad_state & 3];
 }
 
-int8_t GenerateQuadChunk(uint32_t* chunk, uint16_t chunk_size, uint8_t* inout_state, int dir, uint16_t count_to_emit) {
+int8_t Quadrature_GenerateChunk(uint32_t* chunk, uint16_t chunk_size, uint8_t* inout_state, int dir, uint16_t count_to_emit) {
   if (!chunk || !inout_state || chunk_size == 0) return 0;
   if (count_to_emit > chunk_size) {
     count_to_emit = chunk_size;
@@ -48,7 +48,7 @@ int8_t GenerateQuadChunk(uint32_t* chunk, uint16_t chunk_size, uint8_t* inout_st
   return (dir > 0) ? (int8_t) count_to_emit : (dir < 0) ? (int8_t)(-count_to_emit) : 0;
 }
 
-void CalcTimerPacing(uint32_t target_velocity_counts_sec, uint16_t* out_psc, uint16_t* out_arr) {
+void Quadrature_CalcTimerPacing(uint32_t target_velocity_counts_sec, uint16_t* out_psc, uint16_t* out_arr) {
   uint32_t counts_per_sec = target_velocity_counts_sec;
   if (counts_per_sec < 1) {
     counts_per_sec = 1;
