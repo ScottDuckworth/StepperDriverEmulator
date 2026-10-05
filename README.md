@@ -342,7 +342,7 @@ Commands are sent via the USB Virtual COM Port (terminated with `\r` or `\n`).
 | `kfree` | `kfree [float]` | Query or set viscous freewheel coefficient | `kfree 0.005` | `kfree 0.0050\r\n` |
 | `blank` | `blank [float]` | Query or set step blanking / hold-off window in µs (e.g. `3.5` for 200 kHz) | `blank 3.5` | `blank 3.5000\r\n` |
 | `blink` | `blink [0\|1]` | Query or toggle yellow identify blink | `blink 1` | `blink 1\r\n` |
-| `zero` | `zero` | Zero encoder and step positions | `zero` | `pos 0\r\n` |
+| `pos` | `pos [int64]` | Query or set encoder position (int64) | `pos 0` | `pos 0\r\n` |
 | `odr` | `odr [uint16]` | Periodic position report rate in ms (`0` = off) | `odr 500` | `odr 500\r\n` |
 | `ratio` | `ratio [spr] [epr]` | Query or set canonical gear ratio (steps/rev and encoder counts/rev) | `ratio 1000 4000` | `ratio 1 4\r\n` |
 | `kp` | `kp [float]` | Query or set proportional position restoring gain in 1/ms (default: `0.1000`) | `kp 0.1` | `kp 0.1000\r\n` |
@@ -353,7 +353,7 @@ Commands are sent via the USB Virtual COM Port (terminated with `\r` or `\n`).
 | `r` | `r` | Dump full configuration and runtime status | `r` | Multi-line report (see below) |
 | `help` | `help` | Print command usage list | `help` | Usage list (see below) |
 
-> **Note on Queries:** Commands that accept optional parameters (`t`, `tcurve`, `stall`, `kfree`, `blank`, `blink`, `odr`, `ratio`, `kp`, `kff`) return the current value when issued with no arguments (e.g. typing `t` replies `t 0\r\n`, typing `ratio` replies `ratio 1 4\r\n`, typing `odr` replies `odr 1000\r\n`).
+> **Note on Queries:** Commands that accept optional parameters (`pos`, `t`, `tcurve`, `stall`, `kfree`, `blank`, `blink`, `odr`, `ratio`, `kp`, `kff`) return the current value when issued with no arguments (e.g. typing `pos` replies `pos 0\r\n`, typing `t` replies `t 0\r\n`, typing `ratio` replies `ratio 1 4\r\n`, typing `odr` replies `odr 1000\r\n`).
 
 ### Full State Report (`r` command)
 

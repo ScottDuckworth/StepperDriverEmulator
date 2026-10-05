@@ -18,6 +18,44 @@ typedef struct Command {
   void (*impl)(const struct Command* self);
 } Command_t;
 
+static bool StrToI64(const char* str, int64_t* dst) {
+  if (!str || *str == '\0') return false;
+  const char* p = str;
+  bool negative = false;
+  if (*p == '-') {
+    negative = true;
+    p++;
+  } else if (*p == '+') {
+    p++;
+  }
+  if (*p < '0' || *p > '9') return false;
+
+  uint64_t val = 0;
+  const uint64_t cutoff = 922337203685477580ULL;
+  const uint32_t cutlim = negative ? 8U : 7U;
+
+  while (*p >= '0' && *p <= '9') {
+    uint32_t digit = (uint32_t)(*p - '0');
+    if (val > cutoff || (val == cutoff && digit > cutlim)) {
+      return false;
+    }
+    val = val * 10ULL + digit;
+    p++;
+  }
+  if (*p != '\0') return false;
+
+  if (negative) {
+    if (val == 9223372036854775808ULL) {
+      *dst = INT64_MIN;
+    } else {
+      *dst = -(int64_t)val;
+    }
+  } else {
+    *dst = (int64_t)val;
+  }
+  return true;
+}
+
 static bool StrToI32(const char* str, int32_t* dst) {
   long value;
   char* end;
@@ -134,9 +172,21 @@ static void Cmd_kfree(const Command_t* self) {
   SetKfree(value);
 }
 
-static void Cmd_zero(const Command_t* self) {
-  if (argc != 1) { InvalidUsage(self->usage); return; }
-  SetEncoderPosition(0);
+static void Cmd_pos(const Command_t* self) {
+  if (argc == 1) {
+    ReportEncoderPosition();
+    return;
+  }
+  if (argc != 2) {
+    InvalidUsage(self->usage);
+    return;
+  }
+  int64_t value;
+  if (!StrToI64(argv[1], &value)) {
+    InvalidValue("int64", argv[1]);
+    return;
+  }
+  SetEncoderPosition(value);
 }
 
 static void Cmd_blink(const Command_t* self) {
@@ -248,7 +298,7 @@ static const Command_t commands[] = {
     {"stall", "stall [uint32]", Cmd_stall},
     {"kfree", "kfree [float]", Cmd_kfree},
     {"blank", "blank [float]", Cmd_blank},
-    {"zero", "zero", Cmd_zero},
+    {"pos", "pos [int64]", Cmd_pos},
     {"blink", "blink [0|1]", Cmd_blink},
     {"odr", "odr <uint16>", Cmd_odr},
     {"ratio", "ratio [spr] [epr]", Cmd_ratio},

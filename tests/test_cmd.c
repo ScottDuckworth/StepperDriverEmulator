@@ -394,11 +394,46 @@ void test_cmd_lim1_lim2(void) {
   TEST_ASSERT_EQUAL_STRING("lim2 1\r\n", captured_output);
 }
 
-void test_cmd_zero(void) {
+void test_cmd_pos(void) {
+  // Query current position
   mock_pos = 123456789012LL;
-  send_cmd("zero\r\n");
+  send_cmd("pos\r\n");
+  TEST_ASSERT_EQUAL_STRING("pos 123456789012\r\n", captured_output);
+
+  // Set to 0
+  send_cmd("pos 0\r\n");
   TEST_ASSERT_EQUAL_INT64(0, mock_pos);
   TEST_ASSERT_EQUAL_STRING("pos 0\r\n", captured_output);
+
+  // Set to positive
+  send_cmd("pos 42\r\n");
+  TEST_ASSERT_EQUAL_INT64(42, mock_pos);
+  TEST_ASSERT_EQUAL_STRING("pos 42\r\n", captured_output);
+
+  // Set to negative
+  send_cmd("pos -100\r\n");
+  TEST_ASSERT_EQUAL_INT64(-100, mock_pos);
+  TEST_ASSERT_EQUAL_STRING("pos -100\r\n", captured_output);
+
+  // Set to large 64-bit value
+  send_cmd("pos 5000000000000\r\n");
+  TEST_ASSERT_EQUAL_INT64(5000000000000LL, mock_pos);
+  TEST_ASSERT_EQUAL_STRING("pos 5000000000000\r\n", captured_output);
+
+  // Set to large negative 64-bit value
+  send_cmd("pos -5000000000000\r\n");
+  TEST_ASSERT_EQUAL_INT64(-5000000000000LL, mock_pos);
+  TEST_ASSERT_EQUAL_STRING("pos -5000000000000\r\n", captured_output);
+
+  // Set to INT64_MAX
+  send_cmd("pos 9223372036854775807\r\n");
+  TEST_ASSERT_EQUAL_INT64(9223372036854775807LL, mock_pos);
+  TEST_ASSERT_EQUAL_STRING("pos 9223372036854775807\r\n", captured_output);
+
+  // Set to INT64_MIN
+  send_cmd("pos -9223372036854775808\r\n");
+  TEST_ASSERT_EQUAL_INT64(-9223372036854775807LL - 1LL, mock_pos);
+  TEST_ASSERT_EQUAL_STRING("pos -9223372036854775808\r\n", captured_output);
 }
 
 void test_cmd_pos_report_int64(void) {
@@ -468,7 +503,8 @@ void test_cmd_help(void) {
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "tcurve [T0] [V_knee] [V_max] [T_min]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "stall [uint32]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "blank [float]"));
-  TEST_ASSERT_NOT_NULL(strstr(captured_output, "zero"));
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "pos [int64]"));
+  TEST_ASSERT_NULL(strstr(captured_output, "zero"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "ratio [spr] [epr]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "save"));
 }
@@ -494,8 +530,8 @@ void test_cmd_error_invalid_usage(void) {
   send_cmd("t 1 2 3\r\n");
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid usage: t [int32]\r\n"));
 
-  send_cmd("zero 123\r\n");
-  TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid usage: zero\r\n"));
+  send_cmd("pos 1 2\r\n");
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid usage: pos [int64]\r\n"));
 }
 
 void test_cmd_error_invalid_value(void) {
@@ -507,11 +543,23 @@ void test_cmd_error_invalid_value(void) {
 
   send_cmd("kp invalid_flt\r\n");
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid float: invalid_flt\r\n"));
+
+  send_cmd("pos abc\r\n");
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid int64: abc\r\n"));
+
+  send_cmd("pos 9223372036854775808\r\n");
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid int64: 9223372036854775808\r\n"));
+
+  send_cmd("pos -9223372036854775809\r\n");
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid int64: -9223372036854775809\r\n"));
 }
 
 void test_cmd_error_unknown_command(void) {
   send_cmd("bogus_command 123\r\n");
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: unknown command: bogus_command\r\n"));
+
+  send_cmd("zero\r\n");
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: unknown command: zero\r\n"));
 }
 
 int main(void) {
@@ -526,7 +574,7 @@ int main(void) {
   RUN_TEST(test_cmd_ratio_set_and_query);
   RUN_TEST(test_cmd_kp_kff_set_and_query);
   RUN_TEST(test_cmd_lim1_lim2);
-  RUN_TEST(test_cmd_zero);
+  RUN_TEST(test_cmd_pos);
   RUN_TEST(test_cmd_pos_report_int64);
   RUN_TEST(test_cmd_r_state_report);
   RUN_TEST(test_cmd_help);
