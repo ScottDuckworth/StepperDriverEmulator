@@ -425,7 +425,7 @@ To maintain deterministic execution within the real-time ISR without floating-po
   The ARM Cortex-M0 core features a single-cycle 32-bit hardware multiplier (`muls`) but lacks a 64-bit hardware multiplier (`smull`) and hardware divider (`sdiv`). Operating at 50 kHz step pulses with 4 counts/step yields a maximum velocity of $V_{\mathrm{in}} = 200,000\text{ counts/s}$. Scaling this velocity by a $Q12$ gain produces an intermediate product of $200,000 \times 4096 = 819,200,000$, which safely fits within signed 32-bit limits ($< 2.14 \times 10^9$). Using $Q16$ generally would produce $200,000 \times 65,536 = 1.31 \times 10^{10}$, causing 32-bit integer overflow and requiring slow 64-bit software emulation (`__aeabi_lmul`). Thus, `q12_t` is the optimal system default.
 
 * **Quantization Prevention for Reciprocals (`q16_t`):**
-  Parameters representing mathematical inverses (such as $\mathrm{inv\_torque\_span\_v} = 1 / (V_{\mathrm{max}} - V_{\mathrm{knee}})$ and $\mathrm{inv\_counts\_per\_step} = 1 / \mathrm{counts\_per\_step}$) evaluate to small fractions $\ll 1.0$. For example, a torque derating span of 8,000 counts/s has a reciprocal of $0.000125$. In $Q12$ ($1\text{ LSB} \approx 0.000244$), this fraction truncates to 0 or rounds to 1 (50% to 100% quantization error). In $Q16$ ($1\text{ LSB} \approx 0.0000153$), the value is represented accurately as 8. Because these inverses are exclusively multiplied by bounded, small quantities (such as quadratic error $\le (\text{counts per step})^2$ or speed offsets $\le \text{span}$), their intermediate products never exceed 32 bits, allowing $Q16$ precision to be used safely without overflow risk.
+  Parameters representing mathematical inverses (such as `inv_torque_span_v` $= 1 / (V_{\mathrm{max}} - V_{\mathrm{knee}})$ and `inv_counts_per_step` $= 1 / \text{counts per step}$) evaluate to small fractions ($\ll {1.0}$). For example, a torque derating span of 8,000 counts/s has a reciprocal of 0.000125. In $Q12$ (where $\text{1 LSB} \approx {0.000244}$), this fraction truncates to 0 or rounds to 1 (50% to 100% quantization error). In $Q16$ (where $\text{1 LSB} \approx {0.0000153}$), the value is represented accurately as 8. Because these inverses are exclusively multiplied by bounded, small quantities (such as quadratic error $\le (\text{counts per step})^{2}$ or speed offsets $\le \text{span}$), their intermediate products never exceed 32 bits, allowing $Q16$ precision to be used safely without overflow risk.
 
 
 ### Interrupt Execution Budget & Call Tree Breakdown
@@ -473,7 +473,7 @@ Memory footprint of the Release build (`build/Release/StepperDriverEmulator.elf`
 
 | Memory Region | Used Bytes | Total Bytes | Utilization | Free Space |
 | :--- | :--- | :--- | :--- | :--- |
-| **Flash** (`.text` + `.rodata` + `.data`) | 26,700 B | 31,744 B | **84.11%** | 5,044 B free |
+| **Flash** (`.text` + `.rodata` + `.data`) | 26,744 B | 31,744 B | **84.25%** | 5,000 B free |
 | **RAM** (`.data` + `.bss` + stack) | 5,500 B | 6,144 B | **89.52%** | 644 B free |
 
 * **Flash Savings:** Complete elimination of soft-float runtime helpers (`__aeabi_fmul`, `__aeabi_fadd`, `__aeabi_fsub`, `__aeabi_fdiv`, `__aeabi_f2iz`, `__aeabi_i2f`, etc.) reclaimed **3,972 bytes** of Flash memory.
