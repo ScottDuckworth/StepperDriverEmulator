@@ -15,7 +15,7 @@ It monitors standard stepper controller signals (**Step/PUL**, **Direction/DIR**
 * **Zero-Float Real-Time Architecture:**
   * 100% fixed-point integer math ($Q12$ and $Q16$ types), eliminating all IEEE-754 software emulation library routines (`__aeabi_f*`, `__aeabi_d*`).
   * Reclaimed 3,972 bytes of Flash space and eliminated unbounded soft-float latency in critical motion paths.
-  * Automated CFG cycle estimation verifies a 50.85 µs nominal DMA ISR budget at `CHUNK_SIZE = 16` (63.6% CPU load at 50 kHz step rate).
+  * Automated CFG cycle estimation verifies a 50.83 µs nominal DMA ISR budget at `CHUNK_SIZE = 16` (63.5% CPU load at 50 kHz step rate).
 * **Accurate Input Step Tracking:**
   * Captures pulse periods on PA5 via **TIM2** (running at 48 MHz) and streams captured timestamps through **DMA1 Channel 5**.
   * Direction is sampled with interrupt-level precision on PA4.
@@ -432,25 +432,25 @@ To maintain deterministic execution within the real-time ISR without floating-po
 
 Interrupt latency and execution cycles were characterized via static disassembly and Control Flow Graph (CFG) analysis using `scripts/estimate_isr_cycles.py` on the ARM Cortex-M0 Release binary:
 
-* **Nominal Steady-State ISR Execution:** **2,441 cycles** ($50.85\ \mu\mathrm{s}$) in silicon (including Flash wait states and hardware NVIC context stacking).
+* **Nominal Steady-State ISR Execution:** **2,440 cycles** ($50.83\ \mu\mathrm{s}$) in silicon (including Flash wait states and hardware NVIC context stacking).
 * **Available Budget per Chunk at 50 kHz Step Rate:** $80.00\ \mu\mathrm{s}$ ($16\text{ counts} / 200\text{ kHz counts/s}$ at 4 counts/step).
-* **Steady-State CPU Utilization at 50 kHz:** $\frac{50.85\ \mu\mathrm{s}}{80.00\ \mu\mathrm{s}} = 63.6\%$.
+* **Steady-State CPU Utilization at 50 kHz:** $\frac{50.83\ \mu\mathrm{s}}{80.00\ \mu\mathrm{s}} = 63.5\%$.
 
 | Component / Routine | 0-WS Cycles | Silicon Cycles (1-WS) | Duration (@ 48 MHz) | % of ISR | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `Motion_PlanStep` | 452 | 565 | 11.77 µs | 23.1% | Velocity feedforward, error compensation, and pacing calculation |
+| `Motion_PlanStep` | 449 | 561 | 11.69 µs | 23.0% | Velocity feedforward, error compensation, and pacing calculation |
 | `FillQuadChunk` | 252 | 315 | 6.56 µs | 12.9% | DMA chunk buffer dispatch, quadrature generation, and pacing |
 | `CheckMotionIdle` | 226 | 282 | 5.88 µs | 11.6% | Step activity timeout and motion state transition detection |
+| `__udivsi3` | 152 | 190 | 3.96 µs | 7.8% | 32-bit hardware-assisted unsigned division helper |
 | `Quadrature_GenerateChunk` | 148 | 185 | 3.85 µs | 7.6% | Gray-code quadrature transition bitmask synthesis |
 | `UpdatePositionCounters` | 129 | 161 | 3.35 µs | 6.6% | 64-bit commanded step and encoder position accumulation |
-| `__udivsi3` | 114 | 142 | 2.96 µs | 5.8% | 32-bit hardware-assisted unsigned division helper |
 | `Position_FilterStepWithBlanking` | 99 | 124 | 2.58 µs | 5.1% | Hardware step capture blanking filter |
 | `Motion_ShouldStop` | 86 | 108 | 2.25 µs | 4.4% | Boundary limit switch and deceleration check |
 | `Quadrature_CalcTimerPacing` | 70 | 88 | 1.83 µs | 3.6% | TIM3 timer reload prescaler and auto-reload configuration |
 | `Motion_CalcStepTimeoutMs` | 56 | 70 | 1.46 µs | 2.9% | Adaptive inter-step timeout computation |
 | Hardware Context Stacking (NVIC) | 31 | 39 | 0.81 µs | 1.6% | ARMv6-M hardware exception entry/exit overhead |
-| Other subroutines & handlers | 259 | 322 | 6.71 µs | 13.2% | DMA interrupt dispatcher, signed integer division, torque model |
-| **Total Steady-State ISR** | **1,922** | **2,441** | **50.85 µs** | **100.0%** | **Full real-time chunk synthesis pipeline** |
+| Other subroutines & handlers | 223 | 277 | 5.77 µs | 11.4% | DMA interrupt dispatcher, signed integer division, torque model |
+| **Total Steady-State ISR** | **1,921** | **2,440** | **50.83 µs** | **100.0%** | **Full real-time chunk synthesis pipeline** |
 
 ### CPU Utilization Across Step Frequencies
 
@@ -462,10 +462,10 @@ With a default ratio of 4 counts/step (1000 SPR / 4000 CPR) and a chunk size of 
 | 15.00 kHz | 60.00 kHz | 266.67 µs | 19.1% | Nominal load |
 | 20.00 kHz | 80.00 kHz | 200.00 µs | 25.4% | Nominal load |
 | 30.00 kHz | 120.00 kHz | 133.33 µs | 38.1% | Nominal load |
-| 40.00 kHz | 160.00 kHz | 100.00 µs | 50.9% | Nominal load |
-| **50.00 kHz** | **200.00 kHz** | **80.00 µs** | **63.6%** | **Target benchmark (sustained operation)** |
-| 60.00 kHz | 240.00 kHz | 66.67 µs | 76.3% | High load |
-| **78.66 kHz** | **314.63 kHz** | **50.85 µs** | **100.0%** | **Maximum theoretical saturation limit** |
+| 40.00 kHz | 160.00 kHz | 100.00 µs | 50.8% | Nominal load |
+| **50.00 kHz** | **200.00 kHz** | **80.00 µs** | **63.5%** | **Target benchmark (sustained operation)** |
+| 60.00 kHz | 240.00 kHz | 66.67 µs | 76.2% | High load |
+| **78.69 kHz** | **314.75 kHz** | **50.83 µs** | **100.0%** | **Maximum theoretical saturation limit** |
 
 ### Firmware Memory Utilization
 
@@ -473,8 +473,8 @@ Memory footprint of the Release build (`build/Release/StepperDriverEmulator.elf`
 
 | Memory Region | Used Bytes | Total Bytes | Utilization | Free Space |
 | :--- | :--- | :--- | :--- | :--- |
-| **Flash** (`.text` + `.rodata` + `.data`) | 25,908 B | 31,744 B | **81.62%** | 5,836 B free |
-| **RAM** (`.data` + `.bss` + stack) | 5,480 B | 6,144 B | **89.19%** | 664 B free |
+| **Flash** (`.text` + `.rodata` + `.data`) | 26,668 B | 31,744 B | **84.01%** | 5,076 B free |
+| **RAM** (`.data` + `.bss` + stack) | 5,500 B | 6,144 B | **89.52%** | 644 B free |
 
 * **Flash Savings:** Complete elimination of soft-float runtime helpers (`__aeabi_fmul`, `__aeabi_fadd`, `__aeabi_fsub`, `__aeabi_fdiv`, `__aeabi_f2iz`, `__aeabi_i2f`, etc.) reclaimed **3,972 bytes** of Flash memory.
 * **Deterministic Timing:** Disallowance of software floating point and 64-bit integer division eliminates variable, data-dependent software emulation loops from the motion control path.

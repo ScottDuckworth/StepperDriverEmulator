@@ -29,6 +29,23 @@ void ConfigStore_RefreshCachedValues(EmulatorConfig_t* cfg) {
   cfg->counts_per_step = MathUtil_RatioQ12(cfg->ratio_epr, cfg->ratio_spr);
   cfg->inv_counts_per_step = MathUtil_RatioQ16(cfg->ratio_spr, cfg->ratio_epr);
 
+  cfg->step_counts_int = MathUtil_Q12ToInt(cfg->counts_per_step);
+  cfg->ff_window = MathUtil_Q12ToInt(MathUtil_MulQ12_Q12(cfg->kff, cfg->counts_per_step));
+  cfg->max_kp_step_v = MathUtil_MulQ12(cfg->step_counts_int, cfg->kp_velocity);
+
+  // Precompute clock_counts_sec for direct step_period_cnt -> input_rate conversion.
+  // Fits in uint32_t without overflow if (ratio_epr / ratio_spr) <= 89 counts/step.
+  if (cfg->ratio_spr > 0 && ((uint32_t) cfg->ratio_epr / (uint32_t) cfg->ratio_spr) <= 89U) {
+    uint32_t q = (uint32_t) cfg->ratio_epr / (uint32_t) cfg->ratio_spr;
+    uint32_t r = (uint32_t) cfg->ratio_epr % (uint32_t) cfg->ratio_spr;
+    uint32_t rem_high = (48000U * r) / (uint32_t) cfg->ratio_spr;
+    uint32_t rem_low = (48000U * r) % (uint32_t) cfg->ratio_spr;
+    uint32_t r_part = rem_high * 1000U + (rem_low * 1000U) / (uint32_t) cfg->ratio_spr;
+    cfg->clock_counts_sec = 48000000U * q + r_part;
+  } else {
+    cfg->clock_counts_sec = 0; // Fallback to dynamic MathUtil_MulQ12 in Motion_PlanStep
+  }
+
   uint32_t span_v = (cfg->torque_v_max > cfg->torque_v_knee) ? (cfg->torque_v_max - cfg->torque_v_knee) : 0;
   cfg->inv_torque_span_v = (span_v > 0) ? MathUtil_FromRawQ16((int32_t)(65536U / span_v)) : MathUtil_FromRawQ16(0);
 

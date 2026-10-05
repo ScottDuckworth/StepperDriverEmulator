@@ -212,6 +212,10 @@ void test_cached_fixed_point_refresh(void) {
   TEST_ASSERT_EQUAL_INT32(13107, cfg.inv_counts_per_step.raw); // 0.2 * 65536 = 13107.2 -> 13107
   TEST_ASSERT_EQUAL_INT32(8, cfg.inv_torque_span_v.raw); // 65536 / 8000 = 8.19 -> 8
   TEST_ASSERT_EQUAL_INT32(6554, cfg.torque_derate_slope.raw); // (800 * 65536 + 4000) / 8000 = 6554
+  TEST_ASSERT_EQUAL_INT32(5, cfg.step_counts_int);
+  TEST_ASSERT_EQUAL_INT32(8, cfg.ff_window);
+  TEST_ASSERT_EQUAL_INT32(999, cfg.max_kp_step_v);
+  TEST_ASSERT_EQUAL_UINT32(240000000U, cfg.clock_counts_sec);
 
   // Verify round-trip load refreshes cached values
   ConfigStore_Save(&mock_flash_driver, MOCK_PAGE_ADDR, &cfg);
@@ -226,6 +230,17 @@ void test_cached_fixed_point_refresh(void) {
   TEST_ASSERT_EQUAL_INT32(13107, loaded.inv_counts_per_step.raw);
   TEST_ASSERT_EQUAL_INT32(8, loaded.inv_torque_span_v.raw);
   TEST_ASSERT_EQUAL_INT32(6554, loaded.torque_derate_slope.raw);
+  TEST_ASSERT_EQUAL_INT32(5, loaded.step_counts_int);
+  TEST_ASSERT_EQUAL_INT32(8, loaded.ff_window);
+  TEST_ASSERT_EQUAL_INT32(999, loaded.max_kp_step_v);
+  TEST_ASSERT_EQUAL_UINT32(240000000U, loaded.clock_counts_sec);
+
+  // High ratio > 89 counts/step fallback: clock_counts_sec set to 0 to avoid 32-bit overflow
+  cfg.ratio_spr = 1;
+  cfg.ratio_epr = 100; // 100 counts/step > 89
+  ConfigStore_RefreshCachedValues(&cfg);
+  TEST_ASSERT_EQUAL_INT32(100, cfg.step_counts_int);
+  TEST_ASSERT_EQUAL_UINT32(0, cfg.clock_counts_sec);
 }
 
 int main(void) {

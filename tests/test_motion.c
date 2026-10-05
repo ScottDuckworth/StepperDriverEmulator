@@ -803,6 +803,36 @@ void test_planner_streaming_clamps_excessive_catchup_velocity(void) {
   TEST_ASSERT_TRUE(res.target_velocity > -40000);
 }
 
+void test_planner_streaming_high_ratio_fallback(void) {
+  EmulatorConfig_t test_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
+  test_cfg.ratio_spr = 1;
+  test_cfg.ratio_epr = 100; // 100 counts/step > 89
+  ConfigStore_RefreshCachedValues(&test_cfg);
+  TEST_ASSERT_EQUAL_UINT32(0, test_cfg.clock_counts_sec);
+
+  // 1 kHz step rate: 48 MHz / 48000 ticks = 1000 Hz
+  // input_rate = 1000 * 100 = 100,000 counts/sec
+  Motion_PlanStepRequest_t req = {
+      .commanded_pos = 100,
+      .planned_encoder_pos = 0,
+      .load_tension = 0,
+      .now = 100,
+      .last_step_time = 100,
+      .step_period_cnt = 48000,
+      .step_reverse = false,
+      .is_freewheeling = false,
+      .stall_tripped = false,
+      .chunk_size = 16
+  };
+  Motion_PlanStepResult_t res;
+
+  Motion_PlanStep(&test_cfg, &req, &res);
+  TEST_ASSERT_EQUAL_INT(1, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(16, res.count_to_emit);
+  // Velocity should be ~100,000 counts/sec
+  TEST_ASSERT_INT32_WITHIN(100, 100000, res.target_velocity);
+}
+
 void test_motion_calc_step_timeout_ms(void) {
   // High frequency / small period: default 50 ms
   TEST_ASSERT_EQUAL_UINT32(50, Motion_CalcStepTimeoutMs(0));
@@ -1100,6 +1130,7 @@ int main(void) {
   RUN_TEST(test_planner_prevents_reversals_during_streaming);
   RUN_TEST(test_planner_streaming_7khz);
   RUN_TEST(test_planner_streaming_clamps_excessive_catchup_velocity);
+  RUN_TEST(test_planner_streaming_high_ratio_fallback);
   RUN_TEST(test_motion_calc_step_timeout_ms);
   RUN_TEST(test_motion_should_start);
   RUN_TEST(test_motion_should_stop);

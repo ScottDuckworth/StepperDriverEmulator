@@ -58,16 +58,14 @@ void Quadrature_CalcTimerPacing(uint32_t target_velocity_counts_sec, uint16_t* o
   }
 
   uint32_t ticks = 48000000U / counts_per_sec;
+  uint32_t psc = 0;
   if (ticks < 160) {
     ticks = 160; // max 300 kHz
-  }
-
-  uint32_t psc = 0;
-  if (ticks > 65536) {
+  } else if (ticks > 65536) {
     psc = (ticks >> 16);
     ticks = ticks / (psc + 1);
+    if (ticks > 65536) ticks = 65536;
   }
-  if (ticks > 65536) ticks = 65536;
 
   if (out_psc) *out_psc = (uint16_t) psc;
   if (out_arr) *out_arr = (uint16_t)(ticks - 1);

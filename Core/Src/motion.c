@@ -145,8 +145,12 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
 
   int32_t input_rate = 0;
   if ((req->now - req->last_step_time) <= step_timeout_ms && req->step_period_cnt >= 160 && cfg->ratio_spr > 0) {
-    uint32_t step_hz = 48000000U / req->step_period_cnt;
-    input_rate = MathUtil_MulQ12((int32_t) step_hz, cfg->counts_per_step);
+    if (cfg->clock_counts_sec > 0) {
+      input_rate = (int32_t)(cfg->clock_counts_sec / req->step_period_cnt);
+    } else {
+      uint32_t step_hz = 48000000U / req->step_period_cnt;
+      input_rate = MathUtil_MulQ12((int32_t) step_hz, cfg->counts_per_step);
+    }
     if (req->step_reverse) {
       input_rate = -input_rate;
     }
@@ -164,8 +168,8 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
   // and prevents cyclic pacing frequency modulation across the phase, while restoring
   // gain (Kp) remains active for true tracking lag (> 1 step) or overshoot (< 0).
   if (input_rate != 0) {
-    int32_t step_counts = MathUtil_Q12ToInt(cfg->counts_per_step);
-    int32_t ff_window = MathUtil_Q12ToInt(MathUtil_MulQ12_Q12(cfg->kff, cfg->counts_per_step));
+    int32_t step_counts = cfg->step_counts_int;
+    int32_t ff_window = cfg->ff_window;
 
     if (input_rate > 0) {
       if (eff_error > ff_window) {
@@ -193,8 +197,7 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
     if (target_velocity < 0) {
       target_velocity = 0;
     } else {
-      int32_t step_counts = MathUtil_Q12ToInt(cfg->counts_per_step);
-      int32_t max_v = input_rate + (input_rate >> 2) + MathUtil_MulQ12(step_counts, cfg->kp_velocity);
+      int32_t max_v = input_rate + (input_rate >> 2) + cfg->max_kp_step_v;
       if (target_velocity > max_v) {
         target_velocity = max_v;
       }
@@ -204,8 +207,7 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
       target_velocity = 0;
     } else {
       int32_t abs_rate = MathUtil_AbsI32(input_rate);
-      int32_t step_counts = MathUtil_Q12ToInt(cfg->counts_per_step);
-      int32_t min_v = -(abs_rate + (abs_rate >> 2) + MathUtil_MulQ12(step_counts, cfg->kp_velocity));
+      int32_t min_v = -(abs_rate + (abs_rate >> 2) + cfg->max_kp_step_v);
       if (target_velocity < min_v) {
         target_velocity = min_v;
       }
