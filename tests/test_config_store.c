@@ -211,6 +211,7 @@ void test_cached_fixed_point_refresh(void) {
   TEST_ASSERT_EQUAL_INT32(20480, cfg.counts_per_step.raw); // 5.0 * 4096 = 20480
   TEST_ASSERT_EQUAL_INT32(13107, cfg.inv_counts_per_step.raw); // 0.2 * 65536 = 13107.2 -> 13107
   TEST_ASSERT_EQUAL_INT32(8, cfg.inv_torque_span_v.raw); // 65536 / 8000 = 8.19 -> 8
+  TEST_ASSERT_EQUAL_INT32(6554, cfg.torque_derate_slope.raw); // (800 * 65536 + 4000) / 8000 = 6554
 
   // Verify round-trip load refreshes cached values
   ConfigStore_Save(&mock_flash_driver, MOCK_PAGE_ADDR, &cfg);
@@ -224,6 +225,7 @@ void test_cached_fixed_point_refresh(void) {
   TEST_ASSERT_EQUAL_INT32(20480, loaded.counts_per_step.raw);
   TEST_ASSERT_EQUAL_INT32(13107, loaded.inv_counts_per_step.raw);
   TEST_ASSERT_EQUAL_INT32(8, loaded.inv_torque_span_v.raw);
+  TEST_ASSERT_EQUAL_INT32(6554, loaded.torque_derate_slope.raw);
 }
 
 int main(void) {

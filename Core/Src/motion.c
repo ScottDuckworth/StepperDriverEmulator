@@ -11,9 +11,9 @@ int32_t Motion_CalcMotorTorque(const EmulatorConfig_t* cfg, uint32_t speed_count
   if (speed_counts_sec >= cfg->torque_v_max || cfg->torque_v_max <= cfg->torque_v_knee) {
     return cfg->torque_t_min;
   }
-  int32_t num = (cfg->torque_t0 - cfg->torque_t_min) * (int32_t)(speed_counts_sec - cfg->torque_v_knee);
-  int32_t den = (int32_t)(cfg->torque_v_max - cfg->torque_v_knee);
-  return (den > 0) ? (cfg->torque_t0 - (num / den)) : cfg->torque_t_min;
+  uint32_t delta_v = speed_counts_sec - cfg->torque_v_knee;
+  uint32_t derate = (delta_v * (uint32_t) cfg->torque_derate_slope.raw + 32768U) >> 16;
+  return cfg->torque_t0 - (int32_t) derate;
 }
 
 int32_t Motion_CalcNetTorque(int32_t t_motor, int dir, int32_t load_tension) {

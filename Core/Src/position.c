@@ -3,6 +3,12 @@
 
 int32_t Position_ConvertStepDeltaToCounts(int32_t step_delta, uint16_t ratio_spr, uint16_t ratio_epr, int32_t* remainder) {
   if (ratio_spr == 0) return 0;
+  if (ratio_spr == 1) {
+    if (remainder) {
+      *remainder = 0;
+    }
+    return step_delta * (int32_t) ratio_epr;
+  }
   int32_t rem = remainder ? *remainder : 0;
   int32_t accum = rem + step_delta * (int32_t) ratio_epr;
   int32_t counts = accum / (int32_t) ratio_spr;

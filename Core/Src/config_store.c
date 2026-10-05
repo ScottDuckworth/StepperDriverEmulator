@@ -31,6 +31,22 @@ void ConfigStore_RefreshCachedValues(EmulatorConfig_t* cfg) {
 
   uint32_t span_v = (cfg->torque_v_max > cfg->torque_v_knee) ? (cfg->torque_v_max - cfg->torque_v_knee) : 0;
   cfg->inv_torque_span_v = (span_v > 0) ? MathUtil_FromRawQ16((int32_t)(65536U / span_v)) : MathUtil_FromRawQ16(0);
+
+  int32_t delta_t = cfg->torque_t0 - cfg->torque_t_min;
+  if (span_v > 0 && delta_t > 0) {
+    uint32_t dt = (uint32_t) delta_t;
+    uint32_t slope;
+    if (dt <= 65535U) {
+      slope = (dt * 65536U + (span_v / 2)) / span_v;
+    } else {
+      uint32_t int_part = dt / span_v;
+      uint32_t rem = dt % span_v;
+      slope = (int_part << 16) + (rem * 65536U + (span_v / 2)) / span_v;
+    }
+    cfg->torque_derate_slope = MathUtil_FromRawQ16((int32_t) slope);
+  } else {
+    cfg->torque_derate_slope = MathUtil_FromRawQ16(0);
+  }
 }
 
 bool ConfigStore_Load(const FlashDriver_t* flash, uint32_t page_addr, EmulatorConfig_t* out_cfg) {

@@ -32,6 +32,7 @@ typedef struct {
   q12_t counts_per_step;     // (ratio_epr / ratio_spr)
   q16_t inv_counts_per_step; // (ratio_spr / ratio_epr)
   q16_t inv_torque_span_v;   // 1 / (torque_v_max - torque_v_knee)
+  q16_t torque_derate_slope; // (torque_t0 - torque_t_min) / (torque_v_max - torque_v_knee)
 } EmulatorConfig_t;
 
 #define DEFAULT_EMULATOR_CONFIG { \
@@ -50,6 +51,7 @@ typedef struct {
   .counts_per_step = { .raw = 16384 }, \
   .inv_counts_per_step = { .raw = 16384 }, \
   .inv_torque_span_v = { .raw = 9 }, \
+  .torque_derate_slope = { .raw = 7490 }, \
 }
 
 #ifdef __cplusplus
