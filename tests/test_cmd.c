@@ -43,84 +43,66 @@ void ReportString(const char* var, const char* value) {
 }
 
 void ReportI64(const char* var, int64_t value) {
-  char buf[48];
-  char* p = buf;
-  WriteString(var);
-  *p++ = ' ';
-  uint64_t mag;
-  if (value < 0) {
-    *p++ = '-';
-    mag = (uint64_t)(-(value + 1)) + 1ULL;
-  } else {
-    mag = (uint64_t) value;
-  }
   char digits[24];
-  int d_cnt = 0;
-  if (mag == 0) {
-    digits[d_cnt++] = '0';
-  } else {
-    uint16_t w[4];
-    w[0] = (uint16_t)(mag & 0xFFFFULL);
-    w[1] = (uint16_t)((mag >> 16) & 0xFFFFULL);
-    w[2] = (uint16_t)((mag >> 32) & 0xFFFFULL);
-    w[3] = (uint16_t)((mag >> 48) & 0xFFFFULL);
-    while (w[0] | w[1] | w[2] | w[3]) {
-      uint32_t rem = 0;
-      for (int i = 3; i >= 0; i--) {
-        uint32_t cur = (rem << 16) | w[i];
-        w[i] = (uint16_t)(cur / 10);
-        rem = cur % 10;
-      }
-      digits[d_cnt++] = (char)('0' + rem);
-    }
-  }
-  while (d_cnt > 0) {
-    *p++ = digits[--d_cnt];
-  }
-  *p++ = '\r';
-  *p++ = '\n';
-  *p = '\0';
-  WriteString(buf);
+  MathUtil_FormatI64(digits, sizeof(digits), value);
+  WriteString(var);
+  WriteString(" ");
+  WriteString(digits);
+  WriteString("\r\n");
 }
 
 void ReportI32(const char* var, int32_t value) {
-  char buf[32];
-  snprintf(buf, sizeof(buf), "%s %" PRId32 "\r\n", var, value);
-  WriteString(buf);
+  char digits[16];
+  MathUtil_FormatI32(digits, sizeof(digits), value);
+  WriteString(var);
+  WriteString(" ");
+  WriteString(digits);
+  WriteString("\r\n");
 }
 
 void ReportU32(const char* var, uint32_t value) {
-  char buf[32];
-  snprintf(buf, sizeof(buf), "%s %" PRIu32 "\r\n", var, value);
-  WriteString(buf);
+  char digits[16];
+  MathUtil_FormatU32(digits, sizeof(digits), value);
+  WriteString(var);
+  WriteString(" ");
+  WriteString(digits);
+  WriteString("\r\n");
 }
 
 void ReportU16(const char* var, uint16_t value) {
-  char buf[32];
-  snprintf(buf, sizeof(buf), "%s %u\r\n", var, value);
-  WriteString(buf);
+  char digits[8];
+  MathUtil_FormatU16(digits, sizeof(digits), value);
+  WriteString(var);
+  WriteString(" ");
+  WriteString(digits);
+  WriteString("\r\n");
 }
 
 void ReportU8(const char* var, uint8_t value) {
-  char buf[32];
-  snprintf(buf, sizeof(buf), "%s %u\r\n", var, value);
-  WriteString(buf);
+  char digits[8];
+  MathUtil_FormatU8(digits, sizeof(digits), value);
+  WriteString(var);
+  WriteString(" ");
+  WriteString(digits);
+  WriteString("\r\n");
 }
 
 void ReportQ12(const char* var, q12_t value) {
   char formatted[20];
-  char buf[32];
   MathUtil_FormatQ12(formatted, sizeof(formatted), value, 4);
-  snprintf(buf, sizeof(buf), "%s %s\r\n", var, formatted);
-  WriteString(buf);
+  WriteString(var);
+  WriteString(" ");
+  WriteString(formatted);
+  WriteString("\r\n");
 }
 
 void ReportQ16(const char* var, q16_t value) {
   char formatted[20];
-  char buf[32];
   MathUtil_FormatQ16(formatted, sizeof(formatted), value, 4);
-  snprintf(buf, sizeof(buf), "%s %s\r\n", var, formatted);
-  WriteString(buf);
+  WriteString(var);
+  WriteString(" ");
+  WriteString(formatted);
+  WriteString("\r\n");
 }
 
 int32_t GetTension(void) { return mock_tension; }

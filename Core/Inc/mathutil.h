@@ -30,13 +30,51 @@ typedef struct {
 uint16_t MathUtil_CalcGCD(uint16_t a, uint16_t b);
 
 /*
- * Decimal string parsing and formatting for Q12 / Q16 fixed-point numbers.
- * Allows zero-float CLI input parsing and output reporting.
+ * Decimal string parsing and formatting for integer and fixed-point types.
+ * Provides zero-float, division-free CLI input parsing and output reporting.
  */
-bool MathUtil_StrToQ12(const char* str, q12_t* out);
-bool MathUtil_StrToQ16(const char* str, q16_t* out);
-void MathUtil_FormatQ12(char* buf, size_t buf_sz, q12_t val, uint8_t decimals);
-void MathUtil_FormatQ16(char* buf, size_t buf_sz, q16_t val, uint8_t decimals);
+
+/* Parse an 8-bit unsigned integer from a decimal string. Returns true on success, false on error/overflow. */
+bool MathUtil_ParseU8(const char* str, uint8_t* out);
+
+/* Parse a 16-bit unsigned integer from a decimal string. Returns true on success, false on error/overflow. */
+bool MathUtil_ParseU16(const char* str, uint16_t* out);
+
+/* Parse a 32-bit unsigned integer from a decimal string. Returns true on success, false on error/overflow. */
+bool MathUtil_ParseU32(const char* str, uint32_t* out);
+
+/* Parse a 32-bit signed integer from a decimal string. Returns true on success, false on error/overflow. */
+bool MathUtil_ParseI32(const char* str, int32_t* out);
+
+/* Parse a 64-bit signed integer from a decimal string. Returns true on success, false on error/overflow. */
+bool MathUtil_ParseI64(const char* str, int64_t* out);
+
+/* Parse a Q12 fixed-point value from a decimal string. Returns true on success, false on error/overflow. */
+bool MathUtil_ParseQ12(const char* str, q12_t* out);
+
+/* Parse a Q16 fixed-point value from a decimal string. Returns true on success, false on error/overflow. */
+bool MathUtil_ParseQ16(const char* str, q16_t* out);
+
+/* Format an 8-bit unsigned integer into a decimal string (min buffer: 4 bytes). Returns characters written (excluding null terminator). */
+size_t MathUtil_FormatU8(char* buf, size_t buf_sz, uint8_t val);
+
+/* Format a 16-bit unsigned integer into a decimal string (min buffer: 6 bytes). Returns characters written (excluding null terminator). */
+size_t MathUtil_FormatU16(char* buf, size_t buf_sz, uint16_t val);
+
+/* Format a 32-bit unsigned integer into a decimal string (min buffer: 11 bytes). Returns characters written (excluding null terminator). */
+size_t MathUtil_FormatU32(char* buf, size_t buf_sz, uint32_t val);
+
+/* Format a 32-bit signed integer into a decimal string (min buffer: 12 bytes). Returns characters written (excluding null terminator). */
+size_t MathUtil_FormatI32(char* buf, size_t buf_sz, int32_t val);
+
+/* Format a 64-bit signed integer into a decimal string without 64-bit division (min buffer: 21 bytes). Returns characters written. */
+size_t MathUtil_FormatI64(char* buf, size_t buf_sz, int64_t val);
+
+/* Format a Q12 fixed-point value into a decimal string (min buffer: 13 bytes for up to 4 decimals). Returns characters written (excluding null terminator). */
+size_t MathUtil_FormatQ12(char* buf, size_t buf_sz, q12_t val, uint8_t decimals);
+
+/* Format a Q16 fixed-point value into a decimal string (min buffer: 12 bytes for up to 4 decimals). Returns characters written (excluding null terminator). */
+size_t MathUtil_FormatQ16(char* buf, size_t buf_sz, q16_t val, uint8_t decimals);
 
 /*
  * Fixed-point raw and integer constructor/conversion helpers:

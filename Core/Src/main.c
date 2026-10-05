@@ -159,60 +159,25 @@ void ReportString(const char* var, const char* value) {
 
 void ReportQ12(const char* var, q12_t value) {
   char formatted[20];
-  char output[28];
   MathUtil_FormatQ12(formatted, sizeof(formatted), value, 4);
-  int size = snprintf(output, sizeof(output), " %s\r\n", formatted);
   WriteString(var);
-  WriteData((uint8_t*) output, size);
+  WriteString(" ");
+  WriteString(formatted);
+  WriteString("\r\n");
 }
 
 void ReportQ16(const char* var, q16_t value) {
   char formatted[20];
-  char output[28];
   MathUtil_FormatQ16(formatted, sizeof(formatted), value, 4);
-  int size = snprintf(output, sizeof(output), " %s\r\n", formatted);
   WriteString(var);
-  WriteData((uint8_t*) output, size);
-}
-
-static void FormatI64Digits(char* dst, int64_t value) {
-  char* p = dst;
-  uint64_t mag;
-  if (value < 0) {
-    *p++ = '-';
-    mag = (uint64_t)(-(value + 1)) + 1ULL;
-  } else {
-    mag = (uint64_t) value;
-  }
-  char digits[24];
-  int d_cnt = 0;
-  if (mag == 0) {
-    digits[d_cnt++] = '0';
-  } else {
-    uint16_t w[4];
-    w[0] = (uint16_t)(mag & 0xFFFFULL);
-    w[1] = (uint16_t)((mag >> 16) & 0xFFFFULL);
-    w[2] = (uint16_t)((mag >> 32) & 0xFFFFULL);
-    w[3] = (uint16_t)((mag >> 48) & 0xFFFFULL);
-    while (w[0] | w[1] | w[2] | w[3]) {
-      uint32_t rem = 0;
-      for (int i = 3; i >= 0; i--) {
-        uint32_t cur = (rem << 16) | w[i];
-        w[i] = (uint16_t)(cur / 10);
-        rem = cur % 10;
-      }
-      digits[d_cnt++] = (char)('0' + rem);
-    }
-  }
-  while (d_cnt > 0) {
-    *p++ = digits[--d_cnt];
-  }
-  *p = '\0';
+  WriteString(" ");
+  WriteString(formatted);
+  WriteString("\r\n");
 }
 
 void ReportI64(const char* var, int64_t value) {
   char digits[24];
-  FormatI64Digits(digits, value);
+  MathUtil_FormatI64(digits, sizeof(digits), value);
   WriteString(var);
   WriteString(" ");
   WriteString(digits);
@@ -220,35 +185,39 @@ void ReportI64(const char* var, int64_t value) {
 }
 
 void ReportI32(const char* var, int32_t value) {
-  int size;
-  char output[12];
-  size = snprintf(output, sizeof(output), " %ld\r\n", value);
+  char digits[16];
+  MathUtil_FormatI32(digits, sizeof(digits), value);
   WriteString(var);
-  WriteData((uint8_t*) output, size);
+  WriteString(" ");
+  WriteString(digits);
+  WriteString("\r\n");
 }
 
 void ReportU32(const char* var, uint32_t value) {
-  int size;
-  char output[12];
-  size = snprintf(output, sizeof(output), " %lu\r\n", value);
+  char digits[16];
+  MathUtil_FormatU32(digits, sizeof(digits), value);
   WriteString(var);
-  WriteData((uint8_t*) output, size);
+  WriteString(" ");
+  WriteString(digits);
+  WriteString("\r\n");
 }
 
 void ReportU16(const char* var, uint16_t value) {
-  int size;
-  char output[12];
-  size = snprintf(output, sizeof(output), " %u\r\n", value);
+  char digits[8];
+  MathUtil_FormatU16(digits, sizeof(digits), value);
   WriteString(var);
-  WriteData((uint8_t*) output, size);
+  WriteString(" ");
+  WriteString(digits);
+  WriteString("\r\n");
 }
 
 void ReportU8(const char* var, uint8_t value) {
-  int size;
-  char output[8];
-  size = snprintf(output, sizeof(output), " %u\r\n", value);
+  char digits[8];
+  MathUtil_FormatU8(digits, sizeof(digits), value);
   WriteString(var);
-  WriteData((uint8_t*) output, size);
+  WriteString(" ");
+  WriteString(digits);
+  WriteString("\r\n");
 }
 
 void SetLED(uint8_t r, uint8_t g) {
@@ -520,7 +489,7 @@ void ReportPvt(void) {
   GetInstantaneousMotionState(&vel, &t_motor, &t_net);
 
   char pos_str[24];
-  FormatI64Digits(pos_str, pos);
+  MathUtil_FormatI64(pos_str, sizeof(pos_str), pos);
 
   char tail[48];
   snprintf(tail, sizeof(tail), " %ld %ld %ld\r\n", (long) vel, (long) t_motor, (long) t_net);

@@ -18,83 +18,7 @@ typedef struct Command {
   void (*impl)(const struct Command* self);
 } Command_t;
 
-static bool StrToI64(const char* str, int64_t* dst) {
-  if (!str || *str == '\0') return false;
-  const char* p = str;
-  bool negative = false;
-  if (*p == '-') {
-    negative = true;
-    p++;
-  } else if (*p == '+') {
-    p++;
-  }
-  if (*p < '0' || *p > '9') return false;
 
-  uint64_t val = 0;
-  const uint64_t cutoff = 922337203685477580ULL;
-  const uint32_t cutlim = negative ? 8U : 7U;
-
-  while (*p >= '0' && *p <= '9') {
-    uint32_t digit = (uint32_t)(*p - '0');
-    if (val > cutoff || (val == cutoff && digit > cutlim)) {
-      return false;
-    }
-    val = val * 10ULL + digit;
-    p++;
-  }
-  if (*p != '\0') return false;
-
-  if (negative) {
-    if (val == 9223372036854775808ULL) {
-      *dst = INT64_MIN;
-    } else {
-      *dst = -(int64_t)val;
-    }
-  } else {
-    *dst = (int64_t)val;
-  }
-  return true;
-}
-
-static bool StrToI32(const char* str, int32_t* dst) {
-  long value;
-  char* end;
-  value = strtol(str, &end, 0);
-  if (*end != '\0' || value > INT32_MAX || value < INT32_MIN) return false;
-  *dst = value;
-  return true;
-}
-
-static bool StrToU32(const char* str, uint32_t* dst) {
-  unsigned long value;
-  char* end;
-  value = strtoul(str, &end, 0);
-  if (*end != '\0' || value > UINT32_MAX) return false;
-  *dst = (uint32_t) value;
-  return true;
-}
-
-static bool StrToU16(const char* str, uint16_t* dst) {
-  unsigned long value;
-  char* end;
-  value = strtoul(str, &end, 0);
-  if (*end != '\0' || value > UINT16_MAX) return false;
-  *dst = value;
-  return true;
-}
-
-static bool StrToU8(const char* str, uint8_t* dst) {
-  unsigned long value;
-  char* end;
-  value = strtoul(str, &end, 0);
-  if (*end != '\0' || value > UINT8_MAX) return false;
-  *dst = value;
-  return true;
-}
-
-static bool StrToDecimalQ12(const char* str, q12_t* dst) {
-  return MathUtil_StrToQ12(str, dst);
-}
 
 static void InvalidUsage(const char* usage) {
   WriteString("error: invalid usage: ");
@@ -113,14 +37,14 @@ static void InvalidValue(const char* type, const char* value) {
 static void Cmd_lim1(const Command_t* self) {
   if (argc != 2) { InvalidUsage(self->usage); return; }
   uint8_t limit;
-  if (!StrToU8(argv[1], &limit)) { InvalidValue("uint8", argv[1]); return; }
+  if (!MathUtil_ParseU8(argv[1], &limit)) { InvalidValue("uint8", argv[1]); return; }
   SetLimit1(limit);
 }
 
 static void Cmd_lim2(const Command_t* self) {
   if (argc != 2) { InvalidUsage(self->usage); return; }
   uint8_t limit;
-  if (!StrToU8(argv[1], &limit)) { InvalidValue("uint8", argv[1]); return; }
+  if (!MathUtil_ParseU8(argv[1], &limit)) { InvalidValue("uint8", argv[1]); return; }
   SetLimit2(limit);
 }
 
@@ -131,7 +55,7 @@ static void Cmd_t(const Command_t* self) {
   }
   if (argc != 2) { InvalidUsage(self->usage); return; }
   int32_t value;
-  if (!StrToI32(argv[1], &value)) { InvalidValue("int32", argv[1]); return; }
+  if (!MathUtil_ParseI32(argv[1], &value)) { InvalidValue("int32", argv[1]); return; }
   SetTension(value);
 }
 
@@ -143,10 +67,10 @@ static void Cmd_tcurve(const Command_t* self) {
   if (argc != 5) { InvalidUsage(self->usage); return; }
   int32_t t0, t_min;
   uint32_t v_knee, v_max;
-  if (!StrToI32(argv[1], &t0)) { InvalidValue("int32", argv[1]); return; }
-  if (!StrToU32(argv[2], &v_knee)) { InvalidValue("uint32", argv[2]); return; }
-  if (!StrToU32(argv[3], &v_max)) { InvalidValue("uint32", argv[3]); return; }
-  if (!StrToI32(argv[4], &t_min)) { InvalidValue("int32", argv[4]); return; }
+  if (!MathUtil_ParseI32(argv[1], &t0)) { InvalidValue("int32", argv[1]); return; }
+  if (!MathUtil_ParseU32(argv[2], &v_knee)) { InvalidValue("uint32", argv[2]); return; }
+  if (!MathUtil_ParseU32(argv[3], &v_max)) { InvalidValue("uint32", argv[3]); return; }
+  if (!MathUtil_ParseI32(argv[4], &t_min)) { InvalidValue("int32", argv[4]); return; }
   SetTorqueCurve(t0, v_knee, v_max, t_min);
 }
 
@@ -157,7 +81,7 @@ static void Cmd_stall(const Command_t* self) {
   }
   if (argc != 2) { InvalidUsage(self->usage); return; }
   uint32_t value;
-  if (!StrToU32(argv[1], &value)) { InvalidValue("uint32", argv[1]); return; }
+  if (!MathUtil_ParseU32(argv[1], &value)) { InvalidValue("uint32", argv[1]); return; }
   SetStallThreshold(value);
 }
 
@@ -168,7 +92,7 @@ static void Cmd_kfree(const Command_t* self) {
   }
   if (argc != 2) { InvalidUsage(self->usage); return; }
   q12_t value;
-  if (!StrToDecimalQ12(argv[1], &value)) { InvalidValue("float", argv[1]); return; }
+  if (!MathUtil_ParseQ12(argv[1], &value)) { InvalidValue("float", argv[1]); return; }
   SetKfree(value);
 }
 
@@ -182,7 +106,7 @@ static void Cmd_pos(const Command_t* self) {
     return;
   }
   int64_t value;
-  if (!StrToI64(argv[1], &value)) {
+  if (!MathUtil_ParseI64(argv[1], &value)) {
     InvalidValue("int64", argv[1]);
     return;
   }
@@ -204,7 +128,7 @@ static void Cmd_blink(const Command_t* self) {
   }
   if (argc != 2) { InvalidUsage(self->usage); return; }
   uint8_t value;
-  if (!StrToU8(argv[1], &value) || (value != 0 && value != 1)) {
+  if (!MathUtil_ParseU8(argv[1], &value) || (value != 0 && value != 1)) {
     InvalidValue("bool (0 or 1)", argv[1]);
     return;
   }
@@ -218,7 +142,7 @@ static void Cmd_odr(const Command_t* self) {
   }
   if (argc != 2) { InvalidUsage(self->usage); return; }
   uint16_t value;
-  if (!StrToU16(argv[1], &value)) { InvalidValue("uint16", argv[1]); return; }
+  if (!MathUtil_ParseU16(argv[1], &value)) { InvalidValue("uint16", argv[1]); return; }
   SetOdr(value);
 }
 
@@ -229,8 +153,8 @@ static void Cmd_ratio(const Command_t* self) {
   }
   if (argc != 3) { InvalidUsage(self->usage); return; }
   uint16_t spr, epr;
-  if (!StrToU16(argv[1], &spr) || spr == 0) { InvalidValue("uint16 > 0", argv[1]); return; }
-  if (!StrToU16(argv[2], &epr) || epr == 0) { InvalidValue("uint16 > 0", argv[2]); return; }
+  if (!MathUtil_ParseU16(argv[1], &spr) || spr == 0) { InvalidValue("uint16 > 0", argv[1]); return; }
+  if (!MathUtil_ParseU16(argv[2], &epr) || epr == 0) { InvalidValue("uint16 > 0", argv[2]); return; }
   SetRatio(spr, epr);
 }
 
@@ -241,7 +165,7 @@ static void Cmd_kp(const Command_t* self) {
   }
   if (argc != 2) { InvalidUsage(self->usage); return; }
   q12_t value;
-  if (!StrToDecimalQ12(argv[1], &value)) { InvalidValue("float", argv[1]); return; }
+  if (!MathUtil_ParseQ12(argv[1], &value)) { InvalidValue("float", argv[1]); return; }
   SetKp(value);
 }
 
@@ -252,7 +176,7 @@ static void Cmd_kff(const Command_t* self) {
   }
   if (argc != 2) { InvalidUsage(self->usage); return; }
   q12_t value;
-  if (!StrToDecimalQ12(argv[1], &value)) { InvalidValue("float", argv[1]); return; }
+  if (!MathUtil_ParseQ12(argv[1], &value)) { InvalidValue("float", argv[1]); return; }
   SetKff(value);
 }
 
@@ -263,7 +187,7 @@ static void Cmd_blank(const Command_t* self) {
   }
   if (argc != 2) { InvalidUsage(self->usage); return; }
   q12_t value;
-  if (!StrToDecimalQ12(argv[1], &value)) { InvalidValue("float", argv[1]); return; }
+  if (!MathUtil_ParseQ12(argv[1], &value)) { InvalidValue("float", argv[1]); return; }
   SetStepBlanking(value);
 }
 
