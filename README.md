@@ -11,7 +11,7 @@ It monitors standard stepper controller signals (**Step/PUL**, **Direction/DIR**
 * **Direct DMA-to-GPIO Quadrature Generation:**
   * Uses **TIM3** as a dynamic pacing heartbeat triggering **DMA1 Channel 3** to push atomic bitmasks directly into `GPIOB->BSRR`.
   * Eliminates phase flip errors, toggle-mode polarity memory issues, and glitch transitions across sudden direction changes.
-  * Supports quadrature streaming rates up to 200 kHz sustained (50 kHz input step pulse rate at 4 counts/step ratio).
+  * Supports quadrature streaming rates up to 200 kHz sustained as a target benchmark (50 kHz input step pulse rate at 4 counts/step ratio), with a hard-coded firmware ceiling of 300 kHz.
 * **Zero-Float Real-Time Architecture:**
   * 100% fixed-point integer math ($Q12$ and $Q16$ types), eliminating all IEEE-754 software emulation library routines (`__aeabi_f*`, `__aeabi_d*`).
   * Reclaimed 3,972 bytes of Flash space and eliminated unbounded soft-float latency in critical motion paths.
@@ -467,7 +467,15 @@ With a default ratio of 4 counts/step (1000 SPR / 4000 CPR) and a chunk size of 
 | 40.00 kHz | 160.00 kHz | 100.00 µs | 50.8% | Nominal load |
 | **50.00 kHz** | **200.00 kHz** | **80.00 µs** | **63.5%** | **Target benchmark (sustained operation)** |
 | 60.00 kHz | 240.00 kHz | 66.67 µs | 76.2% | High load |
-| **78.69 kHz** | **314.75 kHz** | **50.83 µs** | **100.0%** | **Maximum theoretical saturation limit** |
+| **75.00 kHz** | **300.00 kHz** | **53.33 µs** | **95.3%** | **Hard-coded firmware limit (pacing clamp)** |
+| 78.69 kHz | 314.75 kHz | 50.83 µs | 100.0% | Theoretical saturation limit (unreachable) |
+
+#### Firmware Pacing Limit & Underrun Protection
+
+In `Quadrature_CalcTimerPacing` (`Core/Src/quadrature.c`), timer reload ticks are clamped to a minimum of 160 (`ticks >= 160` at 48 MHz), enforcing a hard-coded maximum output count rate of **300 kHz** (75 kHz input step pulse rate at 4 counts/step). This ceiling prevents the pacing timer from driving the system into CPU saturation ($314.75\text{ kHz}$ at the nominal $50.83\ \mu\mathrm{s}$ ISR execution time):
+* **DMA Underrun Prevention:** With double-buffered DMA transmitting 16 counts per chunk, any output rate exceeding 314.75 kHz would exhaust the active chunk buffer faster than the CPU can compute the next chunk ($< 50.83\ \mu\mathrm{s}$). This would force the DMA controller to transmit stale or partially written memory, corrupting output phase states and causing lost counts.
+* **Jitter & Bus Contention Headroom:** At 300 kHz, each chunk takes $53.33\ \mu\mathrm{s}$, preserving a $2.50\ \mu\mathrm{s}$ (120 CPU cycles) safety margin (95.3% peak CPU load). This margin absorbs cycle-by-cycle AHB bus arbitration contention between DMA transfers and Cortex-M0 instruction fetches, as well as interrupt entry latency.
+* **Background Task Responsiveness:** Capping output pacing at 300 kHz guarantees that the main loop and USB interrupts retain sufficient CPU time to service USB CDC commands (`pvt`, `pos`, `r`, `save`), periodic position reports (`odr`), and LED state machine updates without USB packet drops or serial timeouts.
 
 ### Firmware Memory Utilization
 
