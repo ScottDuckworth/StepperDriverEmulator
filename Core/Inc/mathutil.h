@@ -23,6 +23,34 @@ typedef struct {
 } q16_t;
 
 /*
+ * Compile-time Q12 / Q16 ratio and integer macros.
+ * Computes scaled fixed-point constants at compile time with symmetric round-to-nearest.
+ * Using int64_t avoids 32-bit overflow during compile-time constant evaluation.
+ */
+#define Q12_RAW_RATIO(n, d) \
+  ((int32_t)(((int64_t)(n) * 4096LL + ((n) >= 0 ? (int64_t)(d)/2 : -(int64_t)(d)/2)) / (d)))
+
+#define Q16_RAW_RATIO(n, d) \
+  ((int32_t)(((int64_t)(n) * 65536LL + ((n) >= 0 ? (int64_t)(d)/2 : -(int64_t)(d)/2)) / (d)))
+
+#define Q12_RAW_INT(n) ((int32_t)((int64_t)(n) * 4096LL))
+#define Q16_RAW_INT(n) ((int32_t)((int64_t)(n) * 65536LL))
+
+/* Braced initializers for static and aggregate struct initialization */
+#define Q12_INIT_RATIO(n, d) { .raw = Q12_RAW_RATIO(n, d) }
+#define Q16_INIT_RATIO(n, d) { .raw = Q16_RAW_RATIO(n, d) }
+#define Q12_INIT_INT(n)      { .raw = Q12_RAW_INT(n) }
+#define Q16_INIT_INT(n)      { .raw = Q16_RAW_INT(n) }
+
+/* Strongly typed compound-literal constructors for expressions and assignments */
+#define Q12_RATIO(n, d) ((q12_t) Q12_INIT_RATIO(n, d))
+#define Q16_RATIO(n, d) ((q16_t) Q16_INIT_RATIO(n, d))
+
+/* Convenience constructors for whole integers */
+#define Q12_INT(n)      ((q12_t) Q12_INIT_INT(n))
+#define Q16_INT(n)      ((q16_t) Q16_INIT_INT(n))
+
+/*
  * MathUtil_GCD:
  * Computes the Greatest Common Divisor using the Euclidean algorithm.
  * Handles zero values gracefully (GCD(0, x) = x, GCD(0, 0) = 0).

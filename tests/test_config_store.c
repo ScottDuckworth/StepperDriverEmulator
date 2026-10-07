@@ -81,9 +81,9 @@ void test_save_and_load_roundtrip(void) {
   original_cfg.tcurve_table[3] = 400;
   original_cfg.tcurve_table[4] = 200;
   original_cfg.stall_threshold = 2000;
-  original_cfg.kp = (q12_t){ .raw = 1024 };
-  original_cfg.kff = (q12_t){ .raw = 3891 };
-  original_cfg.kfree = (q12_t){ .raw = 33 };
+  original_cfg.kp = Q12_RATIO(1, 4);
+  original_cfg.kff = Q12_RATIO(95, 100);
+  original_cfg.kfree = Q12_RATIO(8, 1000);
   strcpy(original_cfg.name, "CustomAxis");
 
   bool save_ok = ConfigStore_Save(&mock_flash_driver, MOCK_PAGE_ADDR, &original_cfg);
@@ -221,9 +221,9 @@ void test_null_safety(void) {
 
 void test_cached_fixed_point_refresh(void) {
   EmulatorConfig_t cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
-  cfg.persistent.kp = (q12_t){ .raw = 819 };
-  cfg.persistent.kff = (q12_t){ .raw = 6144 };
-  cfg.persistent.kfree = (q12_t){ .raw = 41 };
+  cfg.persistent.kp = Q12_RATIO(2, 10);
+  cfg.persistent.kff = Q12_RATIO(3, 2);
+  cfg.persistent.kfree = Q12_RATIO(1, 100);
   cfg.persistent.ratio_spr = 200;
   cfg.persistent.ratio_epr = 1000; // 5 counts per step
   cfg.persistent.tcurve_delta_v = 500;

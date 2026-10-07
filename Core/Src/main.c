@@ -71,7 +71,7 @@ static PositionCounters_t position;
 static volatile uint32_t step_period_buf[STEP_BUF_SIZE];
 static uint16_t step_buf_tail = 0;
 static uint32_t blanking_accum = 168; // Primed for standstill
-static q12_t step_blank_us = { .raw = 14336 }; // Default 3.5 us blanking (3.5 * 4096 = 14336)
+static q12_t step_blank_us = Q12_INIT_RATIO(7, 2); // Default 3.5 us blanking (7/2 us)
 static uint32_t min_blanking_ticks = 168; // 3.5 us @ 48 MHz
 static volatile uint32_t step_period_cnt = 0;
 static volatile int32_t load_tension = 0;
@@ -437,19 +437,19 @@ q12_t GetStepBlanking(void) {
 }
 
 void SetStepBlanking(q12_t blank_us) {
-  if (blank_us.raw < 2048) blank_us.raw = 2048;       // 0.5 us min
-  if (blank_us.raw > 4096000) blank_us.raw = 4096000; // 1000.0 us max
+  if (blank_us.raw < Q12_RAW_RATIO(1, 2)) blank_us.raw = Q12_RAW_RATIO(1, 2);       // 0.5 us min
+  if (blank_us.raw > Q12_RAW_INT(1000)) blank_us.raw = Q12_RAW_INT(1000);           // 1000.0 us max
   step_blank_us = blank_us;
   min_blanking_ticks = (uint32_t)((blank_us.raw * 3) >> 8);
   if (min_blanking_ticks < 24) min_blanking_ticks = 24;
 
   // Adapt hardware timer filter IC1F/CKD to match blanking window
-  if (blank_us.raw <= 20480) { // <= 5.0 us
+  if (blank_us.raw <= Q12_RAW_INT(5)) { // <= 5.0 us
     TIM2->CR1 &= ~TIM_CR1_CKD; // CKD = 0 (div 1)
     TIM2->CCMR1 = (TIM2->CCMR1 & ~(TIM_CCMR1_IC1F | TIM_CCMR1_IC2F))
                 | (0b1000 << TIM_CCMR1_IC1F_Pos)  // 1.0 us filter (fDTS/8, N=6)
                 | (0b1000 << TIM_CCMR1_IC2F_Pos);
-  } else if (blank_us.raw <= 61440) { // <= 15.0 us
+  } else if (blank_us.raw <= Q12_RAW_INT(15)) { // <= 15.0 us
     TIM2->CR1 &= ~TIM_CR1_CKD; // CKD = 0 (div 1)
     TIM2->CCMR1 = (TIM2->CCMR1 & ~(TIM_CCMR1_IC1F | TIM_CCMR1_IC2F))
                 | (0b1111 << TIM_CCMR1_IC1F_Pos)  // 5.33 us filter (fDTS/32, N=8)

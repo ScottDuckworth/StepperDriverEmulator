@@ -63,9 +63,9 @@ typedef struct {
     657, 629, 600, 571, 543, 514, 486, 457, 429, 400, 371, 343, 314, 286, 257, 229, 200 \
   }, \
   .stall_threshold = 4000, \
-  .kp = { .raw = 410 }, \
-  .kff = { .raw = 4096 }, \
-  .kfree = { .raw = 20 }, \
+  .kp = Q12_INIT_RATIO(1, 10), \
+  .kff = Q12_INIT_INT(1), \
+  .kfree = Q12_INIT_RATIO(1, 200), \
 }
 
 #define DEFAULT_EMULATOR_CONFIG { \

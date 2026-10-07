@@ -319,6 +319,37 @@ void test_mathutil_scale_q12_and_q16(void) {
   TEST_ASSERT_EQUAL_INT32(-524, MathUtil_ScaleQ16(q16, -2).raw);
 }
 
+void test_mathutil_macros(void) {
+  // Q12 ratio and int macros
+  TEST_ASSERT_EQUAL_INT32(410, Q12_RAW_RATIO(1, 10)); // 0.1 rounds to 410
+  TEST_ASSERT_EQUAL_INT32(4096, Q12_RAW_RATIO(1, 1));
+  TEST_ASSERT_EQUAL_INT32(2048, Q12_RAW_RATIO(1, 2));
+  TEST_ASSERT_EQUAL_INT32(14336, Q12_RAW_RATIO(7, 2)); // 3.5
+  TEST_ASSERT_EQUAL_INT32(-2048, Q12_RAW_RATIO(-1, 2));
+  TEST_ASSERT_EQUAL_INT32(-410, Q12_RAW_RATIO(-1, 10));
+  TEST_ASSERT_EQUAL_INT32(4096, Q12_RAW_INT(1));
+  TEST_ASSERT_EQUAL_INT32(20480, Q12_RAW_INT(5));
+  TEST_ASSERT_EQUAL_INT32(4096000, Q12_RAW_INT(1000));
+
+  q12_t q12_ratio = Q12_RATIO(1, 10);
+  TEST_ASSERT_EQUAL_INT32(410, q12_ratio.raw);
+  q12_t q12_int = Q12_INT(5);
+  TEST_ASSERT_EQUAL_INT32(20480, q12_int.raw);
+
+  // Q16 ratio and int macros
+  TEST_ASSERT_EQUAL_INT32(65536, Q16_RAW_RATIO(1, 1));
+  TEST_ASSERT_EQUAL_INT32(32768, Q16_RAW_RATIO(1, 2));
+  TEST_ASSERT_EQUAL_INT32(16384, Q16_RAW_RATIO(1, 4));
+  TEST_ASSERT_EQUAL_INT32(-32768, Q16_RAW_RATIO(-1, 2));
+  TEST_ASSERT_EQUAL_INT32(65536, Q16_RAW_INT(1));
+  TEST_ASSERT_EQUAL_INT32(131072, Q16_RAW_INT(2));
+
+  q16_t q16_ratio = Q16_RATIO(1, 4);
+  TEST_ASSERT_EQUAL_INT32(16384, q16_ratio.raw);
+  q16_t q16_int = Q16_INT(2);
+  TEST_ASSERT_EQUAL_INT32(131072, q16_int.raw);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_mathutil_gcd);
@@ -332,6 +363,7 @@ int main(void) {
   RUN_TEST(test_mathutil_mul_q12_and_q16);
   RUN_TEST(test_mathutil_mul_q16_round);
   RUN_TEST(test_mathutil_scale_q12_and_q16);
+  RUN_TEST(test_mathutil_macros);
   RUN_TEST(test_mathutil_clamp_i32);
   RUN_TEST(test_mathutil_abs);
   return UNITY_END();

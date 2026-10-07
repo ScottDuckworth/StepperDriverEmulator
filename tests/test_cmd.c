@@ -239,7 +239,7 @@ void ReportPvt(void) {
   WriteString(buf);
 }
 
-static q12_t mock_blank = { .raw = 14336 };
+static q12_t mock_blank = Q12_INIT_RATIO(7, 2);
 
 q12_t GetStepBlanking(void) { return mock_blank; }
 void SetStepBlanking(q12_t blank_us) { mock_blank = blank_us; ReportStepBlanking(); }
@@ -273,7 +273,7 @@ void setUp(void) {
   mock_blink = false;
   mock_stall_trip = false;
   mock_save_success = true;
-  mock_blank = (q12_t){ .raw = 14336 };
+  mock_blank = Q12_RATIO(7, 2);
   clear_output();
 }
 
