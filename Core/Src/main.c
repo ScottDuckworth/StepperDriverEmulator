@@ -346,28 +346,27 @@ void ReportRatio(void) {
   WriteData((uint8_t*) buf, size);
 }
 
-void GetTorqueCurve(int32_t* t0, uint32_t* v_knee, uint32_t* v_max, int32_t* t_min) {
-  if (t0) *t0 = config.persistent.torque_t0;
-  if (v_knee) *v_knee = config.persistent.torque_v_knee;
-  if (v_max) *v_max = config.persistent.torque_v_max;
-  if (t_min) *t_min = config.persistent.torque_t_min;
-}
-
-void SetTorqueCurve(int32_t t0, uint32_t v_knee, uint32_t v_max, int32_t t_min) {
-  if (v_max <= v_knee) v_max = v_knee + 1;
-  config.persistent.torque_t0 = t0;
-  config.persistent.torque_v_knee = v_knee;
-  config.persistent.torque_v_max = v_max;
-  config.persistent.torque_t_min = t_min;
+void SetTorqueLUT(uint32_t delta_v, uint8_t count, const int32_t* table) {
+  if (delta_v == 0 || count < 2 || count > TCURVE_MAX_POINTS || !table) return;
+  config.persistent.tcurve_delta_v = delta_v;
+  config.persistent.tcurve_point_count = count;
+  memcpy(config.persistent.tcurve_table, table, count * sizeof(int32_t));
   ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
-  ReportTorqueCurve();
+  ReportTorqueLUT();
+  MaybeStartMotion();
 }
 
-void ReportTorqueCurve(void) {
-  char buf[48];
-  int size = snprintf(buf, sizeof(buf), "tcurve %ld %lu %lu %ld\r\n",
-                      config.persistent.torque_t0, config.persistent.torque_v_knee, config.persistent.torque_v_max, config.persistent.torque_t_min);
-  WriteData((uint8_t*) buf, size);
+void ReportTorqueLUT(void) {
+  WriteString("tlut ");
+  char num_buf[16];
+  MathUtil_FormatU32(num_buf, sizeof(num_buf), config.persistent.tcurve_delta_v);
+  WriteString(num_buf);
+  for (uint8_t i = 0; i < config.persistent.tcurve_point_count; ++i) {
+    WriteString(" ");
+    MathUtil_FormatI32(num_buf, sizeof(num_buf), config.persistent.tcurve_table[i]);
+    WriteString(num_buf);
+  }
+  WriteString("\r\n");
 }
 
 uint32_t GetStallThreshold(void) {
@@ -515,9 +514,9 @@ void GetInstantaneousMotionState(int32_t* out_velocity_hz, int32_t* out_motor_to
   if (is_free) {
     t_motor = 0;
   } else if (!active) {
-    t_motor = config.persistent.torque_t0;
+    t_motor = config.persistent.tcurve_table[0];
   } else {
-    uint32_t speed = (uint32_t) MathUtil_AbsI32(vel);
+    int32_t speed = MathUtil_AbsI32(vel);
     t_motor = Motion_CalcMotorTorque(&config, speed);
   }
 

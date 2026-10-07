@@ -3,44 +3,35 @@
 #include "mathutil.h"
 #include <stdlib.h>
 
-int32_t Motion_CalcMotorTorque(const EmulatorConfig_t* cfg, uint32_t speed_counts_sec) {
+int32_t Motion_CalcMotorTorque(const EmulatorConfig_t* cfg, int32_t speed_counts_sec) {
   if (!cfg) return 0;
-  if (speed_counts_sec <= cfg->persistent.torque_v_knee) {
-    return cfg->persistent.torque_t0;
+  if (speed_counts_sec <= 0) {
+    return cfg->persistent.tcurve_table[0];
   }
-  if (speed_counts_sec >= cfg->persistent.torque_v_max || cfg->persistent.torque_v_max <= cfg->persistent.torque_v_knee) {
-    return cfg->persistent.torque_t_min;
+  uint8_t count = cfg->persistent.tcurve_point_count;
+  if (count < 2) {
+    return cfg->persistent.tcurve_table[0];
   }
-  uint32_t delta_v = speed_counts_sec - cfg->persistent.torque_v_knee;
-  uint32_t derate = (delta_v * (uint32_t) cfg->cached.torque_derate_slope.raw + 32768U) >> 16;
-  return cfg->persistent.torque_t0 - (int32_t) derate;
-}
+  if (speed_counts_sec >= cfg->cached.tcurve_max_v) {
+    return cfg->persistent.tcurve_table[count - 1];
+  }
 
-int32_t Motion_CalcNetTorque(int32_t t_motor, int dir, int32_t load_tension) {
-  (void) dir;
-  int32_t abs_tension = MathUtil_AbsI32(load_tension);
-  return t_motor - abs_tension;
-}
-
-int32_t Motion_CalcFreewheelVelocity(const EmulatorConfig_t* cfg, int32_t load_tension) {
-  if (!cfg) return 0;
-  int32_t v_free = MathUtil_MulQ12(load_tension, cfg->persistent.kfree);
-  int32_t v_max = (int32_t) cfg->persistent.torque_v_max;
-  return MathUtil_ClampI32(v_free, -v_max, v_max);
-}
-
-int32_t Motion_CalcSlipVelocity(const EmulatorConfig_t* cfg, int32_t load_tension, int32_t t_motor) {
-  if (!cfg) return 0;
-  int32_t abs_tension = MathUtil_AbsI32(load_tension);
-  if (abs_tension <= t_motor) {
-    return 0;
+  q16_t inv_delta = cfg->cached.inv_tcurve_delta_v;
+  uint32_t idx = (uint32_t) MathUtil_MulQ16(speed_counts_sec, inv_delta);
+  if (idx >= (uint32_t)(count - 1)) {
+    idx = count - 2;
   }
-  int32_t v_slip = MathUtil_MulQ12(abs_tension - t_motor, cfg->persistent.kfree);
-  int32_t v_max = (int32_t) cfg->persistent.torque_v_max;
-  if (v_slip > v_max) {
-    v_slip = v_max;
-  }
-  return v_slip;
+  uint32_t delta_v = cfg->persistent.tcurve_delta_v;
+  uint32_t v_base = idx * delta_v;
+  uint32_t rem = (speed_counts_sec > (int32_t) v_base) ? (uint32_t)(speed_counts_sec - v_base) : 0U;
+
+  int32_t t0 = cfg->persistent.tcurve_table[idx];
+  int32_t t1 = cfg->persistent.tcurve_table[idx + 1];
+  int32_t delta_t = t1 - t0;
+
+  q16_t frac = MathUtil_ScaleQ16(inv_delta, (int32_t) rem);
+  int32_t derate = MathUtil_MulQ16_Round(delta_t, frac);
+  return t0 + derate;
 }
 
 bool Motion_ShouldStart(const EmulatorConfig_t* cfg, const Motion_StartRequest_t* req) {
@@ -49,7 +40,7 @@ bool Motion_ShouldStart(const EmulatorConfig_t* cfg, const Motion_StartRequest_t
     return (req->load_tension != 0);
   }
   int32_t abs_tension = MathUtil_AbsI32(req->load_tension);
-  return (req->commanded_pos != req->encoder_pos) || (req->step_dcnt != 0) || (abs_tension > cfg->persistent.torque_t0);
+  return (req->commanded_pos != req->encoder_pos) || (req->step_dcnt != 0) || (abs_tension > cfg->persistent.tcurve_table[0]);
 }
 
 bool Motion_PrepareStart(const EmulatorConfig_t* cfg,
@@ -228,7 +219,7 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
     dir = (error > 0) ? 1 : -1;
   }
 
-  uint32_t speed_hz = (uint32_t) MathUtil_AbsI32(target_velocity);
+  int32_t speed_hz = MathUtil_AbsI32(target_velocity);
   int32_t t_motor = Motion_CalcMotorTorque(cfg, speed_hz);
   int32_t t_net = Motion_CalcNetTorque(t_motor, dir, req->load_tension);
   uint32_t abs_error = (uint32_t) MathUtil_AbsI32(error);
@@ -338,5 +329,5 @@ bool Motion_ShouldStop(const EmulatorConfig_t* cfg, const Motion_StopRequest_t* 
   return (req->commanded_pos == req->encoder_pos &&
           req->encoder_pos == req->planned_encoder_pos &&
           req->step_dcnt == 0 &&
-          abs_tension <= cfg->persistent.torque_t0);
+          abs_tension <= cfg->persistent.tcurve_table[0]);
 }

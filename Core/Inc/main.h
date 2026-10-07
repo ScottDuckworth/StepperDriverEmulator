@@ -132,9 +132,8 @@ int32_t GetTension(void);
 void SetTension(int32_t tension);
 void ReportTension(void);
 
-void GetTorqueCurve(int32_t* t0, uint32_t* v_knee, uint32_t* v_max, int32_t* t_min);
-void SetTorqueCurve(int32_t t0, uint32_t v_knee, uint32_t v_max, int32_t t_min);
-void ReportTorqueCurve(void);
+void SetTorqueLUT(uint32_t delta_v, uint8_t count, const int32_t* table);
+void ReportTorqueLUT(void);
 
 uint32_t GetStallThreshold(void);
 void SetStallThreshold(uint32_t threshold);

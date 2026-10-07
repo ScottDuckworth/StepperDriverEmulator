@@ -13,7 +13,7 @@ extern "C" {
 #define CONFIG_FLASH_PAGE_ADDR  0x08007C00U  /* Page 31 start address */
 #define CONFIG_FLASH_PAGE_SIZE  1024U        /* 1 KB per page */
 #define CONFIG_STORE_MAGIC      0x53544550U  /* "STEP" ASCII in little-endian */
-#define CONFIG_STORE_VERSION    4U
+#define CONFIG_STORE_VERSION    5U
 
 #pragma pack(push, 1)
 typedef struct {

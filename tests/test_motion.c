@@ -20,6 +20,7 @@ void tearDown(void) {}
 
 void test_torque_curve_standstill(void) {
   TEST_ASSERT_EQUAL_INT32(1000, Motion_CalcMotorTorque(&config, 0));
+  TEST_ASSERT_EQUAL_INT32(1000, Motion_CalcMotorTorque(&config, -500));
 }
 
 void test_torque_curve_below_knee(void) {
@@ -45,14 +46,45 @@ void test_torque_curve_above_max(void) {
   TEST_ASSERT_EQUAL_INT32(200, Motion_CalcMotorTorque(&config, 50000));
 }
 
-void test_torque_curve_degenerate_vmax_less_than_knee(void) {
-  config.persistent.torque_v_knee = 3000;
-  config.persistent.torque_v_max = 2000; // Inverted / degenerate
-  ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
-  // Below knee: should still return t0
-  TEST_ASSERT_EQUAL_INT32(1000, Motion_CalcMotorTorque(&config, 1000));
-  // At or above knee: should return t_min without division by zero
-  TEST_ASSERT_EQUAL_INT32(200, Motion_CalcMotorTorque(&config, 3500));
+void test_torque_curve_lut_resonance_dip(void) {
+  EmulatorConfig_t custom_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
+  custom_cfg.persistent.tcurve_delta_v = 100;
+  custom_cfg.persistent.tcurve_point_count = 5;
+  custom_cfg.persistent.tcurve_table[0] = 1000;
+  custom_cfg.persistent.tcurve_table[1] = 800;
+  custom_cfg.persistent.tcurve_table[2] = 500; // dip
+  custom_cfg.persistent.tcurve_table[3] = 600; // recovery
+  custom_cfg.persistent.tcurve_table[4] = 200;
+  ConfigStore_ComputeCachedValues(&custom_cfg.persistent, &custom_cfg.cached);
+
+  TEST_ASSERT_EQUAL_INT32(1000, Motion_CalcMotorTorque(&custom_cfg, 0));
+  TEST_ASSERT_EQUAL_INT32(800, Motion_CalcMotorTorque(&custom_cfg, 100));
+  TEST_ASSERT_EQUAL_INT32(650, Motion_CalcMotorTorque(&custom_cfg, 150)); // midpoint between 800 and 500
+  TEST_ASSERT_EQUAL_INT32(500, Motion_CalcMotorTorque(&custom_cfg, 200));
+  TEST_ASSERT_EQUAL_INT32(550, Motion_CalcMotorTorque(&custom_cfg, 250)); // midpoint between 500 and 600
+  TEST_ASSERT_EQUAL_INT32(600, Motion_CalcMotorTorque(&custom_cfg, 300));
+  TEST_ASSERT_EQUAL_INT32(200, Motion_CalcMotorTorque(&custom_cfg, 400));
+  TEST_ASSERT_EQUAL_INT32(200, Motion_CalcMotorTorque(&custom_cfg, 600)); // clamped beyond max_v
+}
+
+void test_torque_curve_arbitrary_delta_v(void) {
+  EmulatorConfig_t custom_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
+  custom_cfg.persistent.tcurve_delta_v = 170;
+  custom_cfg.persistent.tcurve_point_count = 6;
+  custom_cfg.persistent.tcurve_table[0] = 1000;
+  custom_cfg.persistent.tcurve_table[1] = 900;
+  custom_cfg.persistent.tcurve_table[2] = 800;
+  custom_cfg.persistent.tcurve_table[3] = 700;
+  custom_cfg.persistent.tcurve_table[4] = 600;
+  custom_cfg.persistent.tcurve_table[5] = 500;
+  ConfigStore_ComputeCachedValues(&custom_cfg.persistent, &custom_cfg.cached);
+
+  TEST_ASSERT_EQUAL_INT32(1000, Motion_CalcMotorTorque(&custom_cfg, 0));
+  TEST_ASSERT_EQUAL_INT32(900, Motion_CalcMotorTorque(&custom_cfg, 170));
+  TEST_ASSERT_EQUAL_INT32(800, Motion_CalcMotorTorque(&custom_cfg, 340));
+  TEST_ASSERT_EQUAL_INT32(501, Motion_CalcMotorTorque(&custom_cfg, 849));
+  TEST_ASSERT_EQUAL_INT32(500, Motion_CalcMotorTorque(&custom_cfg, 850));
+  TEST_ASSERT_EQUAL_INT32(500, Motion_CalcMotorTorque(&custom_cfg, 1000));
 }
 
 void test_torque_curve_null_config(void) {
@@ -115,7 +147,8 @@ void test_freewheel_velocity_proportional(void) {
 }
 
 void test_freewheel_velocity_clamping(void) {
-  config.persistent.torque_v_max = 8000;
+  config.persistent.tcurve_delta_v = 250;
+  config.persistent.tcurve_point_count = 33;
   config.persistent.kfree = (q12_t){ .raw = 20 };
   ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
   // Large tension would produce 50,000 counts/sec -> clamped to +8000
@@ -124,34 +157,36 @@ void test_freewheel_velocity_clamping(void) {
 }
 
 void test_slip_velocity_holding_torque(void) {
-  config.persistent.torque_t0 = 1000;
+  config.persistent.tcurve_table[0] = 1000;
   config.persistent.kfree = (q12_t){ .raw = 20 };
   ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
 
   // Below holding torque shelf -> rotor does not slip (returns 0)
-  TEST_ASSERT_EQUAL_INT32(0, Motion_CalcSlipVelocity(&config, 500, config.persistent.torque_t0));
-  TEST_ASSERT_EQUAL_INT32(0, Motion_CalcSlipVelocity(&config, -500, config.persistent.torque_t0));
-  TEST_ASSERT_EQUAL_INT32(0, Motion_CalcSlipVelocity(&config, 1000, config.persistent.torque_t0));
-  TEST_ASSERT_EQUAL_INT32(0, Motion_CalcSlipVelocity(&config, -1000, config.persistent.torque_t0));
+  TEST_ASSERT_EQUAL_INT32(0, Motion_CalcSlipVelocity(&config, 500, config.persistent.tcurve_table[0]));
+  TEST_ASSERT_EQUAL_INT32(0, Motion_CalcSlipVelocity(&config, -500, config.persistent.tcurve_table[0]));
+  TEST_ASSERT_EQUAL_INT32(0, Motion_CalcSlipVelocity(&config, 1000, config.persistent.tcurve_table[0]));
+  TEST_ASSERT_EQUAL_INT32(0, Motion_CalcSlipVelocity(&config, -1000, config.persistent.tcurve_table[0]));
 }
 
 void test_slip_velocity_exceeding_holding_torque(void) {
-  config.persistent.torque_t0 = 1000;
-  config.persistent.torque_v_max = 8000;
+  config.persistent.tcurve_table[0] = 1000;
+  config.persistent.tcurve_delta_v = 250;
+  config.persistent.tcurve_point_count = 33;
   config.persistent.kfree = (q12_t){ .raw = 20 };
   ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
 
   // Tension 3000 exceeds t0 (1000) by 2000 -> slip = 2000 * 0.005 = 10 counts/sec
-  TEST_ASSERT_INT32_WITHIN(1, 10, Motion_CalcSlipVelocity(&config, 3000, config.persistent.torque_t0));
-  TEST_ASSERT_INT32_WITHIN(1, 10, Motion_CalcSlipVelocity(&config, -3000, config.persistent.torque_t0));
+  TEST_ASSERT_INT32_WITHIN(1, 10, Motion_CalcSlipVelocity(&config, 3000, config.persistent.tcurve_table[0]));
+  TEST_ASSERT_INT32_WITHIN(1, 10, Motion_CalcSlipVelocity(&config, -3000, config.persistent.tcurve_table[0]));
 
   // Huge tension -> clamped to v_max (8000)
-  TEST_ASSERT_EQUAL_INT32(8000, Motion_CalcSlipVelocity(&config, 5000000, config.persistent.torque_t0));
+  TEST_ASSERT_EQUAL_INT32(8000, Motion_CalcSlipVelocity(&config, 5000000, config.persistent.tcurve_table[0]));
 }
 
 void test_slip_velocity_at_dynamic_torque(void) {
   config.persistent.kfree = (q12_t){ .raw = 20 };
-  config.persistent.torque_v_max = 8000;
+  config.persistent.tcurve_delta_v = 250;
+  config.persistent.tcurve_point_count = 33;
   ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
 
   // At high speed where motor torque derates to 400:
@@ -866,7 +901,7 @@ void test_motion_calc_step_timeout_ms(void) {
 
 void test_motion_should_start(void) {
   EmulatorConfig_t test_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
-  test_cfg.persistent.torque_t0 = 1000;
+  test_cfg.persistent.tcurve_table[0] = 1000;
 
   Motion_StartRequest_t req = {
       .commanded_pos = 100,
@@ -921,7 +956,7 @@ void test_motion_should_start(void) {
 
 void test_motion_should_stop(void) {
   EmulatorConfig_t test_cfg = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
-  test_cfg.persistent.torque_t0 = 1000;
+  test_cfg.persistent.tcurve_table[0] = 1000;
 
   Motion_StopRequest_t req = {
       .commanded_pos = 100,
@@ -1090,7 +1125,8 @@ int main(void) {
   RUN_TEST(test_torque_curve_midpoint);
   RUN_TEST(test_torque_curve_at_max);
   RUN_TEST(test_torque_curve_above_max);
-  RUN_TEST(test_torque_curve_degenerate_vmax_less_than_knee);
+  RUN_TEST(test_torque_curve_lut_resonance_dip);
+  RUN_TEST(test_torque_curve_arbitrary_delta_v);
   RUN_TEST(test_torque_curve_null_config);
 
   /* Net Torque Margin Tests */

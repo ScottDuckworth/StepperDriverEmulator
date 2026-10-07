@@ -292,6 +292,33 @@ void test_mathutil_abs(void) {
   TEST_ASSERT_EQUAL_INT32(65536, MathUtil_AbsQ16((q16_t){ .raw = -65536 }).raw);
 }
 
+void test_mathutil_mul_q16_round(void) {
+  TEST_ASSERT_EQUAL_INT32(0, MathUtil_MulQ16_Round(0, MathUtil_FromRawQ16(32768)));
+  TEST_ASSERT_EQUAL_INT32(0, MathUtil_MulQ16_Round(1000, MathUtil_FromRawQ16(0)));
+  TEST_ASSERT_EQUAL_INT32(1000, MathUtil_MulQ16_Round(1000, MathUtil_FromRawQ16(65536)));
+  TEST_ASSERT_EQUAL_INT32(500, MathUtil_MulQ16_Round(1000, MathUtil_FromRawQ16(32768)));
+  TEST_ASSERT_EQUAL_INT32(-500, MathUtil_MulQ16_Round(-1000, MathUtil_FromRawQ16(32768)));
+  TEST_ASSERT_EQUAL_INT32(-1000, MathUtil_MulQ16_Round(-1000, MathUtil_FromRawQ16(65536)));
+  TEST_ASSERT_EQUAL_INT32(35000, MathUtil_MulQ16_Round(70000, MathUtil_FromRawQ16(32768)));
+  TEST_ASSERT_EQUAL_INT32(-35000, MathUtil_MulQ16_Round(-70000, MathUtil_FromRawQ16(32768)));
+  TEST_ASSERT_EQUAL_INT32(1, MathUtil_MulQ16_Round(1, MathUtil_FromRawQ16(32768))); // 0.5 rounds to 1
+  TEST_ASSERT_EQUAL_INT32(0, MathUtil_MulQ16_Round(1, MathUtil_FromRawQ16(32767))); // <0.5 rounds to 0
+}
+
+void test_mathutil_scale_q12_and_q16(void) {
+  // Q12 scaling
+  q12_t q12 = MathUtil_FromRawQ12(410);
+  TEST_ASSERT_EQUAL_INT32(410000, MathUtil_ScaleQ12(q12, 1000).raw);
+  TEST_ASSERT_EQUAL_INT32(0, MathUtil_ScaleQ12(q12, 0).raw);
+  TEST_ASSERT_EQUAL_INT32(-820, MathUtil_ScaleQ12(q12, -2).raw);
+
+  // Q16 scaling
+  q16_t q16 = MathUtil_FromRawQ16(262); // ~1/250 in Q16
+  TEST_ASSERT_EQUAL_INT32(0, MathUtil_ScaleQ16(q16, 0).raw);
+  TEST_ASSERT_EQUAL_INT32(26200, MathUtil_ScaleQ16(q16, 100).raw);
+  TEST_ASSERT_EQUAL_INT32(-524, MathUtil_ScaleQ16(q16, -2).raw);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_mathutil_gcd);
@@ -303,6 +330,8 @@ int main(void) {
   RUN_TEST(test_mathutil_format_q12_and_q16);
   RUN_TEST(test_mathutil_ratio_q12_and_q16);
   RUN_TEST(test_mathutil_mul_q12_and_q16);
+  RUN_TEST(test_mathutil_mul_q16_round);
+  RUN_TEST(test_mathutil_scale_q12_and_q16);
   RUN_TEST(test_mathutil_clamp_i32);
   RUN_TEST(test_mathutil_abs);
   return UNITY_END();

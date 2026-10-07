@@ -6,10 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_ARGC 6
+#define MAX_ARGC 36
 static int argc;
 static char* argv[MAX_ARGC];
-static char cmd_buffer[80];
+static char cmd_buffer[256];
 static uint16_t cmd_buffer_size;
 
 typedef struct Command {
@@ -59,19 +59,24 @@ static void Cmd_t(const Command_t* self) {
   SetTension(value);
 }
 
-static void Cmd_tcurve(const Command_t* self) {
+static void Cmd_tlut(const Command_t* self) {
   if (argc == 1) {
-    ReportTorqueCurve();
+    ReportTorqueLUT();
     return;
   }
-  if (argc != 5) { InvalidUsage(self->usage); return; }
-  int32_t t0, t_min;
-  uint32_t v_knee, v_max;
-  if (!MathUtil_ParseI32(argv[1], &t0)) { InvalidValue("int32", argv[1]); return; }
-  if (!MathUtil_ParseU32(argv[2], &v_knee)) { InvalidValue("uint32", argv[2]); return; }
-  if (!MathUtil_ParseU32(argv[3], &v_max)) { InvalidValue("uint32", argv[3]); return; }
-  if (!MathUtil_ParseI32(argv[4], &t_min)) { InvalidValue("int32", argv[4]); return; }
-  SetTorqueCurve(t0, v_knee, v_max, t_min);
+  if (argc < 4 || argc > 35) { InvalidUsage(self->usage); return; }
+  uint32_t delta_v;
+  if (!MathUtil_ParseU32(argv[1], &delta_v) || delta_v == 0) { InvalidValue("uint32", argv[1]); return; }
+
+  uint8_t count = (uint8_t)(argc - 2);
+  int32_t table[TCURVE_MAX_POINTS];
+  for (uint8_t i = 0; i < count; ++i) {
+    if (!MathUtil_ParseI32(argv[2 + i], &table[i])) {
+      InvalidValue("int32", argv[2 + i]);
+      return;
+    }
+  }
+  SetTorqueLUT(delta_v, count, table);
 }
 
 static void Cmd_stall(const Command_t* self) {
@@ -214,7 +219,7 @@ static void Cmd_r(const Command_t* self) {
   ReportLimit1();
   ReportLimit2();
   ReportTension();
-  ReportTorqueCurve();
+  ReportTorqueLUT();
   ReportStallThreshold();
   ReportKfree();
   ReportStallTrip();
@@ -241,7 +246,7 @@ static const Command_t commands[] = {
     {"lim1", "lim1 <uint8>", Cmd_lim1},
     {"lim2", "lim2 <uint8>", Cmd_lim2},
     {"t", "t [int32]", Cmd_t},
-    {"tcurve", "tcurve [T0] [V_knee] [V_max] [T_min]", Cmd_tcurve},
+    {"tlut", "tlut [delta_v] [T0] [T1] ... [TN]", Cmd_tlut},
     {"stall", "stall [uint32]", Cmd_stall},
     {"kfree", "kfree [float]", Cmd_kfree},
     {"blank", "blank [float]", Cmd_blank},

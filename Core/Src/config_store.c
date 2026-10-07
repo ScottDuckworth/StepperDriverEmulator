@@ -18,7 +18,8 @@ bool ConfigStore_Validate(const PersistentConfig_t* cfg) {
   if (!cfg) return false;
   if (cfg->ratio_spr == 0 || cfg->ratio_epr == 0) return false;
   if (cfg->kp.raw < 0 || cfg->kff.raw < 0 || cfg->kfree.raw < 0) return false;
-  if (cfg->torque_v_max < cfg->torque_v_knee) return false;
+  if (cfg->tcurve_delta_v == 0) return false;
+  if (cfg->tcurve_point_count < 2 || cfg->tcurve_point_count > TCURVE_MAX_POINTS) return false;
   if (memchr(cfg->name, '\0', sizeof(cfg->name)) == NULL) return false;
   return true;
 }
@@ -26,7 +27,7 @@ bool ConfigStore_Validate(const PersistentConfig_t* cfg) {
 void ConfigStore_ComputeCachedValues(const PersistentConfig_t* persistent, CachedConfig_t* cached) {
   if (!persistent || !cached) return;
 
-  cached->kp_velocity = MathUtil_FromRawQ12(persistent->kp.raw * 1000);
+  cached->kp_velocity = MathUtil_ScaleQ12(persistent->kp, 1000);
   cached->counts_per_step = MathUtil_RatioQ12(persistent->ratio_epr, persistent->ratio_spr);
   cached->inv_counts_per_step = MathUtil_RatioQ16(persistent->ratio_spr, persistent->ratio_epr);
 
@@ -47,23 +48,14 @@ void ConfigStore_ComputeCachedValues(const PersistentConfig_t* persistent, Cache
     cached->clock_counts_sec = 0; // Fallback to dynamic MathUtil_MulQ12 in Motion_PlanStep
   }
 
-  uint32_t span_v = (persistent->torque_v_max > persistent->torque_v_knee) ? (persistent->torque_v_max - persistent->torque_v_knee) : 0;
-  cached->inv_torque_span_v = (span_v > 0) ? MathUtil_FromRawQ16((int32_t)(65536U / span_v)) : MathUtil_FromRawQ16(0);
-
-  int32_t delta_t = persistent->torque_t0 - persistent->torque_t_min;
-  if (span_v > 0 && delta_t > 0) {
-    uint32_t dt = (uint32_t) delta_t;
-    uint32_t slope;
-    if (dt <= 65535U) {
-      slope = (dt * 65536U + (span_v / 2)) / span_v;
-    } else {
-      uint32_t int_part = dt / span_v;
-      uint32_t rem = dt % span_v;
-      slope = (int_part << 16) + (rem * 65536U + (span_v / 2)) / span_v;
-    }
-    cached->torque_derate_slope = MathUtil_FromRawQ16((int32_t) slope);
+  cached->tcurve_max_v = (persistent->tcurve_point_count > 0)
+                             ? ((uint32_t)(persistent->tcurve_point_count - 1) * persistent->tcurve_delta_v)
+                             : 0;
+  if (persistent->tcurve_delta_v > 0) {
+    uint32_t inv = 65536U / persistent->tcurve_delta_v;
+    cached->inv_tcurve_delta_v = MathUtil_FromRawQ16((int32_t) inv);
   } else {
-    cached->torque_derate_slope = MathUtil_FromRawQ16(0);
+    cached->inv_tcurve_delta_v = MathUtil_FromRawQ16(0);
   }
 }
 

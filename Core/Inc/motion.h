@@ -4,16 +4,41 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "emulator_config.h"
+#include "mathutil.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* Motor pull-out torque and dynamic load calculations */
-int32_t Motion_CalcMotorTorque(const EmulatorConfig_t* cfg, uint32_t speed_counts_sec);
-int32_t Motion_CalcNetTorque(int32_t t_motor, int dir, int32_t load_tension);
-int32_t Motion_CalcFreewheelVelocity(const EmulatorConfig_t* cfg, int32_t load_tension);
-int32_t Motion_CalcSlipVelocity(const EmulatorConfig_t* cfg, int32_t load_tension, int32_t t_motor);
+int32_t Motion_CalcMotorTorque(const EmulatorConfig_t* cfg, int32_t speed_counts_sec);
+
+static inline int32_t Motion_CalcNetTorque(int32_t t_motor, int dir, int32_t load_tension) {
+  (void) dir;
+  int32_t abs_tension = MathUtil_AbsI32(load_tension);
+  return t_motor - abs_tension;
+}
+
+static inline int32_t Motion_CalcFreewheelVelocity(const EmulatorConfig_t* cfg, int32_t load_tension) {
+  if (!cfg) return 0;
+  int32_t v_free = MathUtil_MulQ12(load_tension, cfg->persistent.kfree);
+  int32_t v_max = (int32_t) cfg->cached.tcurve_max_v;
+  return MathUtil_ClampI32(v_free, -v_max, v_max);
+}
+
+static inline int32_t Motion_CalcSlipVelocity(const EmulatorConfig_t* cfg, int32_t load_tension, int32_t t_motor) {
+  if (!cfg) return 0;
+  int32_t abs_tension = MathUtil_AbsI32(load_tension);
+  if (abs_tension <= t_motor) {
+    return 0;
+  }
+  int32_t v_slip = MathUtil_MulQ12(abs_tension - t_motor, cfg->persistent.kfree);
+  int32_t v_max = (int32_t) cfg->cached.tcurve_max_v;
+  if (v_slip > v_max) {
+    v_slip = v_max;
+  }
+  return v_slip;
+}
 
 /* Motion start evaluation and state parameters */
 typedef struct {

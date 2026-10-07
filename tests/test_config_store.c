@@ -73,10 +73,13 @@ void test_save_and_load_roundtrip(void) {
   original_cfg.ratio_spr = 1;
   original_cfg.ratio_epr = 4;
   original_cfg.odr = 250;
-  original_cfg.torque_t0 = 1200;
-  original_cfg.torque_v_knee = 1500;
-  original_cfg.torque_v_max = 9000;
-  original_cfg.torque_t_min = 350;
+  original_cfg.tcurve_delta_v = 500;
+  original_cfg.tcurve_point_count = 5;
+  original_cfg.tcurve_table[0] = 1000;
+  original_cfg.tcurve_table[1] = 800;
+  original_cfg.tcurve_table[2] = 600;
+  original_cfg.tcurve_table[3] = 400;
+  original_cfg.tcurve_table[4] = 200;
   original_cfg.stall_threshold = 2000;
   original_cfg.kp = (q12_t){ .raw = 1024 };
   original_cfg.kff = (q12_t){ .raw = 3891 };
@@ -95,10 +98,13 @@ void test_save_and_load_roundtrip(void) {
   TEST_ASSERT_EQUAL_UINT16(1, loaded_p_cfg.ratio_spr);
   TEST_ASSERT_EQUAL_UINT16(4, loaded_p_cfg.ratio_epr);
   TEST_ASSERT_EQUAL_UINT16(250, loaded_p_cfg.odr);
-  TEST_ASSERT_EQUAL_INT32(1200, loaded_p_cfg.torque_t0);
-  TEST_ASSERT_EQUAL_UINT32(1500, loaded_p_cfg.torque_v_knee);
-  TEST_ASSERT_EQUAL_UINT32(9000, loaded_p_cfg.torque_v_max);
-  TEST_ASSERT_EQUAL_INT32(350, loaded_p_cfg.torque_t_min);
+  TEST_ASSERT_EQUAL_UINT32(500, loaded_p_cfg.tcurve_delta_v);
+  TEST_ASSERT_EQUAL_UINT8(5, loaded_p_cfg.tcurve_point_count);
+  TEST_ASSERT_EQUAL_INT32(1000, loaded_p_cfg.tcurve_table[0]);
+  TEST_ASSERT_EQUAL_INT32(800, loaded_p_cfg.tcurve_table[1]);
+  TEST_ASSERT_EQUAL_INT32(600, loaded_p_cfg.tcurve_table[2]);
+  TEST_ASSERT_EQUAL_INT32(400, loaded_p_cfg.tcurve_table[3]);
+  TEST_ASSERT_EQUAL_INT32(200, loaded_p_cfg.tcurve_table[4]);
   TEST_ASSERT_EQUAL_UINT32(2000, loaded_p_cfg.stall_threshold);
   TEST_ASSERT_EQUAL_INT32(1024, loaded_p_cfg.kp.raw);
   TEST_ASSERT_EQUAL_INT32(3891, loaded_p_cfg.kff.raw);
@@ -168,8 +174,15 @@ void test_validation_rejects_invalid_config(void) {
   TEST_ASSERT_FALSE(ConfigStore_Validate(&bad_cfg));
 
   bad_cfg = (PersistentConfig_t) DEFAULT_PERSISTENT_CONFIG;
-  bad_cfg.torque_v_knee = 5000;
-  bad_cfg.torque_v_max = 2000; // v_max < v_knee
+  bad_cfg.tcurve_delta_v = 0;
+  TEST_ASSERT_FALSE(ConfigStore_Validate(&bad_cfg));
+
+  bad_cfg = (PersistentConfig_t) DEFAULT_PERSISTENT_CONFIG;
+  bad_cfg.tcurve_point_count = 1; // < 2
+  TEST_ASSERT_FALSE(ConfigStore_Validate(&bad_cfg));
+
+  bad_cfg = (PersistentConfig_t) DEFAULT_PERSISTENT_CONFIG;
+  bad_cfg.tcurve_point_count = 34; // > TCURVE_MAX_POINTS
   TEST_ASSERT_FALSE(ConfigStore_Validate(&bad_cfg));
 
   bad_cfg = (PersistentConfig_t) DEFAULT_PERSISTENT_CONFIG;
@@ -213,8 +226,8 @@ void test_cached_fixed_point_refresh(void) {
   cfg.persistent.kfree = (q12_t){ .raw = 41 };
   cfg.persistent.ratio_spr = 200;
   cfg.persistent.ratio_epr = 1000; // 5 counts per step
-  cfg.persistent.torque_v_knee = 2000;
-  cfg.persistent.torque_v_max = 10000; // span 8000
+  cfg.persistent.tcurve_delta_v = 500;
+  cfg.persistent.tcurve_point_count = 5;
 
   ConfigStore_ComputeCachedValues(&cfg.persistent, &cfg.cached);
 
@@ -224,8 +237,8 @@ void test_cached_fixed_point_refresh(void) {
   TEST_ASSERT_EQUAL_INT32(41, cfg.persistent.kfree.raw);
   TEST_ASSERT_EQUAL_INT32(20480, cfg.cached.counts_per_step.raw); // 5.0 * 4096 = 20480
   TEST_ASSERT_EQUAL_INT32(13107, cfg.cached.inv_counts_per_step.raw); // 0.2 * 65536 = 13107.2 -> 13107
-  TEST_ASSERT_EQUAL_INT32(8, cfg.cached.inv_torque_span_v.raw); // 65536 / 8000 = 8.19 -> 8
-  TEST_ASSERT_EQUAL_INT32(6554, cfg.cached.torque_derate_slope.raw); // (800 * 65536 + 4000) / 8000 = 6554
+  TEST_ASSERT_EQUAL_UINT32(2000, cfg.cached.tcurve_max_v); // (5 - 1) * 500 = 2000
+  TEST_ASSERT_EQUAL_INT32(131, cfg.cached.inv_tcurve_delta_v.raw); // (65536 + 250) / 500 = 131
   TEST_ASSERT_EQUAL_INT32(5, cfg.cached.step_counts_int);
   TEST_ASSERT_EQUAL_INT32(8, cfg.cached.ff_window);
   TEST_ASSERT_EQUAL_INT32(999, cfg.cached.max_kp_step_v);
@@ -242,8 +255,8 @@ void test_cached_fixed_point_refresh(void) {
   TEST_ASSERT_EQUAL_INT32(41, loaded.persistent.kfree.raw);
   TEST_ASSERT_EQUAL_INT32(20480, loaded.cached.counts_per_step.raw);
   TEST_ASSERT_EQUAL_INT32(13107, loaded.cached.inv_counts_per_step.raw);
-  TEST_ASSERT_EQUAL_INT32(8, loaded.cached.inv_torque_span_v.raw);
-  TEST_ASSERT_EQUAL_INT32(6554, loaded.cached.torque_derate_slope.raw);
+  TEST_ASSERT_EQUAL_UINT32(2000, loaded.cached.tcurve_max_v);
+  TEST_ASSERT_EQUAL_INT32(131, loaded.cached.inv_tcurve_delta_v.raw);
   TEST_ASSERT_EQUAL_INT32(5, loaded.cached.step_counts_int);
   TEST_ASSERT_EQUAL_INT32(8, loaded.cached.ff_window);
   TEST_ASSERT_EQUAL_INT32(999, loaded.cached.max_kp_step_v);

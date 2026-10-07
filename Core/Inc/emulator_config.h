@@ -10,6 +10,7 @@ extern "C" {
 #endif
 
 #define CONTROLLER_NAME_MAX_LEN 32
+#define TCURVE_MAX_POINTS 33
 
 typedef struct {
   // Controller Identification
@@ -20,11 +21,10 @@ typedef struct {
   uint16_t ratio_spr;         // Canonical step ratio (reduced by GCD)
   uint16_t ratio_epr;         // Canonical encoder count ratio (reduced by GCD)
 
-  // Torque-Speed Curve Parameters
-  int32_t torque_t0;          // Maximum holding torque shelf below v_knee
-  uint32_t torque_v_knee;     // Knee velocity where torque starts derating (encoder counts/s)
-  uint32_t torque_v_max;      // High-speed cutoff where torque reaches t_min (encoder counts/s)
-  int32_t torque_t_min;       // Minimum pull-out torque at and above v_max
+  // Torque-Speed Lookup Table Parameters
+  uint32_t tcurve_delta_v;                    // Uniform velocity step size (encoder counts/s)
+  uint8_t tcurve_point_count;                 // Active knot count (2 to 33)
+  int32_t tcurve_table[TCURVE_MAX_POINTS];    // Torque values from v=0 to v_max = (point_count - 1) * delta_v
   uint32_t stall_threshold;   // Rotor lag error threshold before tripping stall fault (encoder counts, 0 = disabled)
 
   // Control Gains & Physical Coefficients
@@ -38,8 +38,8 @@ typedef struct {
   q12_t kp_velocity;         // kp velocity gain in counts/sec (kp * 1000 * 4096)
   q12_t counts_per_step;     // (ratio_epr / ratio_spr)
   q16_t inv_counts_per_step; // (ratio_spr / ratio_epr)
-  q16_t inv_torque_span_v;   // 1 / (torque_v_max - torque_v_knee)
-  q16_t torque_derate_slope; // (torque_t0 - torque_t_min) / (torque_v_max - torque_v_knee)
+  uint32_t tcurve_max_v;     // (tcurve_point_count - 1) * tcurve_delta_v
+  q16_t inv_tcurve_delta_v;  // Q16 fixed-point reciprocal (65536 / tcurve_delta_v)
   int32_t step_counts_int;   // Integer counts per step (MathUtil_Q12ToInt(counts_per_step))
   int32_t ff_window;         // Feedforward deadband window (MathUtil_Q12ToInt(kff * counts_per_step))
   int32_t max_kp_step_v;     // Maximum velocity offset for 1 step lag (step_counts_int * kp_velocity)
@@ -56,10 +56,12 @@ typedef struct {
   .odr = 1000, \
   .ratio_spr = 1, \
   .ratio_epr = 4, \
-  .torque_t0 = 1000, \
-  .torque_v_knee = 1000, \
-  .torque_v_max = 8000, \
-  .torque_t_min = 200, \
+  .tcurve_delta_v = 250, \
+  .tcurve_point_count = 33, \
+  .tcurve_table = { \
+    1000, 1000, 1000, 1000, 1000, 971, 943, 914, 886, 857, 829, 800, 771, 743, 714, 686, \
+    657, 629, 600, 571, 543, 514, 486, 457, 429, 400, 371, 343, 314, 286, 257, 229, 200 \
+  }, \
   .stall_threshold = 4000, \
   .kp = { .raw = 410 }, \
   .kff = { .raw = 4096 }, \

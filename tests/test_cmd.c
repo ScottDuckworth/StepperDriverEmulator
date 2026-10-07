@@ -109,26 +109,25 @@ int32_t GetTension(void) { return mock_tension; }
 void SetTension(int32_t tension) { mock_tension = tension; ReportTension(); }
 void ReportTension(void) { ReportI32("t", GetTension()); }
 
-void GetTorqueCurve(int32_t* t0, uint32_t* v_knee, uint32_t* v_max, int32_t* t_min) {
-  if (t0) *t0 = mock_config.persistent.torque_t0;
-  if (v_knee) *v_knee = mock_config.persistent.torque_v_knee;
-  if (v_max) *v_max = mock_config.persistent.torque_v_max;
-  if (t_min) *t_min = mock_config.persistent.torque_t_min;
+void SetTorqueLUT(uint32_t delta_v, uint8_t count, const int32_t* table) {
+  if (delta_v == 0 || count < 2 || count > TCURVE_MAX_POINTS || !table) return;
+  mock_config.persistent.tcurve_delta_v = delta_v;
+  mock_config.persistent.tcurve_point_count = count;
+  memcpy(mock_config.persistent.tcurve_table, table, count * sizeof(int32_t));
+  ReportTorqueLUT();
 }
-void SetTorqueCurve(int32_t t0, uint32_t v_knee, uint32_t v_max, int32_t t_min) {
-  if (v_max <= v_knee) v_max = v_knee + 1;
-  mock_config.persistent.torque_t0 = t0;
-  mock_config.persistent.torque_v_knee = v_knee;
-  mock_config.persistent.torque_v_max = v_max;
-  mock_config.persistent.torque_t_min = t_min;
-  ReportTorqueCurve();
-}
-void ReportTorqueCurve(void) {
-  char buf[64];
-  snprintf(buf, sizeof(buf), "tcurve %" PRId32 " %" PRIu32 " %" PRIu32 " %" PRId32 "\r\n",
-           mock_config.persistent.torque_t0, mock_config.persistent.torque_v_knee,
-           mock_config.persistent.torque_v_max, mock_config.persistent.torque_t_min);
-  WriteString(buf);
+
+void ReportTorqueLUT(void) {
+  WriteString("tlut ");
+  char num_buf[16];
+  MathUtil_FormatU32(num_buf, sizeof(num_buf), mock_config.persistent.tcurve_delta_v);
+  WriteString(num_buf);
+  for (uint8_t i = 0; i < mock_config.persistent.tcurve_point_count; ++i) {
+    WriteString(" ");
+    MathUtil_FormatI32(num_buf, sizeof(num_buf), mock_config.persistent.tcurve_table[i]);
+    WriteString(num_buf);
+  }
+  WriteString("\r\n");
 }
 
 uint32_t GetStallThreshold(void) { return mock_config.persistent.stall_threshold; }
@@ -308,16 +307,22 @@ void test_cmd_t_set_and_query(void) {
   TEST_ASSERT_EQUAL_STRING("t -1200\r\n", captured_output);
 }
 
-void test_cmd_tcurve_set_and_query(void) {
-  send_cmd("tcurve 1500 2000 9000 300\r\n");
-  TEST_ASSERT_EQUAL_INT32(1500, mock_config.persistent.torque_t0);
-  TEST_ASSERT_EQUAL_UINT32(2000, mock_config.persistent.torque_v_knee);
-  TEST_ASSERT_EQUAL_UINT32(9000, mock_config.persistent.torque_v_max);
-  TEST_ASSERT_EQUAL_INT32(300, mock_config.persistent.torque_t_min);
-  TEST_ASSERT_EQUAL_STRING("tcurve 1500 2000 9000 300\r\n", captured_output);
+void test_cmd_tlut_set_and_query(void) {
+  send_cmd("tlut 100 9400 8800 7300 5700 4400 3500 2800 2400 2000 1800 1500 1400 1050 1000 950 900\r\n");
+  TEST_ASSERT_EQUAL_UINT32(100, mock_config.persistent.tcurve_delta_v);
+  TEST_ASSERT_EQUAL_UINT8(16, mock_config.persistent.tcurve_point_count);
+  TEST_ASSERT_EQUAL_INT32(9400, mock_config.persistent.tcurve_table[0]);
+  TEST_ASSERT_EQUAL_INT32(900, mock_config.persistent.tcurve_table[15]);
+  TEST_ASSERT_EQUAL_STRING("tlut 100 9400 8800 7300 5700 4400 3500 2800 2400 2000 1800 1500 1400 1050 1000 950 900\r\n", captured_output);
 
-  send_cmd("tcurve\r\n");
-  TEST_ASSERT_EQUAL_STRING("tcurve 1500 2000 9000 300\r\n", captured_output);
+  send_cmd("tlut\r\n");
+  TEST_ASSERT_EQUAL_STRING("tlut 100 9400 8800 7300 5700 4400 3500 2800 2400 2000 1800 1500 1400 1050 1000 950 900\r\n", captured_output);
+
+  send_cmd("tlut 0 100 200\r\n");
+  TEST_ASSERT_EQUAL_STRING("error: invalid uint32: 0\r\n", captured_output);
+
+  send_cmd("tlut 100 1000\r\n");
+  TEST_ASSERT_EQUAL_STRING("error: invalid usage: tlut [delta_v] [T0] [T1] ... [TN]\r\n", captured_output);
 }
 
 void test_cmd_stall_set_and_query(void) {
@@ -539,7 +544,7 @@ void test_cmd_r_state_report(void) {
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "kp 0.1001\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "kff 1.0000\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "blank 3.5000\r\n"));
-  TEST_ASSERT_NOT_NULL(strstr(captured_output, "tcurve 1000 1000 8000 200\r\n"));
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "tlut 250 1000 "));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "stall 4000\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "kfree 0.0049\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "stall_trip 0\r\n"));
@@ -570,7 +575,8 @@ void test_cmd_help(void) {
   send_cmd("help\r\n");
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "name [string]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "t [int32]"));
-  TEST_ASSERT_NOT_NULL(strstr(captured_output, "tcurve [T0] [V_knee] [V_max] [T_min]"));
+  TEST_ASSERT_NULL(strstr(captured_output, "tcurve"));
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "tlut [delta_v] [T0] [T1] ... [TN]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "stall [uint32]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "blank [float]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "pos [int64]"));
@@ -644,7 +650,7 @@ int main(void) {
   RUN_TEST(test_cmd_name_set_and_query);
   RUN_TEST(test_cmd_blank_set_and_query);
   RUN_TEST(test_cmd_t_set_and_query);
-  RUN_TEST(test_cmd_tcurve_set_and_query);
+  RUN_TEST(test_cmd_tlut_set_and_query);
   RUN_TEST(test_cmd_stall_set_and_query);
   RUN_TEST(test_cmd_kfree_set_and_query);
   RUN_TEST(test_cmd_blink_set_and_query);

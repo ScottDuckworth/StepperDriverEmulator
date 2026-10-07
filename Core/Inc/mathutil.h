@@ -143,6 +143,33 @@ static inline q16_t MathUtil_MulQ16_Q16(q16_t a, q16_t b) {
   return q;
 }
 
+/* Scales a Q12 fixed-point value by an integer scalar, returning a Q12 fixed-point value. */
+static inline q12_t MathUtil_ScaleQ12(q12_t val, int32_t scalar) {
+  q12_t q = { .raw = val.raw * scalar };
+  return q;
+}
+
+/* Scales a Q16 fixed-point value by an integer scalar, returning a Q16 fixed-point value. */
+static inline q16_t MathUtil_ScaleQ16(q16_t val, int32_t scalar) {
+  q16_t q = { .raw = val.raw * scalar };
+  return q;
+}
+
+/*
+ * Multiplies a signed 32-bit integer by a Q16 fraction [0, 65536],
+ * rounding to nearest (+32768 >> 16) using 32-bit arithmetic.
+ * Avoids 64-bit multiplication (__aeabi_lmul) on Cortex-M0.
+ */
+static inline int32_t MathUtil_MulQ16_Round(int32_t val, q16_t frac) {
+  bool neg = (val < 0);
+  uint32_t u = neg ? (0U - (uint32_t) val) : (uint32_t) val;
+  uint32_t f = (uint32_t) frac.raw;
+  uint32_t hi = u >> 16;
+  uint32_t lo = u & 0xFFFFU;
+  uint32_t res = hi * f + ((lo * f + 32768U) >> 16);
+  return neg ? -(int32_t) res : (int32_t) res;
+}
+
 
 /*
  * Integer clamp utility:
