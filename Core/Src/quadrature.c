@@ -50,21 +50,21 @@ int8_t Quadrature_GenerateChunk(uint32_t* chunk, uint16_t chunk_size, uint8_t* i
 
 void Quadrature_CalcTimerPacing(uint32_t target_velocity_counts_sec, uint16_t* out_psc, uint16_t* out_arr) {
   uint32_t counts_per_sec = target_velocity_counts_sec;
-  if (counts_per_sec < 1) {
-    counts_per_sec = 1;
-  }
-  if (counts_per_sec > 300000U) {
-    counts_per_sec = 300000U; // max 300 kHz
-  }
-
-  uint32_t ticks = 48000000U / counts_per_sec;
   uint32_t psc = 0;
-  if (ticks < 160) {
-    ticks = 160; // max 300 kHz
-  } else if (ticks > 65536) {
-    psc = (ticks >> 16);
-    ticks = ticks / (psc + 1);
-    if (ticks > 65536) ticks = 65536;
+  uint32_t ticks;
+
+  if (counts_per_sec >= 300000U) {
+    ticks = 160; // 300 kHz hard limit (48 MHz / 160 = 300 kHz)
+  } else {
+    if (counts_per_sec < 1) {
+      counts_per_sec = 1;
+    }
+    ticks = 48000000U / counts_per_sec;
+    if (ticks > 65536) {
+      psc = (ticks >> 16);
+      ticks = ticks / (psc + 1);
+      if (ticks > 65536) ticks = 65536;
+    }
   }
 
   if (out_psc) *out_psc = (uint16_t) psc;
