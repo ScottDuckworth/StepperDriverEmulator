@@ -249,6 +249,38 @@ bool SaveConfig(void) {
   return mock_save_success;
 }
 
+int64_t GetMinStop(void) { return mock_config.persistent.minstop; }
+bool SetMinStop(int64_t min_stop) {
+  if (min_stop > mock_config.persistent.maxstop) return false;
+  mock_config.persistent.minstop = min_stop;
+  ReportMinStop();
+  return true;
+}
+void ReportMinStop(void) {
+  int64_t stop = GetMinStop();
+  if (stop == INT64_MIN) {
+    WriteString("minstop none\r\n");
+  } else {
+    ReportI64("minstop", stop);
+  }
+}
+
+int64_t GetMaxStop(void) { return mock_config.persistent.maxstop; }
+bool SetMaxStop(int64_t max_stop) {
+  if (max_stop < mock_config.persistent.minstop) return false;
+  mock_config.persistent.maxstop = max_stop;
+  ReportMaxStop();
+  return true;
+}
+void ReportMaxStop(void) {
+  int64_t stop = GetMaxStop();
+  if (stop == INT64_MAX) {
+    WriteString("maxstop none\r\n");
+  } else {
+    ReportI64("maxstop", stop);
+  }
+}
+
 // --- Test Helper Functions ---
 
 static void clear_output(void) {
@@ -546,6 +578,8 @@ void test_cmd_r_state_report(void) {
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "blank 3.5000\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "tlut 250 1000 "));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "stall 4000\r\n"));
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "minstop none\r\n"));
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "maxstop none\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "kfree 0.0049\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "stall_trip 0\r\n"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "blink 0\r\n"));
@@ -645,6 +679,94 @@ void test_cmd_error_unknown_command(void) {
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: unknown command: zero\r\n"));
 }
 
+void test_cmd_minstop_set_and_query(void) {
+  send_cmd("minstop\r\n");
+  TEST_ASSERT_EQUAL_STRING("minstop none\r\n", captured_output);
+
+  send_cmd("minstop -5000\r\n");
+  TEST_ASSERT_EQUAL_INT64(-5000, mock_config.persistent.minstop);
+  TEST_ASSERT_EQUAL_STRING("minstop -5000\r\n", captured_output);
+
+  send_cmd("minstop\r\n");
+  TEST_ASSERT_EQUAL_STRING("minstop -5000\r\n", captured_output);
+
+  send_cmd("minstop clear\r\n");
+  TEST_ASSERT_EQUAL_INT64(INT64_MIN, mock_config.persistent.minstop);
+  TEST_ASSERT_EQUAL_STRING("minstop none\r\n", captured_output);
+
+  send_cmd("minstop -1234567890123\r\n");
+  TEST_ASSERT_EQUAL_INT64(-1234567890123LL, mock_config.persistent.minstop);
+  TEST_ASSERT_EQUAL_STRING("minstop -1234567890123\r\n", captured_output);
+
+  send_cmd("minstop none\r\n");
+  TEST_ASSERT_EQUAL_INT64(INT64_MIN, mock_config.persistent.minstop);
+  TEST_ASSERT_EQUAL_STRING("minstop none\r\n", captured_output);
+
+  // Invalid value parsing
+  send_cmd("minstop abc\r\n");
+  TEST_ASSERT_EQUAL_STRING("error: invalid int64: abc\r\n", captured_output);
+
+  // Invalid usage (too many args)
+  send_cmd("minstop 100 200\r\n");
+  TEST_ASSERT_EQUAL_STRING("error: invalid usage: minstop [int64|none|clear]\r\n", captured_output);
+}
+
+void test_cmd_maxstop_set_and_query(void) {
+  send_cmd("maxstop\r\n");
+  TEST_ASSERT_EQUAL_STRING("maxstop none\r\n", captured_output);
+
+  send_cmd("maxstop 5000\r\n");
+  TEST_ASSERT_EQUAL_INT64(5000, mock_config.persistent.maxstop);
+  TEST_ASSERT_EQUAL_STRING("maxstop 5000\r\n", captured_output);
+
+  send_cmd("maxstop\r\n");
+  TEST_ASSERT_EQUAL_STRING("maxstop 5000\r\n", captured_output);
+
+  send_cmd("maxstop clear\r\n");
+  TEST_ASSERT_EQUAL_INT64(INT64_MAX, mock_config.persistent.maxstop);
+  TEST_ASSERT_EQUAL_STRING("maxstop none\r\n", captured_output);
+
+  send_cmd("maxstop 9876543210987\r\n");
+  TEST_ASSERT_EQUAL_INT64(9876543210987LL, mock_config.persistent.maxstop);
+  TEST_ASSERT_EQUAL_STRING("maxstop 9876543210987\r\n", captured_output);
+
+  send_cmd("maxstop none\r\n");
+  TEST_ASSERT_EQUAL_INT64(INT64_MAX, mock_config.persistent.maxstop);
+  TEST_ASSERT_EQUAL_STRING("maxstop none\r\n", captured_output);
+
+  // Invalid value parsing
+  send_cmd("maxstop xyz\r\n");
+  TEST_ASSERT_EQUAL_STRING("error: invalid int64: xyz\r\n", captured_output);
+
+  // Invalid usage (too many args)
+  send_cmd("maxstop 100 200\r\n");
+  TEST_ASSERT_EQUAL_STRING("error: invalid usage: maxstop [int64|none|clear]\r\n", captured_output);
+}
+
+void test_cmd_stops_order_validation(void) {
+  send_cmd("minstop 1000\r\n");
+  TEST_ASSERT_EQUAL_INT64(1000, mock_config.persistent.minstop);
+
+  // maxstop 500 violates minstop 1000 <= maxstop
+  send_cmd("maxstop 500\r\n");
+  TEST_ASSERT_EQUAL_STRING("error: minstop exceeds maxstop\r\n", captured_output);
+  TEST_ASSERT_EQUAL_INT64(INT64_MAX, mock_config.persistent.maxstop);
+
+  send_cmd("maxstop 2000\r\n");
+  TEST_ASSERT_EQUAL_INT64(2000, mock_config.persistent.maxstop);
+
+  // minstop 3000 violates minstop <= maxstop 2000
+  send_cmd("minstop 3000\r\n");
+  TEST_ASSERT_EQUAL_STRING("error: minstop exceeds maxstop\r\n", captured_output);
+  TEST_ASSERT_EQUAL_INT64(1000, mock_config.persistent.minstop);
+
+  // minstop == maxstop is valid
+  send_cmd("minstop 2000\r\n");
+  TEST_ASSERT_EQUAL_INT64(2000, mock_config.persistent.minstop);
+  TEST_ASSERT_EQUAL_INT64(2000, mock_config.persistent.maxstop);
+  TEST_ASSERT_EQUAL_STRING("minstop 2000\r\n", captured_output);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_cmd_name_set_and_query);
@@ -652,6 +774,9 @@ int main(void) {
   RUN_TEST(test_cmd_t_set_and_query);
   RUN_TEST(test_cmd_tlut_set_and_query);
   RUN_TEST(test_cmd_stall_set_and_query);
+  RUN_TEST(test_cmd_minstop_set_and_query);
+  RUN_TEST(test_cmd_maxstop_set_and_query);
+  RUN_TEST(test_cmd_stops_order_validation);
   RUN_TEST(test_cmd_kfree_set_and_query);
   RUN_TEST(test_cmd_blink_set_and_query);
   RUN_TEST(test_cmd_odr_set_and_query);

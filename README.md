@@ -152,6 +152,15 @@ When engaged and $\text{lag} \ge \text{stall}$ (where $\text{stall}$ is the conf
 * Motor driving torque is cut to zero ($T_{\text{motor}} = 0$).
 * Rotor enters viscous freewheeling under $\tau_{\text{tension}}$.
 
+### Physical Hard Stops (`minstop`, `maxstop`)
+
+Physical hard travel limits are modeled at signed 64-bit encoder counts ($\text{minstop} \le \text{maxstop}$):
+* **Boundary Clamping:** The encoder position is strictly prevented from advancing beyond active stops during both active step-driven motion and external freewheeling. Emitted chunk deltas are clamped to land precisely on the stop boundary.
+* **Torque Drop at Stop:** If steps are commanded in the direction of an active stop that has been hit ($P_{\text{enc}} \ge \text{maxstop}$ moving forward or $P_{\text{enc}} \le \text{minstop}$ moving reverse), net torque immediately drops to 0 ($T_{\text{net}} = 0$).
+* **Stall Event Accumulation:** Commanded steps continue to accumulate tracking error against the stationary rotor held at the stop ($\text{lag} = |P_{\text{cmd}} - P_{\text{enc}}|$). Once lag reaches or exceeds the configured `stall` threshold, a stall event trips (`stall_trip 1\r\n`).
+* **Uninhibited Travel Away:** Motion and torque directed away from an active stop (moving back toward the valid travel range) remain completely uninhibited with full available torque.
+* **Clearing Stops:** Setting a stop to `none` or `clear` removes the boundary (internal values `INT64_MIN` and `INT64_MAX`). Stops are saved to Flash via `save`.
+
 ### Disengaged Freewheeling (`kfree`)
 
 Active whenever the motor is disengaged (either `stall_tripped == true` or `ENA` is disabled):
@@ -334,6 +343,8 @@ Commands are sent via the USB Virtual COM Port (terminated with `\r` or `\n`).
 | `t` | `t [int32]` | Query or set load tension/torque (signed: `+` pulls forward, `-` pulls reverse; e.g. `t -1200` opposes forward motion) | `t -1200` | `t -1200\r\n` |
 | `tlut` | `tlut [delta_v] [T0] [T1] ... [TN]` | Query or set uniform torque lookup table (2 to 33 points) | `tlut 100 9400 8800 ... 900` | `tlut 100 9400 8800 ... 900\r\n` |
 | `stall` | `stall [uint32]` | Query or set stall threshold (`0` = disable) | `stall 4000` | `stall 4000\r\n` |
+| `minstop` | `minstop [int64\|none\|clear]` | Query, set, or clear minimum physical travel stop | `minstop -5000` | `minstop -5000\r\n` |
+| `maxstop` | `maxstop [int64\|none\|clear]` | Query, set, or clear maximum physical travel stop | `maxstop 5000` | `maxstop 5000\r\n` |
 | `kfree` | `kfree [float]` | Query or set viscous freewheel coefficient | `kfree 0.005` | `kfree 0.0050\r\n` |
 | `blank` | `blank [float]` | Query or set step blanking / hold-off window in µs (e.g. `3.5` for 200 kHz) | `blank 3.5` | `blank 3.5000\r\n` |
 | `blink` | `blink [0\|1]` | Query or toggle yellow identify blink | `blink 1` | `blink 1\r\n` |
@@ -349,7 +360,7 @@ Commands are sent via the USB Virtual COM Port (terminated with `\r` or `\n`).
 | `r` | `r` | Dump full configuration and runtime status | `r` | Multi-line report (see below) |
 | `help` | `help` | Print command usage list | `help` | Usage list (see below) |
 
-> **Note on Queries:** Commands that accept optional parameters (`name`, `pos`, `t`, `tlut`, `stall`, `kfree`, `blank`, `blink`, `odr`, `ratio`, `kp`, `kff`) return the current value when issued with no arguments (e.g. typing `name` replies `name Joint1\r\n`, typing `pos` replies `pos 0\r\n`, typing `t` replies `t 0\r\n`, typing `ratio` replies `ratio 1 4\r\n`, typing `odr` replies `odr 1000\r\n`, typing `tlut` replies the active table).
+> **Note on Queries:** Commands that accept optional parameters (`name`, `pos`, `t`, `tlut`, `stall`, `minstop`, `maxstop`, `kfree`, `blank`, `blink`, `odr`, `ratio`, `kp`, `kff`) return the current value when issued with no arguments (e.g. typing `name` replies `name Joint1\r\n`, typing `pos` replies `pos 0\r\n`, typing `t` replies `t 0\r\n`, typing `ratio` replies `ratio 1 4\r\n`, typing `odr` replies `odr 1000\r\n`, typing `tlut` replies the active table, typing `minstop` replies `minstop none\r\n` or `minstop <val>\r\n`).
 
 ### Full State Report (`r` command)
 
@@ -367,6 +378,8 @@ lim2 0
 t 0
 tlut 250 1000 1000 1000 1000 1000 971 943 914 886 857 829 800 771 743 714 686 657 629 600 571 543 514 486 457 429 400 371 343 314 286 257 229 200
 stall 4000
+minstop none
+maxstop none
 kfree 0.0049
 stall_trip 0
 blink 0
@@ -424,30 +437,37 @@ To maintain deterministic execution within the real-time ISR without floating-po
   Parameters representing mathematical inverses (such as `inv_torque_span_v` $= 1 / (V_{\mathrm{max}} - V_{\mathrm{knee}})$ and `inv_counts_per_step` $= 1 / \text{counts per step}$) evaluate to small fractions ($\ll {1.0}$). For example, a torque derating span of 8,000 counts/s has a reciprocal of 0.000125. In $Q12$ (where $\text{1 LSB} \approx {0.000244}$), this fraction truncates to 0 or rounds to 1 (50% to 100% quantization error). In $Q16$ (where $\text{1 LSB} \approx {0.0000153}$), the value is represented accurately as 8. Because these inverses are exclusively multiplied by bounded, small quantities (such as quadratic error $\le (\text{counts per step})^{2}$ or speed offsets $\le \text{span}$), their intermediate products never exceed 32 bits, allowing $Q16$ precision to be used safely without overflow risk.
 
 
-### Interrupt Execution Budget & Call Tree Breakdown
+### Interrupt Execution Budget & Operating Regimes
 
-Interrupt latency and execution cycles were characterized via static disassembly and Control Flow Graph (CFG) analysis using `scripts/estimate_isr_cycles.py` on the ARM Cortex-M0 Release binary:
+Interrupt latency and execution cycles were characterized via static disassembly and Control Flow Graph (CFG) analysis using `scripts/estimate_isr_cycles.py` on the ARM Cortex-M0 Release binary. The firmware architecture divides real-time execution into two mutually exclusive regimes:
 
-* **Nominal Steady-State ISR Execution:** **2,485 cycles** ($51.77\ \mu\mathrm{s}$) in silicon (including Flash wait states and hardware NVIC context stacking).
+1. **Active High-Speed Streaming Pipeline:** Runs during continuous rotor motion ($\Delta \gt 0$). Executes 64-bit position updates, velocity feedforward, soft-knee quadratic error attenuation, uniform torque LUT interpolation, physical stop boundary clamping, **full rotor slip modeling** (or normal tracking), quadrature Gray-code synthesis, and timer pacing calculation. Standstill idle checks (`CheckMotionIdle` and `Motion_ShouldStop`) are skipped.
+2. **Standstill & Stop-Hit Idle Transition Path:** Runs when emitted chunk deltas drop to zero ($\Delta = 0$), such as when hitting a physical travel stop or when input step pulses cease. Pacing defaults to fallback pacing ($4{,}000\text{ counts/s}$), stretching the chunk interval from $\le 80\ \mu\mathrm{s}$ out to **$4{,}000\ \mu\mathrm{s}$ (4.0 ms)**. Once the step timeout elapses, the timer and DMA are shut down entirely ($0.0\%\text{ CPU load}$).
+
+#### Active High-Speed Streaming Pipeline Breakdown
+
+* **Nominal Steady-State ISR Execution (with Slip Modeling):** **2,231 cycles** ($46.48\ \mu\mathrm{s}$) in silicon (including Flash wait states and hardware NVIC context stacking).
+* **Normal Driving Execution ($T_{\text{net}} \ge 0$, no slip):** **2,160 cycles** ($45.00\ \mu\mathrm{s}$) in silicon.
 * **Available Budget per Chunk at 50 kHz Step Rate:** $80.00\ \mu\mathrm{s}$ ($16\text{ counts} / 200\text{ kHz counts/s}$ at 4 counts/step).
-* **Steady-State CPU Utilization at 50 kHz:** $\frac{51.77\ \mu\mathrm{s}}{80.00\ \mu\mathrm{s}} = 64.7\%$.
+* **Active CPU Utilization at 50 kHz:** $\frac{46.48\ \mu\mathrm{s}}{80.00\ \mu\mathrm{s}} = \mathbf{58.1\%}$ (**41.9% CPU headroom**).
 
 | Component / Routine | 0-WS Cycles | Silicon Cycles (1-WS) | Duration (@ 48 MHz) | % of ISR | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `Motion_PlanStep` | 487 | 609 | 12.69 µs | 24.5% | Velocity feedforward, error compensation, pacing calculation |
-| `FillQuadChunk` | 254 | 318 | 6.62 µs | 12.8% | DMA chunk buffer dispatch, quadrature generation, and pacing |
-| `CheckMotionIdle` | 226 | 282 | 5.88 µs | 11.3% | Step activity timeout and motion state transition detection |
-| `__udivsi3` | 152 | 190 | 3.96 µs | 7.6% | 32-bit hardware-assisted unsigned division helper |
-| `Quadrature_GenerateChunk` | 148 | 185 | 3.85 µs | 7.4% | Gray-code quadrature transition bitmask synthesis |
-| `UpdatePositionCounters` | 129 | 161 | 3.35 µs | 6.5% | 64-bit commanded step and encoder position accumulation |
-| `Position_FilterStepWithBlanking` | 99 | 124 | 2.58 µs | 5.0% | Hardware step capture blanking filter |
-| `Motion_ShouldStop` | 86 | 108 | 2.25 µs | 4.3% | Boundary limit switch and deceleration check |
-| `Motion_CalcMotorTorque` | 84 | 105 | 2.19 µs | 4.2% | Uniform lookup table linear interpolation across torque knots |
-| `Quadrature_CalcTimerPacing` | 70 | 88 | 1.83 µs | 3.5% | TIM3 timer reload prescaler and auto-reload configuration |
-| `Motion_CalcStepTimeoutMs` | 56 | 70 | 1.46 µs | 2.8% | Adaptive inter-step timeout computation |
-| Hardware Context Stacking (NVIC) | 31 | 39 | 0.81 µs | 1.6% | ARMv6-M hardware exception entry/exit overhead |
-| Other subroutines & handlers | 166 | 206 | 4.29 µs | 8.3% | DMA interrupt dispatcher, signed integer division, GPIO state checks |
-| **Total Steady-State ISR** | **1,988** | **2,485** | **51.77 µs** | **100.0%** | **Full real-time chunk synthesis pipeline** |
+| `Motion_PlanStep` | 884 | 1,105 | 23.02 µs | 49.5% | Feedforward, error compensation, LUT, physical stops & **full slip modeling** |
+| `FillQuadChunk` | 254 | 318 | 6.62 µs | 14.3% | DMA chunk buffer dispatch, quadrature generation, and pacing |
+| `__udivsi3` | 152 | 190 | 3.96 µs | 8.5% | 32-bit hardware-assisted unsigned division helper (pacing & input rate) |
+| `Quadrature_GenerateChunk` | 148 | 185 | 3.85 µs | 8.3% | Gray-code quadrature transition bitmask synthesis (16 samples) |
+| `UpdatePositionCounters` | 129 | 161 | 3.35 µs | 7.2% | 64-bit commanded step and encoder position accumulation |
+| `Position_FilterStepWithBlanking` | 99 | 124 | 2.58 µs | 5.6% | Hardware step capture blanking filter |
+| `Motion_CalcMotorTorque` | 91 | 114 | 2.38 µs | 5.1% | Uniform lookup table linear interpolation across torque knots |
+| `Quadrature_CalcTimerPacing` | 70 | 88 | 1.83 µs | 3.9% | TIM3 timer reload prescaler and auto-reload configuration |
+| DMA ISR entry & exit glue | 112 | 140 | 2.92 µs | 6.3% | `DMA1_Channel2_3_IRQHandler` and `DMA_TransferComplete_Handler` |
+| Math helpers & status checks | 133 | 166 | 3.46 µs | 7.4% | `__aeabi_idivmod`, `Position_ConvertStepDeltaToCounts`, timeout & enable checks |
+| Hardware Context Stacking (NVIC) | 31 | 39 | 0.81 µs | 1.7% | ARMv6-M hardware exception entry/exit overhead |
+| Standstill Checks (`CheckMotionIdle`, `Motion_ShouldStop`) | 0 | 0 | 0.00 µs | 0.0% | **Bypassed during active streaming** (`half_0_delta != 0`) |
+| **Total Active Streaming ISR** | **1,754** | **2,231** | **46.48 µs** | **100.0%** | **Full real-time chunk synthesis pipeline** |
+
+> **Note on Slip Modeling:** The 1,105 cycles measured for `Motion_PlanStep` explicitly evaluates the **torque deficit slip branch** (`t_net < 0`). When external load tension exceeds motor torque capacity ($|\tau_{\text{load}}| \gt T_{\text{motor}}$), the planner evaluates inlined `Motion_CalcSlipVelocity`, clamps the slip trajectory against active physical stops (`minstop`/`maxstop`), and tests the accumulated position lag against `stall_threshold`. During normal driving ($T_{\text{net}} \ge 0$), this branch is bypassed, reducing `Motion_PlanStep` execution by 71 cycles down to 1,034 cycles ($21.54\ \mu\mathrm{s}$).
 
 ### CPU Utilization Across Step Frequencies
 
@@ -455,22 +475,30 @@ With a default ratio of 4 counts/step (1000 SPR / 4000 CPR) and a chunk size of 
 
 | Input Step Rate | Encoder Count Rate | DMA ISR Period | CPU Utilization | Operating Status |
 | :--- | :--- | :--- | :--- | :--- |
-| 10.00 kHz | 40.00 kHz | 400.00 µs | 12.9% | Nominal load |
-| 15.00 kHz | 60.00 kHz | 266.67 µs | 19.4% | Nominal load |
-| 20.00 kHz | 80.00 kHz | 200.00 µs | 25.9% | Nominal load |
-| 30.00 kHz | 120.00 kHz | 133.33 µs | 38.8% | Nominal load |
-| 40.00 kHz | 160.00 kHz | 100.00 µs | 51.8% | Nominal load |
-| **50.00 kHz** | **200.00 kHz** | **80.00 µs** | **64.7%** | **Target benchmark (sustained operation)** |
-| 60.00 kHz | 240.00 kHz | 66.67 µs | 77.7% | High load |
-| **75.00 kHz** | **300.00 kHz** | **53.33 µs** | **97.1%** | **Hard-coded firmware limit (pacing clamp)** |
-| 77.26 kHz | 309.05 kHz | 51.77 µs | 100.0% | Theoretical saturation limit (unreachable) |
+| 10.00 kHz | 40.00 kHz | 400.00 µs | 11.6% | Nominal load |
+| 15.00 kHz | 60.00 kHz | 266.67 µs | 17.4% | Nominal load |
+| 20.00 kHz | 80.00 kHz | 200.00 µs | 23.2% | Nominal load |
+| 30.00 kHz | 120.00 kHz | 133.33 µs | 34.9% | Nominal load |
+| 40.00 kHz | 160.00 kHz | 100.00 µs | 46.5% | Nominal load |
+| **50.00 kHz** | **200.00 kHz** | **80.00 µs** | **58.1%** | **Target benchmark (sustained operation, > 41% headroom)** |
+| 60.00 kHz | 240.00 kHz | 66.67 µs | 69.7% | High load |
+| **75.00 kHz** | **300.00 kHz** | **53.33 µs** | **79.7%** | **Hard-coded firmware limit (pacing clamp, > 20% headroom)** |
+| **86.06 kHz** | **344.24 kHz** | **46.48 µs** | **100.0%** | **Theoretical active streaming saturation ceiling** |
 
-#### Firmware Pacing Limit & Underrun Protection
+#### Firmware Pacing Limit & High-Speed Division Bypass
 
-In `Quadrature_CalcTimerPacing` (`Core/Src/quadrature.c`), timer reload ticks are clamped to a minimum of 160 (`ticks >= 160` at 48 MHz), enforcing a hard-coded maximum output count rate of **300 kHz** (75 kHz input step pulse rate at 4 counts/step). This ceiling prevents the pacing timer from driving the system into CPU saturation ($309.05\text{ kHz}$ at the nominal $51.77\ \mu\mathrm{s}$ ISR execution time):
-* **DMA Underrun Prevention:** With double-buffered DMA transmitting 16 counts per chunk, any output rate exceeding 309.05 kHz would exhaust the active chunk buffer faster than the CPU can compute the next chunk ($< 51.77\ \mu\mathrm{s}$). This would force the DMA controller to transmit stale or partially written memory, corrupting output phase states and causing lost counts.
-* **Jitter & Bus Contention Headroom:** At 300 kHz, each chunk takes $53.33\ \mu\mathrm{s}$, preserving a $1.56\ \mu\mathrm{s}$ (75 CPU cycles) safety margin (97.1% peak CPU load). Furthermore, because `Quadrature_CalcTimerPacing` directly short-circuits 32-bit integer division at speeds $\ge 300\text{ kHz}$, runtime hardware latency at the ceiling drops even further (~49.8 µs / ~93.4% CPU).
-* **Background Task Responsiveness:** Capping output pacing at 300 kHz guarantees that the main loop and USB interrupts retain sufficient CPU time to service USB CDC commands (`pvt`, `pos`, `r`, `save`), periodic position reports (`odr`), and LED state machine updates without USB packet drops or serial timeouts.
+In `Quadrature_CalcTimerPacing` (`Core/Src/quadrature.c`), timer reload ticks are clamped to a minimum of 160 (`ticks >= 160` at 48 MHz), enforcing a maximum output count rate of **300 kHz** (75 kHz input step pulse rate at 4 counts/step).
+* **Division Short-Circuit at 300 kHz:** At or above 300 kHz, `Quadrature_CalcTimerPacing` short-circuits the 32-bit integer division (`__udivsi3`), directly assigning minimum reload ticks. This saves 190 cycles ($3.96\ \mu\mathrm{s}$), bringing total ISR latency down to **$42.52\ \mu\mathrm{s}$** and ensuring CPU load remains safely bounded at **79.7%** (leaving $> 20\%$ CPU headroom).
+* **DMA Underrun Prevention:** With double-buffered DMA transmitting 16 counts per chunk, keeping active chunk computation ($42.52\text{--}46.48\ \mu\mathrm{s}$) strictly below the chunk period ($53.33\text{--}80.00\ \mu\mathrm{s}$) guarantees the DMA controller never exhausts the buffer prematurely or transmits corrupt states.
+* **Background Task Responsiveness:** Operating with $> 20\%$ to $> 41\%$ CPU headroom during sustained streaming ensures the main loop and USB interrupts have ample time to service CDC commands (`pvt`, `pos`, `r`, `save`), periodic position reports (`odr`), and physical stop status updates without dropping packets.
+
+#### Standstill & Stop-Hit Idle Transition Path
+
+When the rotor reaches a physical stop or input steps cease, the operating regime changes:
+* **Stop Hit:** `Motion_PlanStep` detects `blocked_by_stop`, clamps emitted counts and velocity to 0, and returns early ($\approx 25\text{ cycles}$). Emitted chunk delta is 0.
+* **Pacing Interval Relaxes:** With target velocity 0, `FillQuadChunk` configures fallback pacing ($4{,}000\text{ counts/s}$), expanding the chunk period to **$4{,}000\ \mu\mathrm{s}$**.
+* **Standstill Execution:** When both half-buffer deltas are 0, `CheckMotionIdle` and `Motion_ShouldStop` execute ($816\text{ cycles} / 17.0\ \mu\mathrm{s}$). Even under the composite worst-case duration ($58.58\ \mu\mathrm{s}$), CPU utilization across the $4{,}000\ \mu\mathrm{s}$ period is only **$1.46\%$** (and $< 0.4\%$ when blocked at a stop).
+* **Timer Shutdown:** Once input pulses cease and the step timeout expires, `CheckMotionIdle` disables TIM3 and DMA entirely, dropping CPU utilization to **$0.0\%$**.
 
 ### Firmware Memory Utilization
 
@@ -478,8 +506,8 @@ Memory footprint of the Release build (`build/Release/StepperDriverEmulator.elf`
 
 | Memory Region | Used Bytes | Total Bytes | Utilization | Free Space |
 | :--- | :--- | :--- | :--- | :--- |
-| **Flash** (`.text` + `.rodata` + `.data`) | 27,432 B | 31,744 B | **86.42%** | 4,312 B free |
-| **RAM** (`.data` + `.bss` + stack) | 5,952 B | 6,144 B | **96.88%** | 192 B free |
+| **Flash** (`.text` + `.rodata` + `.data`) | 29,208 B | 31,744 B | **92.01%** | 2,536 B free |
+| **RAM** (`.data` + `.bss` + stack) | 5,976 B | 6,144 B | **97.26%** | 168 B free |
 
 * **Flash Savings:** Complete elimination of soft-float runtime helpers (`__aeabi_fmul`, `__aeabi_fadd`, `__aeabi_fsub`, `__aeabi_fdiv`, `__aeabi_f2iz`, `__aeabi_i2f`, etc.) reclaimed **3,972 bytes** of Flash memory.
 * **Deterministic Timing:** Disallowance of software floating point and 64-bit integer division eliminates variable, data-dependent software emulation loops from the motion control path.

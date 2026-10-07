@@ -1115,6 +1115,247 @@ void test_motion_prepare_start(void) {
   TEST_ASSERT_FALSE(Motion_PrepareStart(&config, &start_req, &bad_buf, &res));
 }
 
+/* ========================================================================= */
+/* --- Physical Hard Stops Tests (minstop / maxstop) ----------------------- */
+/* ========================================================================= */
+
+void test_planner_maxstop_clamps_forward_motion(void) {
+  config.persistent.maxstop = 1000;
+  config.persistent.minstop = INT64_MIN;
+
+  // Approach maxstop from 990 (remaining: 10 counts)
+  Motion_PlanStepRequest_t req = {
+      .commanded_pos = 1100,
+      .planned_encoder_pos = 990,
+      .load_tension = 0,
+      .now = 100,
+      .last_step_time = 100,
+      .step_period_cnt = 0,
+      .step_reverse = false,
+      .is_freewheeling = false,
+      .stall_tripped = false,
+      .chunk_size = 16
+  };
+  Motion_PlanStepResult_t res;
+  Motion_PlanStep(&config, &req, &res);
+
+  TEST_ASSERT_EQUAL_INT(1, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(10, res.count_to_emit); // Clamped to 10 counts!
+
+  // Now planned_encoder_pos is exactly at maxstop 1000
+  req.planned_encoder_pos = 1000;
+  Motion_PlanStep(&config, &req, &res);
+
+  TEST_ASSERT_EQUAL_INT(0, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(0, res.count_to_emit);
+  TEST_ASSERT_EQUAL_INT32(0, res.target_velocity);
+  TEST_ASSERT_FALSE(res.stall_trip_event);
+}
+
+void test_planner_minstop_clamps_reverse_motion(void) {
+  config.persistent.minstop = -500;
+  config.persistent.maxstop = INT64_MAX;
+
+  // Approach minstop from -492 (remaining: 8 counts)
+  Motion_PlanStepRequest_t req = {
+      .commanded_pos = -600,
+      .planned_encoder_pos = -492,
+      .load_tension = 0,
+      .now = 100,
+      .last_step_time = 100,
+      .step_period_cnt = 0,
+      .step_reverse = true,
+      .is_freewheeling = false,
+      .stall_tripped = false,
+      .chunk_size = 16
+  };
+  Motion_PlanStepResult_t res;
+  Motion_PlanStep(&config, &req, &res);
+
+  TEST_ASSERT_EQUAL_INT(-1, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(8, res.count_to_emit); // Clamped to 8 counts!
+
+  // Now planned_encoder_pos is exactly at minstop -500
+  req.planned_encoder_pos = -500;
+  Motion_PlanStep(&config, &req, &res);
+
+  TEST_ASSERT_EQUAL_INT(0, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(0, res.count_to_emit);
+  TEST_ASSERT_EQUAL_INT32(0, res.target_velocity);
+  TEST_ASSERT_FALSE(res.stall_trip_event);
+}
+
+void test_planner_at_stop_stall_accumulates_and_trips(void) {
+  config.persistent.maxstop = 1000;
+  config.persistent.stall_threshold = 400;
+
+  Motion_PlanStepRequest_t req = {
+      .commanded_pos = 1200, // Error = 200 (< 400 stall_threshold)
+      .planned_encoder_pos = 1000,
+      .load_tension = 0,
+      .now = 100,
+      .last_step_time = 100,
+      .step_period_cnt = 0,
+      .step_reverse = false,
+      .is_freewheeling = false,
+      .stall_tripped = false,
+      .chunk_size = 16
+  };
+  Motion_PlanStepResult_t res;
+  Motion_PlanStep(&config, &req, &res);
+
+  TEST_ASSERT_EQUAL_UINT16(0, res.count_to_emit);
+  TEST_ASSERT_FALSE(res.stall_trip_event);
+  TEST_ASSERT_FALSE(res.stall_tripped);
+
+  // Commanded steps continue to arrive and accumulate lag: Error = 450 (>= 400)
+  req.commanded_pos = 1450;
+  Motion_PlanStep(&config, &req, &res);
+
+  TEST_ASSERT_EQUAL_UINT16(0, res.count_to_emit);
+  TEST_ASSERT_TRUE(res.stall_trip_event);
+  TEST_ASSERT_TRUE(res.stall_tripped);
+  TEST_ASSERT_TRUE(res.is_freewheeling);
+}
+
+void test_planner_at_stop_reverse_allowed_and_normal_motion(void) {
+  config.persistent.maxstop = 1000;
+  config.persistent.minstop = -1000;
+
+  // At maxstop (1000), but commanded in reverse (900)
+  Motion_PlanStepRequest_t req = {
+      .commanded_pos = 900,
+      .planned_encoder_pos = 1000,
+      .load_tension = 0,
+      .now = 100,
+      .last_step_time = 100,
+      .step_period_cnt = 0,
+      .step_reverse = true,
+      .is_freewheeling = false,
+      .stall_tripped = false,
+      .chunk_size = 16
+  };
+  Motion_PlanStepResult_t res;
+  Motion_PlanStep(&config, &req, &res);
+
+  // Motion away from the stop should be completely uninhibited!
+  TEST_ASSERT_EQUAL_INT(-1, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(16, res.count_to_emit);
+  TEST_ASSERT_TRUE(res.target_velocity < 0);
+  TEST_ASSERT_FALSE(res.stall_trip_event);
+}
+
+void test_planner_at_minstop_forward_allowed_and_normal_motion(void) {
+  config.persistent.minstop = -500;
+  config.persistent.maxstop = 500;
+
+  // At minstop (-500), but commanded forward (-400)
+  Motion_PlanStepRequest_t req = {
+      .commanded_pos = -400,
+      .planned_encoder_pos = -500,
+      .load_tension = 0,
+      .now = 100,
+      .last_step_time = 100,
+      .step_period_cnt = 0,
+      .step_reverse = false,
+      .is_freewheeling = false,
+      .stall_tripped = false,
+      .chunk_size = 16
+  };
+  Motion_PlanStepResult_t res;
+  Motion_PlanStep(&config, &req, &res);
+
+  // Motion away from the stop should be completely uninhibited!
+  TEST_ASSERT_EQUAL_INT(1, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(16, res.count_to_emit);
+  TEST_ASSERT_TRUE(res.target_velocity > 0);
+  TEST_ASSERT_FALSE(res.stall_trip_event);
+}
+
+void test_planner_freewheel_clamped_at_stops(void) {
+  config.persistent.maxstop = 200;
+  config.persistent.minstop = -200;
+
+  // 1. Freewheeling positive approaching maxstop from 195 (rem = 5)
+  Motion_PlanStepRequest_t req = {
+      .commanded_pos = 0,
+      .planned_encoder_pos = 195,
+      .load_tension = 1000,
+      .now = 100,
+      .last_step_time = 100,
+      .step_period_cnt = 0,
+      .step_reverse = false,
+      .is_freewheeling = true,
+      .stall_tripped = false,
+      .chunk_size = 16
+  };
+  Motion_PlanStepResult_t res;
+  Motion_PlanStep(&config, &req, &res);
+
+  TEST_ASSERT_EQUAL_INT(1, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(5, res.count_to_emit);
+
+  // 2. Freewheeling positive at maxstop 200 (rem = 0)
+  req.planned_encoder_pos = 200;
+  Motion_PlanStep(&config, &req, &res);
+
+  TEST_ASSERT_EQUAL_INT(0, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(0, res.count_to_emit);
+  TEST_ASSERT_EQUAL_INT32(0, res.target_velocity);
+
+  // 3. Negative tension pulling away from maxstop 200
+  req.load_tension = -1000;
+  Motion_PlanStep(&config, &req, &res);
+
+  TEST_ASSERT_EQUAL_INT(-1, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(16, res.count_to_emit);
+  TEST_ASSERT_TRUE(res.target_velocity < 0);
+
+  // 4. Freewheeling negative at minstop -200
+  req.planned_encoder_pos = -200;
+  Motion_PlanStep(&config, &req, &res);
+
+  TEST_ASSERT_EQUAL_INT(0, res.dir);
+  TEST_ASSERT_EQUAL_UINT16(0, res.count_to_emit);
+  TEST_ASSERT_EQUAL_INT32(0, res.target_velocity);
+}
+
+void test_motion_should_start_and_stop_with_stops(void) {
+  config.persistent.maxstop = 1000;
+  config.persistent.minstop = -1000;
+
+  // Freewheeling at maxstop under positive tension -> blocked!
+  Motion_StartRequest_t s_req = {
+      .commanded_pos = 0,
+      .encoder_pos = 1000,
+      .load_tension = 500,
+      .step_dcnt = 0,
+      .now = 100,
+      .last_step_time = 100,
+      .step_reverse = false,
+      .is_freewheeling = true,
+      .stall_tripped = false
+  };
+  TEST_ASSERT_FALSE(Motion_ShouldStart(&config, &s_req));
+
+  // Freewheeling at maxstop under negative tension -> allowed!
+  s_req.load_tension = -500;
+  TEST_ASSERT_TRUE(Motion_ShouldStart(&config, &s_req));
+
+  // Motion_ShouldStop: blocked at maxstop after step timeout
+  Motion_StopRequest_t stop_req = {
+      .commanded_pos = 1050,
+      .encoder_pos = 1000,
+      .planned_encoder_pos = 1000,
+      .step_dcnt = 0,
+      .load_tension = 0,
+      .time_since_last_step_ms = 100,
+      .step_timeout_ms = 50,
+      .is_freewheeling = false
+  };
+  TEST_ASSERT_TRUE(Motion_ShouldStop(&config, &stop_req));
+}
+
 int main(void) {
   UNITY_BEGIN();
 
@@ -1172,6 +1413,15 @@ int main(void) {
   RUN_TEST(test_motion_should_stop);
   RUN_TEST(test_motion_plan_and_emit_chunk);
   RUN_TEST(test_motion_prepare_start);
+
+  /* Physical Hard Stops Tests */
+  RUN_TEST(test_planner_maxstop_clamps_forward_motion);
+  RUN_TEST(test_planner_minstop_clamps_reverse_motion);
+  RUN_TEST(test_planner_at_stop_stall_accumulates_and_trips);
+  RUN_TEST(test_planner_at_stop_reverse_allowed_and_normal_motion);
+  RUN_TEST(test_planner_at_minstop_forward_allowed_and_normal_motion);
+  RUN_TEST(test_planner_freewheel_clamped_at_stops);
+  RUN_TEST(test_motion_should_start_and_stop_with_stops);
 
   return UNITY_END();
 }

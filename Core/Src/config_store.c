@@ -21,6 +21,7 @@ bool ConfigStore_Validate(const PersistentConfig_t* cfg) {
   if (cfg->tcurve_delta_v == 0) return false;
   if (cfg->tcurve_point_count < 2 || cfg->tcurve_point_count > TCURVE_MAX_POINTS) return false;
   if (memchr(cfg->name, '\0', sizeof(cfg->name)) == NULL) return false;
+  if (cfg->minstop > cfg->maxstop) return false;
   return true;
 }
 

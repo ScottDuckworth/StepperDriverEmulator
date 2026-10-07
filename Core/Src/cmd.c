@@ -90,6 +90,40 @@ static void Cmd_stall(const Command_t* self) {
   SetStallThreshold(value);
 }
 
+static void Cmd_minstop(const Command_t* self) {
+  if (argc == 1) {
+    ReportMinStop();
+    return;
+  }
+  if (argc != 2) { InvalidUsage(self->usage); return; }
+  if (strcmp(argv[1], "none") == 0 || strcmp(argv[1], "clear") == 0) {
+    SetMinStop(INT64_MIN);
+    return;
+  }
+  int64_t value;
+  if (!MathUtil_ParseI64(argv[1], &value)) { InvalidValue("int64", argv[1]); return; }
+  if (!SetMinStop(value)) {
+    WriteString("error: minstop exceeds maxstop\r\n");
+  }
+}
+
+static void Cmd_maxstop(const Command_t* self) {
+  if (argc == 1) {
+    ReportMaxStop();
+    return;
+  }
+  if (argc != 2) { InvalidUsage(self->usage); return; }
+  if (strcmp(argv[1], "none") == 0 || strcmp(argv[1], "clear") == 0) {
+    SetMaxStop(INT64_MAX);
+    return;
+  }
+  int64_t value;
+  if (!MathUtil_ParseI64(argv[1], &value)) { InvalidValue("int64", argv[1]); return; }
+  if (!SetMaxStop(value)) {
+    WriteString("error: minstop exceeds maxstop\r\n");
+  }
+}
+
 static void Cmd_kfree(const Command_t* self) {
   if (argc == 1) {
     ReportKfree();
@@ -221,6 +255,8 @@ static void Cmd_r(const Command_t* self) {
   ReportTension();
   ReportTorqueLUT();
   ReportStallThreshold();
+  ReportMinStop();
+  ReportMaxStop();
   ReportKfree();
   ReportStallTrip();
   ReportBlinkMode();
@@ -248,6 +284,8 @@ static const Command_t commands[] = {
     {"t", "t [int32]", Cmd_t},
     {"tlut", "tlut [delta_v] [T0] [T1] ... [TN]", Cmd_tlut},
     {"stall", "stall [uint32]", Cmd_stall},
+    {"minstop", "minstop [int64|none|clear]", Cmd_minstop},
+    {"maxstop", "maxstop [int64|none|clear]", Cmd_maxstop},
     {"kfree", "kfree [float]", Cmd_kfree},
     {"blank", "blank [float]", Cmd_blank},
     {"pos", "pos [int64]", Cmd_pos},

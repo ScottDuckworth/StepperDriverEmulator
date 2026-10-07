@@ -81,6 +81,8 @@ void test_save_and_load_roundtrip(void) {
   original_cfg.tcurve_table[3] = 400;
   original_cfg.tcurve_table[4] = 200;
   original_cfg.stall_threshold = 2000;
+  original_cfg.minstop = -9876543210LL;
+  original_cfg.maxstop = 9876543210LL;
   original_cfg.kp = Q12_RATIO(1, 4);
   original_cfg.kff = Q12_RATIO(95, 100);
   original_cfg.kfree = Q12_RATIO(8, 1000);
@@ -106,6 +108,8 @@ void test_save_and_load_roundtrip(void) {
   TEST_ASSERT_EQUAL_INT32(400, loaded_p_cfg.tcurve_table[3]);
   TEST_ASSERT_EQUAL_INT32(200, loaded_p_cfg.tcurve_table[4]);
   TEST_ASSERT_EQUAL_UINT32(2000, loaded_p_cfg.stall_threshold);
+  TEST_ASSERT_EQUAL_INT64(-9876543210LL, loaded_p_cfg.minstop);
+  TEST_ASSERT_EQUAL_INT64(9876543210LL, loaded_p_cfg.maxstop);
   TEST_ASSERT_EQUAL_INT32(1024, loaded_p_cfg.kp.raw);
   TEST_ASSERT_EQUAL_INT32(3891, loaded_p_cfg.kff.raw);
   TEST_ASSERT_EQUAL_INT32(33, loaded_p_cfg.kfree.raw);
@@ -187,6 +191,11 @@ void test_validation_rejects_invalid_config(void) {
 
   bad_cfg = (PersistentConfig_t) DEFAULT_PERSISTENT_CONFIG;
   memset(bad_cfg.name, 'A', sizeof(bad_cfg.name)); // Missing null-terminator
+  TEST_ASSERT_FALSE(ConfigStore_Validate(&bad_cfg));
+
+  bad_cfg = (PersistentConfig_t) DEFAULT_PERSISTENT_CONFIG;
+  bad_cfg.minstop = 500;
+  bad_cfg.maxstop = 200;
   TEST_ASSERT_FALSE(ConfigStore_Validate(&bad_cfg));
 }
 

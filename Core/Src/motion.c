@@ -37,6 +37,12 @@ int32_t Motion_CalcMotorTorque(const EmulatorConfig_t* cfg, int32_t speed_counts
 bool Motion_ShouldStart(const EmulatorConfig_t* cfg, const Motion_StartRequest_t* req) {
   if (!cfg || !req) return false;
   if (req->is_freewheeling) {
+    if (req->load_tension > 0 && cfg->persistent.maxstop != INT64_MAX && req->encoder_pos >= cfg->persistent.maxstop) {
+      return false;
+    }
+    if (req->load_tension < 0 && cfg->persistent.minstop != INT64_MIN && req->encoder_pos <= cfg->persistent.minstop) {
+      return false;
+    }
     return (req->load_tension != 0);
   }
   int32_t abs_tension = MathUtil_AbsI32(req->load_tension);
@@ -121,8 +127,27 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
   if (req->is_freewheeling) {
     int32_t v_free = Motion_CalcFreewheelVelocity(cfg, req->load_tension);
     if (v_free != 0) {
-      res->dir = (v_free > 0) ? 1 : -1;
-      res->count_to_emit = chunk_sz;
+      int dir = (v_free > 0) ? 1 : -1;
+      uint16_t count_to_emit = chunk_sz;
+      if (dir > 0 && cfg->persistent.maxstop != INT64_MAX) {
+        if (req->planned_encoder_pos >= cfg->persistent.maxstop) {
+          count_to_emit = 0;
+          v_free = 0;
+          dir = 0;
+        } else if (req->planned_encoder_pos > cfg->persistent.maxstop - (int64_t) chunk_sz) {
+          count_to_emit = (uint16_t)(cfg->persistent.maxstop - req->planned_encoder_pos);
+        }
+      } else if (dir < 0 && cfg->persistent.minstop != INT64_MIN) {
+        if (req->planned_encoder_pos <= cfg->persistent.minstop) {
+          count_to_emit = 0;
+          v_free = 0;
+          dir = 0;
+        } else if (req->planned_encoder_pos < cfg->persistent.minstop + (int64_t) chunk_sz) {
+          count_to_emit = (uint16_t)(req->planned_encoder_pos - cfg->persistent.minstop);
+        }
+      }
+      res->dir = dir;
+      res->count_to_emit = count_to_emit;
       res->target_velocity = v_free;
     } else {
       res->dir = 0;
@@ -224,33 +249,85 @@ void Motion_PlanStep(const EmulatorConfig_t* cfg, const Motion_PlanStepRequest_t
   int32_t t_net = Motion_CalcNetTorque(t_motor, dir, req->load_tension);
   uint32_t abs_error = (uint32_t) MathUtil_AbsI32(error);
 
-  if (t_net >= 0) {
-    // Sufficient torque: motor drives normally toward target
-    res->dir = dir;
-    if (dir == 0) {
-      res->count_to_emit = 0;
-    } else if (dir > 0 && error <= 0) {
-      res->count_to_emit = 0;
-    } else if (dir < 0 && error >= 0) {
-      res->count_to_emit = 0;
-    } else {
-      res->count_to_emit = (abs_error < (uint32_t) chunk_sz) ? (uint16_t) abs_error : chunk_sz;
+  // Check if blocked by physical stop in commanded direction
+  bool blocked_by_stop = false;
+  if (dir > 0 && cfg->persistent.maxstop != INT64_MAX) {
+    if (req->planned_encoder_pos >= cfg->persistent.maxstop) {
+      blocked_by_stop = true;
     }
-    return;
+  } else if (dir < 0 && cfg->persistent.minstop != INT64_MIN) {
+    if (req->planned_encoder_pos <= cfg->persistent.minstop) {
+      blocked_by_stop = true;
+    }
   }
 
-  // Torque deficit: tension exceeds motor torque capacity at speed (opposing or overrunning)
-  int32_t v_slip = Motion_CalcSlipVelocity(cfg, req->load_tension, t_motor);
-  if (v_slip > 0) {
-    res->dir = (req->load_tension > 0) ? 1 : -1;
-    res->count_to_emit = chunk_sz;
-    res->target_velocity = (res->dir > 0) ? v_slip : -v_slip;
-  } else {
+  if (blocked_by_stop) {
+    // If steps are commanded in the direction of the stop that has been hit,
+    // net torque should immediately drop to 0.
+    t_net = 0;
+    (void) t_net;
     res->dir = 0;
     res->count_to_emit = 0;
+    res->target_velocity = 0;
+  } else {
+    if (t_net >= 0) {
+      // Sufficient torque: motor drives normally toward target
+      res->dir = dir;
+      if (dir == 0) {
+        res->count_to_emit = 0;
+      } else if (dir > 0 && error <= 0) {
+        res->count_to_emit = 0;
+      } else if (dir < 0 && error >= 0) {
+        res->count_to_emit = 0;
+      } else {
+        uint16_t count = (abs_error < (uint32_t) chunk_sz) ? (uint16_t) abs_error : chunk_sz;
+        if (dir > 0 && cfg->persistent.maxstop != INT64_MAX) {
+          if (req->planned_encoder_pos > cfg->persistent.maxstop - (int64_t) count) {
+            count = (uint16_t)(cfg->persistent.maxstop - req->planned_encoder_pos);
+          }
+        } else if (dir < 0 && cfg->persistent.minstop != INT64_MIN) {
+          if (req->planned_encoder_pos < cfg->persistent.minstop + (int64_t) count) {
+            count = (uint16_t)(req->planned_encoder_pos - cfg->persistent.minstop);
+          }
+        }
+        res->count_to_emit = count;
+      }
+      return;
+    }
+
+    // Torque deficit: tension exceeds motor torque capacity at speed (opposing or overrunning)
+    int32_t v_slip = Motion_CalcSlipVelocity(cfg, req->load_tension, t_motor);
+    if (v_slip > 0) {
+      int slip_dir = (req->load_tension > 0) ? 1 : -1;
+      uint16_t count_to_emit = chunk_sz;
+      if (slip_dir > 0 && cfg->persistent.maxstop != INT64_MAX) {
+        if (req->planned_encoder_pos >= cfg->persistent.maxstop) {
+          count_to_emit = 0;
+          v_slip = 0;
+          slip_dir = 0;
+        } else if (req->planned_encoder_pos > cfg->persistent.maxstop - (int64_t) chunk_sz) {
+          count_to_emit = (uint16_t)(cfg->persistent.maxstop - req->planned_encoder_pos);
+        }
+      } else if (slip_dir < 0 && cfg->persistent.minstop != INT64_MIN) {
+        if (req->planned_encoder_pos <= cfg->persistent.minstop) {
+          count_to_emit = 0;
+          v_slip = 0;
+          slip_dir = 0;
+        } else if (req->planned_encoder_pos < cfg->persistent.minstop + (int64_t) chunk_sz) {
+          count_to_emit = (uint16_t)(req->planned_encoder_pos - cfg->persistent.minstop);
+        }
+      }
+      res->dir = slip_dir;
+      res->count_to_emit = count_to_emit;
+      res->target_velocity = (slip_dir > 0) ? v_slip : ((slip_dir < 0) ? -v_slip : 0);
+    } else {
+      res->dir = 0;
+      res->count_to_emit = 0;
+    }
   }
 
-  // Under torque deficit, motor stalls and accumulates lag against commanded steps
+  // Once enough steps arrive that would exceed the rotational stall threshold,
+  // a stall event should occur.
   if (cfg->persistent.stall_threshold > 0 && abs_error >= cfg->persistent.stall_threshold) {
     if (!req->stall_tripped) {
       res->stall_trip_event = true;
@@ -320,14 +397,27 @@ uint32_t Motion_CalcStepTimeoutMs(uint32_t step_period_cnt) {
 bool Motion_ShouldStop(const EmulatorConfig_t* cfg, const Motion_StopRequest_t* req) {
   if (!cfg || !req) return false;
   if (req->is_freewheeling) {
+    if (req->load_tension > 0 && cfg->persistent.maxstop != INT64_MAX && req->encoder_pos >= cfg->persistent.maxstop) {
+      return (req->encoder_pos == req->planned_encoder_pos);
+    }
+    if (req->load_tension < 0 && cfg->persistent.minstop != INT64_MIN && req->encoder_pos <= cfg->persistent.minstop) {
+      return (req->encoder_pos == req->planned_encoder_pos);
+    }
     return (req->load_tension == 0);
   }
   if (req->time_since_last_step_ms < req->step_timeout_ms) {
     return false;
   }
   int32_t abs_tension = MathUtil_AbsI32(req->load_tension);
-  return (req->commanded_pos == req->encoder_pos &&
-          req->encoder_pos == req->planned_encoder_pos &&
-          req->step_dcnt == 0 &&
-          abs_tension <= cfg->persistent.tcurve_table[0]);
+  bool blocked_at_stop = false;
+  if (req->commanded_pos > req->encoder_pos && cfg->persistent.maxstop != INT64_MAX && req->encoder_pos >= cfg->persistent.maxstop) {
+    blocked_at_stop = true;
+  } else if (req->commanded_pos < req->encoder_pos && cfg->persistent.minstop != INT64_MIN && req->encoder_pos <= cfg->persistent.minstop) {
+    blocked_at_stop = true;
+  }
+
+  return (blocked_at_stop || req->commanded_pos == req->encoder_pos) &&
+         req->encoder_pos == req->planned_encoder_pos &&
+         req->step_dcnt == 0 &&
+         abs_tension <= cfg->persistent.tcurve_table[0];
 }

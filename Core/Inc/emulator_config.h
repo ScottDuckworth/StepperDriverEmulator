@@ -26,6 +26,8 @@ typedef struct {
   uint8_t tcurve_point_count;                 // Active knot count (2 to 33)
   int32_t tcurve_table[TCURVE_MAX_POINTS];    // Torque values from v=0 to v_max = (point_count - 1) * delta_v
   uint32_t stall_threshold;   // Rotor lag error threshold before tripping stall fault (encoder counts, 0 = disabled)
+  int64_t minstop;            // Lower physical travel stop (encoder counts, INT64_MIN = cleared)
+  int64_t maxstop;            // Upper physical travel stop (encoder counts, INT64_MAX = cleared)
 
   // Control Gains & Physical Coefficients
   q12_t kp;                  // Proportional gain for position tracking error (kp * 4096)
@@ -63,6 +65,8 @@ typedef struct {
     657, 629, 600, 571, 543, 514, 486, 457, 429, 400, 371, 343, 314, 286, 257, 229, 200 \
   }, \
   .stall_threshold = 4000, \
+  .minstop = INT64_MIN, \
+  .maxstop = INT64_MAX, \
   .kp = Q12_INIT_RATIO(1, 10), \
   .kff = Q12_INIT_INT(1), \
   .kfree = Q12_INIT_RATIO(1, 200), \

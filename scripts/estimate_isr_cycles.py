@@ -540,17 +540,29 @@ def analyze_isr(
     elf_path: Path,
     functions: Dict[str, Function],
     isr_name: str = "DMA1_Channel2_3_IRQHandler",
-    chunk_size: int = 8,
+    chunk_size: int = 16,
     counts_per_step: float = 4.0,
     flash_wait_states: int = 1,
+    mode: str = "active",
     verbose: bool = False,
 ):
+    if mode == "active":
+        exclude_calls = {"ReportStallTrip", "CheckMotionIdle"}
+        mode_label = "Active Streaming Pipeline (Skipping Standstill Idle Checks)"
+    elif mode == "standstill":
+        exclude_calls = {"ReportStallTrip"}
+        mode_label = "Standstill / Stop-Hit Idle Transition Path"
+    else:
+        exclude_calls = {"ReportStallTrip"}
+        mode_label = "Unconstrained Composite CFG Worst-Case"
+
     print("=" * 76)
     print(f" STM32F042 DYNAMIC CFG INTERRUPT TIMING ANALYSIS: {isr_name}")
     print(f" ELF Binary: {elf_path.name}")
     print(f" Target Core: ARM Cortex-M0 @ 48 MHz (1 cycle = 20.833 ns)")
     print(f" Memory: Flash Latency = {flash_wait_states} wait state(s) (FLASH_LATENCY_{flash_wait_states})")
     print(f" Configuration: Chunk Size = {chunk_size} counts | Ratio = {counts_per_step:.2f} counts/step")
+    print(f" Evaluation Mode: {mode_label}")
     print("=" * 76)
 
     if isr_name not in functions:
@@ -561,6 +573,7 @@ def analyze_isr(
         functions=functions,
         chunk_size=chunk_size,
         counts_per_step=counts_per_step,
+        exclude_calls=exclude_calls,
     )
 
     paths = analyzer.enumerate_isr_paths(isr_name)
@@ -709,10 +722,17 @@ def main():
         help="Analyze all critical interrupt handlers (DMA, TIM2, SysTick)",
     )
     parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["active", "standstill", "all"],
+        default="active",
+        help="Evaluation mode: 'active' for real-time streaming (default), 'standstill' for idle/stop checks, 'all' for unconstrained composite worst-case.",
+    )
+    parser.add_argument(
         "--chunk-size",
         type=int,
-        default=8,
-        help="DMA chunk size in counts (default: 8)",
+        default=16,
+        help="DMA chunk size in counts (default: 16)",
     )
     parser.add_argument(
         "--counts-per-step",
@@ -760,6 +780,7 @@ def main():
             chunk_size=args.chunk_size,
             counts_per_step=args.counts_per_step,
             flash_wait_states=args.flash_wait_states,
+            mode=args.mode,
             verbose=args.verbose,
         )
         print()

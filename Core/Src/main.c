@@ -382,6 +382,52 @@ void ReportStallThreshold(void) {
   ReportU32("stall", GetStallThreshold());
 }
 
+int64_t GetMinStop(void) {
+  return config.persistent.minstop;
+}
+
+bool SetMinStop(int64_t min_stop) {
+  if (min_stop > config.persistent.maxstop) {
+    return false;
+  }
+  config.persistent.minstop = min_stop;
+  ReportMinStop();
+  MaybeStartMotion();
+  return true;
+}
+
+void ReportMinStop(void) {
+  int64_t stop = GetMinStop();
+  if (stop == INT64_MIN) {
+    WriteString("minstop none\r\n");
+  } else {
+    ReportI64("minstop", stop);
+  }
+}
+
+int64_t GetMaxStop(void) {
+  return config.persistent.maxstop;
+}
+
+bool SetMaxStop(int64_t max_stop) {
+  if (max_stop < config.persistent.minstop) {
+    return false;
+  }
+  config.persistent.maxstop = max_stop;
+  ReportMaxStop();
+  MaybeStartMotion();
+  return true;
+}
+
+void ReportMaxStop(void) {
+  int64_t stop = GetMaxStop();
+  if (stop == INT64_MAX) {
+    WriteString("maxstop none\r\n");
+  } else {
+    ReportI64("maxstop", stop);
+  }
+}
+
 q12_t GetKfree(void) {
   return config.persistent.kfree;
 }
@@ -508,6 +554,8 @@ void GetInstantaneousMotionState(int32_t* out_velocity_hz, int32_t* out_motor_to
   int32_t vel = active ? current_motion_velocity : 0;
   bool is_free = stall_tripped || !GetStepEnabled();
   int32_t tension = load_tension;
+  int64_t enc_pos = position.encoder_pos;
+  int64_t cmd_pos = position.commanded_pos;
   __enable_irq();
 
   int32_t t_motor;
@@ -522,6 +570,16 @@ void GetInstantaneousMotionState(int32_t* out_velocity_hz, int32_t* out_motor_to
 
   int dir = (vel > 0) ? 1 : ((vel < 0) ? -1 : 0);
   int32_t t_net = Motion_CalcNetTorque(t_motor, dir, tension);
+
+  if (config.persistent.maxstop != INT64_MAX && enc_pos >= config.persistent.maxstop) {
+    if (cmd_pos > enc_pos || vel > 0 || (is_free && tension > 0)) {
+      t_net = 0;
+    }
+  } else if (config.persistent.minstop != INT64_MIN && enc_pos <= config.persistent.minstop) {
+    if (cmd_pos < enc_pos || vel < 0 || (is_free && tension < 0)) {
+      t_net = 0;
+    }
+  }
 
   if (out_velocity_hz) *out_velocity_hz = vel;
   if (out_motor_torque) *out_motor_torque = t_motor;
@@ -834,7 +892,13 @@ static void CheckMotionIdle(void) {
   bool is_freewheeling = stall_tripped || !step_enabled;
 
   if (is_freewheeling && load_tension != 0) {
-    return;
+    if (load_tension > 0 && config.persistent.maxstop != INT64_MAX && position.encoder_pos >= config.persistent.maxstop) {
+      // Blocked at maxstop
+    } else if (load_tension < 0 && config.persistent.minstop != INT64_MIN && position.encoder_pos <= config.persistent.minstop) {
+      // Blocked at minstop
+    } else {
+      return;
+    }
   }
 
   uint32_t elapsed_ms = now - last_step_time;
@@ -849,11 +913,20 @@ static void CheckMotionIdle(void) {
     return;
   }
 
-  if (!is_freewheeling &&
-      (position.commanded_pos != position.encoder_pos ||
-       position.encoder_pos != planned_encoder_pos ||
-       position.step_dcnt != 0)) {
-    return;
+  bool blocked_by_stop = false;
+  if (position.commanded_pos > position.encoder_pos && config.persistent.maxstop != INT64_MAX && position.encoder_pos >= config.persistent.maxstop) {
+    blocked_by_stop = true;
+  } else if (position.commanded_pos < position.encoder_pos && config.persistent.minstop != INT64_MIN && position.encoder_pos <= config.persistent.minstop) {
+    blocked_by_stop = true;
+  }
+
+  if (!is_freewheeling) {
+    if (!blocked_by_stop && position.commanded_pos != position.encoder_pos) {
+      return;
+    }
+    if (position.encoder_pos != planned_encoder_pos || position.step_dcnt != 0) {
+      return;
+    }
   }
 
   Motion_StopRequest_t req = {

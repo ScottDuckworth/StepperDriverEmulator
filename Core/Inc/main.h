@@ -139,6 +139,14 @@ uint32_t GetStallThreshold(void);
 void SetStallThreshold(uint32_t threshold);
 void ReportStallThreshold(void);
 
+int64_t GetMinStop(void);
+bool SetMinStop(int64_t min_stop);
+void ReportMinStop(void);
+
+int64_t GetMaxStop(void);
+bool SetMaxStop(int64_t max_stop);
+void ReportMaxStop(void);
+
 q12_t GetKfree(void);
 void SetKfree(q12_t kfree);
 void ReportKfree(void);
