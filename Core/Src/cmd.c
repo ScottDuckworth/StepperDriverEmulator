@@ -275,6 +275,12 @@ static void Cmd_save(const Command_t* self) {
   }
 }
 
+static void Cmd_dfu(const Command_t* self) {
+  if (argc != 1) { InvalidUsage(self->usage); return; }
+  WriteString("dfu ok\r\n");
+  EnterDfuBootloader();
+}
+
 static void Cmd_help(const Command_t* self);
 
 static const Command_t commands[] = {
@@ -296,6 +302,7 @@ static const Command_t commands[] = {
     {"kp", "kp [float]", Cmd_kp},
     {"kff", "kff [float]", Cmd_kff},
     {"save", "save", Cmd_save},
+    {"dfu", "dfu", Cmd_dfu},
     {"r", "r", Cmd_r},
     {"help", "help", Cmd_help},
 };

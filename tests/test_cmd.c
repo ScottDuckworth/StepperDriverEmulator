@@ -16,6 +16,11 @@ static bool mock_lim2;
 static bool mock_blink;
 static bool mock_stall_trip;
 static bool mock_save_success;
+static bool mock_dfu_entered;
+
+void EnterDfuBootloader(void) {
+  mock_dfu_entered = true;
+}
 
 static char captured_output[4096];
 static size_t captured_len;
@@ -618,6 +623,7 @@ void test_cmd_help(void) {
   TEST_ASSERT_NULL(strstr(captured_output, "zero"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "ratio [spr] [epr]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "save"));
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "dfu"));
 }
 
 void test_cmd_save_success(void) {
@@ -635,6 +641,20 @@ void test_cmd_save_failure(void) {
 void test_cmd_save_invalid_usage(void) {
   send_cmd("save extra\r\n");
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid usage: save\r\n"));
+}
+
+void test_cmd_dfu_success(void) {
+  mock_dfu_entered = false;
+  send_cmd("dfu\r\n");
+  TEST_ASSERT_TRUE(mock_dfu_entered);
+  TEST_ASSERT_EQUAL_STRING("dfu ok\r\n", captured_output);
+}
+
+void test_cmd_dfu_invalid_usage(void) {
+  mock_dfu_entered = false;
+  send_cmd("dfu extra\r\n");
+  TEST_ASSERT_FALSE(mock_dfu_entered);
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid usage: dfu\r\n"));
 }
 
 void test_cmd_error_invalid_usage(void) {
@@ -791,6 +811,8 @@ int main(void) {
   RUN_TEST(test_cmd_save_success);
   RUN_TEST(test_cmd_save_failure);
   RUN_TEST(test_cmd_save_invalid_usage);
+  RUN_TEST(test_cmd_dfu_success);
+  RUN_TEST(test_cmd_dfu_invalid_usage);
   RUN_TEST(test_cmd_error_invalid_usage);
   RUN_TEST(test_cmd_error_invalid_value);
   RUN_TEST(test_cmd_error_unknown_command);

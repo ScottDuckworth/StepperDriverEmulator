@@ -97,6 +97,8 @@ static volatile uint16_t usb_input_size;
 
 static EmulatorConfig_t config = DEFAULT_EMULATOR_CONFIG;
 
+uint32_t dfu_boot_key __attribute__((section(".noinit")));
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -137,6 +139,27 @@ static void USB_Flush(void) {
     usb_output_size = 0;
   }
 }
+
+#if defined(UNIT_TEST)
+static bool g_dfu_bootloader_entered = false;
+bool Test_IsDfuBootloaderEntered(void) {
+  return g_dfu_bootloader_entered;
+}
+void Test_ClearDfuBootloaderEntered(void) {
+  g_dfu_bootloader_entered = false;
+}
+void EnterDfuBootloader(void) {
+  g_dfu_bootloader_entered = true;
+}
+#else
+
+void EnterDfuBootloader(void) {
+  USB_Flush();
+  HAL_Delay(50);
+  dfu_boot_key = DFU_BOOT_KEY_VAL;
+  NVIC_SystemReset();
+}
+#endif
 
 uint16_t WriteData(const uint8_t* data, uint16_t size) {
   uint16_t cap = sizeof(usb_output_data) - usb_output_size;
@@ -1199,7 +1222,18 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
+#if !defined(UNIT_TEST)
+  if (dfu_boot_key == DFU_BOOT_KEY_VAL) {
+    dfu_boot_key = 0;
+    RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
+    SYSCFG->CFGR1 = (SYSCFG->CFGR1 & ~SYSCFG_CFGR1_MEM_MODE) | SYSCFG_CFGR1_MEM_MODE_0;
+    uint32_t sys_mem_addr = 0x1FFFC800U;
+    __set_MSP(*((volatile uint32_t*) sys_mem_addr));
+    void (*bootloader)(void) = (void (*)(void))(*((volatile uint32_t*) (sys_mem_addr + 4U)));
+    bootloader();
+    while (1);
+  }
+#endif
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/

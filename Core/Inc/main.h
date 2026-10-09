@@ -178,6 +178,14 @@ void ReportStepEnabled(void);
 void ReportLimit1(void);
 void ReportLimit2(void);
 
+#define DFU_BOOT_KEY_VAL 0xDF042B00U
+void EnterDfuBootloader(void);
+
+#if defined(UNIT_TEST)
+bool Test_IsDfuBootloaderEntered(void);
+void Test_ClearDfuBootloaderEntered(void);
+#endif
+
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
