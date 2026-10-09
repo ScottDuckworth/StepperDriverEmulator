@@ -357,6 +357,7 @@ Commands are sent via the USB Virtual COM Port (terminated with `\r` or `\n`).
 | `lim1` | `lim1 <0\|1>` | Drive simulated limit switch 1 pin | `lim1 1` | `lim1 1\r\n` |
 | `lim2` | `lim2 <0\|1>` | Drive simulated limit switch 2 pin | `lim2 0` | `lim2 0\r\n` |
 | `save` | `save` | Save configuration to non-volatile flash | `save` | `save ok\r\n` |
+| `dfu` | `dfu` | Jump to built-in USB DFU ROM bootloader for firmware updates | `dfu` | `dfu ok\r\n` |
 | `r` | `r` | Dump full configuration and runtime status | `r` | Multi-line report (see below) |
 | `help` | `help` | Print command usage list | `help` | Usage list (see below) |
 
@@ -506,8 +507,8 @@ Memory footprint of the Release build (`build/Release/StepperDriverEmulator.elf`
 
 | Memory Region | Used Bytes | Total Bytes | Utilization | Free Space |
 | :--- | :--- | :--- | :--- | :--- |
-| **Flash** (`.text` + `.rodata` + `.data`) | 29,208 B | 31,744 B | **92.01%** | 2,536 B free |
-| **RAM** (`.data` + `.bss` + stack) | 5,976 B | 6,144 B | **97.26%** | 168 B free |
+| **Flash** (`.text` + `.rodata` + `.data`) | **29,448 B** | 31,744 B | **92.77%** | 2,296 B free |
+| **RAM** (`.data` + `.bss` + stack) | **5,972 B** | 6,144 B | **97.20%** | 172 B free |
 
 * **Flash Savings:** Complete elimination of soft-float runtime helpers (`__aeabi_fmul`, `__aeabi_fadd`, `__aeabi_fsub`, `__aeabi_fdiv`, `__aeabi_f2iz`, `__aeabi_i2f`, etc.) reclaimed **3,972 bytes** of Flash memory.
 * **Deterministic Timing:** Disallowance of software floating point and 64-bit integer division eliminates variable, data-dependent software emulation loops from the motion control path.
@@ -520,7 +521,7 @@ Memory footprint of the Release build (`build/Release/StepperDriverEmulator.elf`
 
 * **GNU Arm Embedded Toolchain** (`arm-none-eabi-gcc`)
 * **CMake** (v3.20+) and **Ninja**
-* **STM32CubeProgrammer** or **OpenOCD** / **ST-Link**
+* **STM32CubeProgrammer** or **dfu-util** or **ST-Link** / **OpenOCD**
 
 ### Build Commands
 
@@ -532,10 +533,51 @@ cmake --build build/Debug
 # or using CMake presets:
 cmake --build --preset Debug
 
-# Build Release
+# Build Release (automatically produces StepperDriverEmulator.bin)
 cmake --build build/Release
 # or using CMake presets:
 cmake --build --preset Release
+```
+
+### Firmware Updates Over USB (DFU)
+
+The firmware supports end-to-end updates over USB without requiring an external debugger by jumping directly into the STM32F042's built-in factory ROM DFU bootloader (`0x1FFFC800`) via software:
+
+#### 1. Automated Go Flasher (`cmd/flasher`)
+
+A cross-platform firmware update utility is implemented in Go under `cmd/flasher`. It relies exclusively on Go packages (`github.com/kevmo314/go-usb` and `go.bug.st/serial`), does not invoke external `dfu-util` or CLI subprocesses, does not touch the Windows registry, and automatically identifies attached devices matching `USBD_PRODUCT_STRING_FS` (`StepperDriverEmulator`):
+
+```powershell
+# Flash default Release binary (auto-detects StepperDriverEmulator and triggers DFU):
+go run ./cmd/flasher
+
+# Or build and run standalone executable:
+go build -o build/Release/flasher.exe ./cmd/flasher
+./build/Release/flasher.exe
+
+# Specify serial port explicitly:
+go run ./cmd/flasher -port COM3
+
+# Specify custom binary:
+go run ./cmd/flasher -bin build/Release/StepperDriverEmulator.bin
+
+# Full erase (default preserves Page 31 configuration storage):
+go run ./cmd/flasher -full-erase
+```
+
+* **Configuration Page Preservation:** By default, the flasher only erases application pages (Pages 0–30, up to `0x08007BFF`), leaving persistent configuration (Page 31 at `0x08007C00`) untouched. Passing `-full-erase` erases the entire 32 KB flash.
+* **Pure Go USB & DfuSe Engine:** Performs full erase, programming, and verification directly using USB control transfers over Endpoint 0 with native OS USB drivers.
+
+#### 2. Manual DFU Programming (`dfu-util` or `STM32CubeProgrammer`)
+
+If entering DFU mode manually (via the `dfu` serial command):
+
+```powershell
+# Using dfu-util:
+dfu-util -a 0 -s 0x08000000:leave -D build/Release/StepperDriverEmulator.bin
+
+# Using STM32CubeProgrammer CLI:
+STM32_Programmer_CLI -c port=usb1 -d build/Release/StepperDriverEmulator.bin 0x08000000 -v -s
 ```
 
 ---
