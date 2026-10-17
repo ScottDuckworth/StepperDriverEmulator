@@ -159,6 +159,31 @@ void EnterDfuBootloader(void) {
   dfu_boot_key = DFU_BOOT_KEY_VAL;
   NVIC_SystemReset();
 }
+
+static void ConfigureBootOptionBytes(void) {
+  FLASH_OBProgramInitTypeDef obInit;
+  HAL_FLASHEx_OBGetConfig(&obInit);
+
+  /* Ensure BOOT_SEL is 0 (software boot selection) and nBOOT0 is 1 (boot from Main Flash).
+   * If BOOT_SEL is 1 (hardware pin mode) or nBOOT0 is 0, reconfigure user option bytes. */
+  if ((obInit.USERConfig & OB_BOOT_SEL_SET) != 0 || (obInit.USERConfig & OB_BOOT0_SET) == 0) {
+    HAL_FLASH_Unlock();
+    HAL_FLASH_OB_Unlock();
+
+    obInit.OptionType = OPTIONBYTE_USER;
+    obInit.USERConfig &= ~OB_BOOT_SEL_SET; /* Bit 7 = 0: Ignore physical BOOT0 pin */
+    obInit.USERConfig |= OB_BOOT0_SET;    /* Bit 3 = 1: Boot from Main Flash */
+
+    if (HAL_FLASHEx_OBErase() == HAL_OK) {
+      if (HAL_FLASHEx_OBProgram(&obInit) == HAL_OK) {
+        HAL_FLASH_OB_Launch(); /* Generates system reset to reload option bytes */
+      }
+    }
+
+    HAL_FLASH_OB_Lock();
+    HAL_FLASH_Lock();
+  }
+}
 #endif
 
 uint16_t WriteData(const uint8_t* data, uint16_t size) {
@@ -1223,8 +1248,9 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
 #if !defined(UNIT_TEST)
-  if (dfu_boot_key == DFU_BOOT_KEY_VAL) {
+  if ((RCC->CSR & RCC_CSR_SFTRSTF) && (dfu_boot_key == DFU_BOOT_KEY_VAL)) {
     dfu_boot_key = 0;
+    __HAL_RCC_CLEAR_RESET_FLAGS();
     RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
     SYSCFG->CFGR1 = (SYSCFG->CFGR1 & ~SYSCFG_CFGR1_MEM_MODE) | SYSCFG_CFGR1_MEM_MODE_0;
     uint32_t sys_mem_addr = 0x1FFFC800U;
@@ -1232,6 +1258,9 @@ int main(void)
     void (*bootloader)(void) = (void (*)(void))(*((volatile uint32_t*) (sys_mem_addr + 4U)));
     bootloader();
     while (1);
+  } else {
+    dfu_boot_key = 0;
+    __HAL_RCC_CLEAR_RESET_FLAGS();
   }
 #endif
   /* USER CODE END 1 */
@@ -1242,7 +1271,9 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
+#if !defined(UNIT_TEST)
+  ConfigureBootOptionBytes();
+#endif
   /* USER CODE END Init */
 
   /* USER CODE BEGIN SysInit */
