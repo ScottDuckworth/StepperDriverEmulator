@@ -125,8 +125,8 @@ Memory footprint of the Release build (`build/Release/StepperDriverEmulator.elf`
 
 | Memory Region | Used Bytes | Total Bytes | Utilization | Free Space |
 | :--- | :--- | :--- | :--- | :--- |
-| **Flash** (`.text` + `.rodata` + `.data`) | **30,688 B** | 31,744 B | **96.67%** | 1,056 B free |
-| **RAM** (`.data` + `.bss` + stack) | **5,972 B** | 6,144 B | **97.20%** | 172 B free |
+| **Flash** (`.text` + `.rodata` + `.data`) | **30,636 B** | 31,744 B | **96.51%** | 1,108 B free |
+| **RAM** (`.data` + `.bss` + stack) | **5,976 B** | 6,144 B | **97.27%** | 168 B free |
 
 * **Flash Savings:** Complete elimination of soft-float runtime helpers (`__aeabi_fmul`, `__aeabi_fadd`, `__aeabi_fsub`, `__aeabi_fdiv`, `__aeabi_f2iz`, `__aeabi_i2f`, etc.) reclaimed **3,972 bytes** of Flash memory.
 * **Deterministic Timing:** Disallowance of software floating point and 64-bit integer division eliminates variable, data-dependent software emulation loops from the motion control path.

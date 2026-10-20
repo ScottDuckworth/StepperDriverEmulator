@@ -156,45 +156,48 @@ void EnterDfuBootloader(void) {
 void EnterDfuBootloader(void) {
   USB_Flush();
   HAL_Delay(50);
-  dfu_boot_key = DFU_BOOT_KEY_VAL;
   USBD_Stop(&hUsbDeviceFS);
   HAL_Delay(50);
-  NVIC_SystemReset();
-}
 
-static void CheckDfuBootloaderJump(void) {
-  if ((RCC->CSR & RCC_CSR_SFTRSTF) && (dfu_boot_key == DFU_BOOT_KEY_VAL)) {
-    dfu_boot_key = 0;
-    __HAL_RCC_CLEAR_RESET_FLAGS();
-    RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
-    SYSCFG->CFGR1 = (SYSCFG->CFGR1 & ~SYSCFG_CFGR1_MEM_MODE) | SYSCFG_CFGR1_MEM_MODE_0;
-    uint32_t sys_mem_addr = 0x1FFFC800U;
-    __disable_irq();
-    SysTick->CTRL = 0;
-    SysTick->LOAD = 0;
-    SysTick->VAL = 0;
-    __set_MSP(*((volatile uint32_t*) sys_mem_addr));
-    void (*bootloader)(void) = (void (*)(void))(*((volatile uint32_t*) (sys_mem_addr + 4U)));
-    bootloader();
-    while (1);
-  } else {
-    dfu_boot_key = 0;
-    __HAL_RCC_CLEAR_RESET_FLAGS();
-  }
-}
-
-static void EnsureFactoryBootOptionBytes(void) {
+  /* Configure option bytes for DFU: BOOT_SEL = 0, nBOOT0 = 0 (boot from System Memory).
+   * This completely ignores the floating physical BOOT0 pin and causes the hardware
+   * to reboot cleanly into the factory ROM DFU bootloader. */
   FLASH_OBProgramInitTypeDef obInit;
   HAL_FLASHEx_OBGetConfig(&obInit);
 
-  /* Ensure BOOT_SEL is 1 (hardware BOOT0 pin mode) so the factory ROM DFU bootloader runs.
-   * If BOOT_SEL is 0 (OB_BOOT_SEL_SET cleared), reconfigure to restore factory default. */
-  if ((obInit.USERConfig & OB_BOOT_SEL_SET) == 0) {
+  HAL_FLASH_Unlock();
+  HAL_FLASH_OB_Unlock();
+
+  obInit.OptionType = OPTIONBYTE_USER;
+  obInit.USERConfig &= ~OB_BOOT_SEL_SET; /* Bit 7 = 0: Software boot control (ignore floating BOOT0 pin) */
+  obInit.USERConfig &= ~OB_BOOT0_SET;    /* Bit 3 = 0: Boot from System Memory (DFU Bootloader) */
+
+  if (HAL_FLASHEx_OBErase() == HAL_OK) {
+    if (HAL_FLASHEx_OBProgram(&obInit) == HAL_OK) {
+      HAL_FLASH_OB_Launch(); /* Generates reset; hardware reboots directly into DFU bootloader */
+    }
+  }
+
+  HAL_FLASH_OB_Lock();
+  HAL_FLASH_Lock();
+
+  NVIC_SystemReset();
+}
+
+static void EnsureBootOptionBytes(void) {
+  FLASH_OBProgramInitTypeDef obInit;
+  HAL_FLASHEx_OBGetConfig(&obInit);
+
+  /* Ensure BOOT_SEL is 0 (software selection) and nBOOT0 is 1 (boot from Main Flash).
+   * If BOOT_SEL is 1 (hardware pin mode) or nBOOT0 is 0 (DFU mode), restore application mode.
+   * This guarantees the floating physical BOOT0 pin is 100% ignored on all power cycles. */
+  if ((obInit.USERConfig & OB_BOOT_SEL_SET) != 0 || (obInit.USERConfig & OB_BOOT0_SET) == 0) {
     HAL_FLASH_Unlock();
     HAL_FLASH_OB_Unlock();
 
     obInit.OptionType = OPTIONBYTE_USER;
-    obInit.USERConfig |= OB_BOOT_SEL_SET; /* Bit 7 = 1: Select BOOT0 pin (factory default) */
+    obInit.USERConfig &= ~OB_BOOT_SEL_SET; /* Bit 7 = 0: Ignore physical BOOT0 pin */
+    obInit.USERConfig |= OB_BOOT0_SET;    /* Bit 3 = 1: Boot from Main Flash */
 
     if (HAL_FLASHEx_OBErase() == HAL_OK) {
       if (HAL_FLASHEx_OBProgram(&obInit) == HAL_OK) {
@@ -1310,7 +1313,7 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
 #if !defined(UNIT_TEST)
-  CheckDfuBootloaderJump();
+  __HAL_RCC_CLEAR_RESET_FLAGS();
 #endif
   /* USER CODE END 1 */
 
@@ -1321,7 +1324,7 @@ int main(void)
 
   /* USER CODE BEGIN Init */
 #if !defined(UNIT_TEST)
-  EnsureFactoryBootOptionBytes();
+  EnsureBootOptionBytes();
 #endif
 
   /* USER CODE END Init */
