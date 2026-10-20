@@ -99,13 +99,14 @@ else()
     # Add additional linker libraries here
   )
 
-  # Generate raw binary file for USB DFU updates
+  # Generate raw binary and Intel HEX files for flashing
   get_filename_component(ARM_TOOLCHAIN_DIR ${CMAKE_C_COMPILER} DIRECTORY)
   find_program(ARM_OBJCOPY NAMES arm-none-eabi-objcopy HINTS ${ARM_TOOLCHAIN_DIR})
   if(ARM_OBJCOPY)
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
       COMMAND ${ARM_OBJCOPY} -O binary $<TARGET_FILE:${PROJECT_NAME}> ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.bin
-      COMMENT "Generating ${PROJECT_NAME}.bin for USB DFU flashing"
+      COMMAND ${ARM_OBJCOPY} -O ihex $<TARGET_FILE:${PROJECT_NAME}> ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.hex
+      COMMENT "Generating ${PROJECT_NAME}.bin and ${PROJECT_NAME}.hex"
     )
   endif()
 endif()

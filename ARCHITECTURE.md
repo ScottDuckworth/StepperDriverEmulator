@@ -218,5 +218,5 @@ python scripts/release.py --bump patch --dry-run
 Pushing a `v*` tag triggers the automated `.github/workflows/release.yml` workflow, which:
 1. Validates documentation, runs host unit tests, and verifies memory sizing and disallowed symbols.
 2. Compiles ARM Cortex-M0 Release firmware (`.bin`, `.hex`, `.elf`).
-3. Cross-compiles standalone Go flasher binaries for Windows (`x86_64`), Linux (`x86_64`), and macOS (`x86_64` / `arm64`).
+3. Cross-compiles standalone Go flasher binaries for Windows (`x86_64`, `arm64`) and Linux (`x86_64`, `arm64`).
 4. Generates a GitHub Release with auto-generated release notes and attaches all binary assets.

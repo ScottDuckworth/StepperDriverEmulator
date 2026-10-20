@@ -138,6 +138,12 @@ def run_validations(repo_root: Path) -> None:
     elf_path = repo_root / "build" / "Release" / "StepperDriverEmulator.elf"
     if not elf_path.exists():
         raise FileNotFoundError(f"Release ELF not found at {elf_path}")
+    bin_path = repo_root / "build" / "Release" / "StepperDriverEmulator.bin"
+    if not bin_path.exists():
+        raise FileNotFoundError(f"Release binary not found at {bin_path}")
+    hex_path = repo_root / "build" / "Release" / "StepperDriverEmulator.hex"
+    if not hex_path.exists():
+        raise FileNotFoundError(f"Release HEX not found at {hex_path}")
     run_cmd([sys.executable, str(repo_root / "scripts" / "check_firmware_size.py"), str(elf_path)], cwd=repo_root)
     run_cmd([sys.executable, str(repo_root / "scripts" / "check_disallowed_symbols.py"), str(elf_path)], cwd=repo_root)
 
