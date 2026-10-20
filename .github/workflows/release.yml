@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    name: Build & Publish Release Assets
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Validate README.md (LaTeX syntax & CLI sync)
+        run: python scripts/validate_readme.py
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build build-essential
+
+      - name: Configure host tests
+        run: cmake --preset host-test-ninja
+
+      - name: Build host tests
+        run: cmake --build --preset host-test-ninja
+
+      - name: Run host tests
+        run: ctest --preset host-test-ninja --output-on-failure
+
+      - name: Set up ARM GCC Toolchain
+        uses: carlosperate/arm-none-eabi-gcc-action@v1
+        with:
+          release: '14.3.Rel1'
+
+      - name: Configure Release firmware
+        run: cmake --preset Release
+
+      - name: Build Release firmware
+        run: cmake --build --preset Release -v
+
+      - name: Validate Flash & RAM sizing constraints
+        run: python scripts/check_firmware_size.py build/Release/StepperDriverEmulator.elf
+
+      - name: Verify no disallowed floating-point or 64-bit division symbols
+        run: python scripts/check_disallowed_symbols.py build/Release/StepperDriverEmulator.elf
+
+      - name: Prepare release assets directory
+        run: mkdir -p release_assets
+
+      - name: Copy firmware binaries
+        run: |
+          cp build/Release/StepperDriverEmulator.bin release_assets/
+          cp build/Release/StepperDriverEmulator.hex release_assets/
+          cp build/Release/StepperDriverEmulator.elf release_assets/
+
+      - name: Cross-compile Go flasher executables
+        run: |
+          GOOS=windows GOARCH=amd64 go build -o release_assets/flasher-windows-amd64.exe ./cmd/flasher
+          GOOS=linux GOARCH=amd64 go build -o release_assets/flasher-linux-amd64 ./cmd/flasher
+          GOOS=darwin GOARCH=amd64 go build -o release_assets/flasher-darwin-amd64 ./cmd/flasher
+          GOOS=darwin GOARCH=arm64 go build -o release_assets/flasher-darwin-arm64 ./cmd/flasher
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release_assets/*
+          generate_release_notes: true
+

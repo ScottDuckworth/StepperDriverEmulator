@@ -34,16 +34,20 @@ func resolveBinaryPath(specifiedPath string) (string, error) {
 	return "", fmt.Errorf("firmware binary not found in standard build locations. Please specify with -bin <path>")
 }
 
-func formatDeviceInfo(emu *DeviceInfo) (string, string) {
+func formatDeviceInfo(emu *DeviceInfo) (string, string, string) {
 	nameStr := ""
 	if emu.LogicalName != "" {
 		nameStr = fmt.Sprintf(" (Name: '%s')", emu.LogicalName)
+	}
+	verStr := ""
+	if emu.FirmwareVersion != "" {
+		verStr = fmt.Sprintf(" [%s]", emu.FirmwareVersion)
 	}
 	snStr := ""
 	if emu.SerialNumber != "" {
 		snStr = fmt.Sprintf(" [S/N: %s]", emu.SerialNumber)
 	}
-	return nameStr, snStr
+	return nameStr, verStr, snStr
 }
 
 func flashDfuDevice(dev *usb.Device, binData []byte, fullErase bool, reboot bool, verbose bool) error {
@@ -187,8 +191,8 @@ func main() {
 			}
 		} else {
 			emu := emulators[0]
-			nameStr, snStr := formatDeviceInfo(emu)
-			fmt.Printf("Auto-selected StepperDriverEmulator: %s%s%s\n", emu.Port, nameStr, snStr)
+			nameStr, verStr, snStr := formatDeviceInfo(emu)
+			fmt.Printf("Auto-selected StepperDriverEmulator: %s%s%s%s\n", emu.Port, nameStr, verStr, snStr)
 			if err := flashCdcPort(emu.Port, binData, fullEraseFlag, reboot, verboseFlag); err != nil {
 				fmt.Fprintf(os.Stderr, "\n[ERROR] Flashing failed: %v\n", err)
 				os.Exit(1)
@@ -204,8 +208,8 @@ func main() {
 		fmt.Println("  - [DFU Bootloader] (0483:DF11)")
 	}
 	for _, emu := range emulators {
-		nameStr, snStr := formatDeviceInfo(emu)
-		fmt.Printf("  - %s%s%s\n", emu.Port, nameStr, snStr)
+		nameStr, verStr, snStr := formatDeviceInfo(emu)
+		fmt.Printf("  - %s%s%s%s\n", emu.Port, nameStr, verStr, snStr)
 	}
 
 	targetIndex := 1
@@ -220,8 +224,8 @@ func main() {
 	}
 
 	for _, emu := range emulators {
-		nameStr, snStr := formatDeviceInfo(emu)
-		fmt.Printf("\n[%d/%d] Flashing %s%s%s...\n", targetIndex, totalTargets, emu.Port, nameStr, snStr)
+		nameStr, verStr, snStr := formatDeviceInfo(emu)
+		fmt.Printf("\n[%d/%d] Flashing %s%s%s%s...\n", targetIndex, totalTargets, emu.Port, nameStr, verStr, snStr)
 		if err := flashCdcPort(emu.Port, binData, fullEraseFlag, reboot, verboseFlag); err != nil {
 			fmt.Fprintf(os.Stderr, "\n[ERROR] Flashing failed on device %d (%s): %v\n", targetIndex, emu.Port, err)
 			os.Exit(1)

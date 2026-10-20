@@ -9,6 +9,7 @@ FetchContent_MakeAvailable(unity)
 
 add_compile_definitions(UNITY_SUPPORT_64)
 add_compile_definitions(UNIT_TEST)
+add_compile_definitions(FIRMWARE_VERSION="${FIRMWARE_VERSION}")
 
 # 1. Position Tracking & Coordinates Test
 add_executable(test_position

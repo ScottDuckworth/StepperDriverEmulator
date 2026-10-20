@@ -1,6 +1,33 @@
 # Set the minimum version of CMake that can be used
 cmake_minimum_required(VERSION 3.20)
 
+# Determine firmware version from git describe
+if(NOT DEFINED FIRMWARE_VERSION)
+  find_package(Git QUIET)
+  if(GIT_FOUND)
+    execute_process(
+      COMMAND ${GIT_EXECUTABLE} describe --tags --always --dirty
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      OUTPUT_VARIABLE GIT_DESCRIBE_OUT
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      RESULT_VARIABLE GIT_RESULT
+      ERROR_QUIET
+    )
+    if(GIT_RESULT EQUAL 0 AND NOT "${GIT_DESCRIBE_OUT}" STREQUAL "")
+      if(GIT_DESCRIBE_OUT MATCHES "^v")
+        set(FIRMWARE_VERSION "${GIT_DESCRIBE_OUT}")
+      else()
+        set(FIRMWARE_VERSION "v0.0.0-dev-${GIT_DESCRIBE_OUT}")
+      endif()
+    else()
+      set(FIRMWARE_VERSION "v0.0.0-dev")
+    endif()
+  else()
+    set(FIRMWARE_VERSION "v0.0.0-dev")
+  endif()
+endif()
+message(STATUS "Firmware Version: ${FIRMWARE_VERSION}")
+
 option(ENABLE_TESTS "Build host unit tests" OFF)
 
 if(ENABLE_TESTS)
@@ -54,6 +81,7 @@ else()
   # Add additional defined symbols
   target_compile_definitions(${PROJECT_NAME} PRIVATE
     # Add additional defined symbols here
+    FIRMWARE_VERSION="${FIRMWARE_VERSION}"
   )
 
   # Linker options

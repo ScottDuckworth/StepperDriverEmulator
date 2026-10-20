@@ -706,6 +706,16 @@ void test_cmd_dfu_invalid_usage(void) {
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid usage: dfu\r\n"));
 }
 
+void test_cmd_version_success(void) {
+  send_cmd("version\r\n");
+  TEST_ASSERT_EQUAL_STRING("version " FIRMWARE_VERSION "\r\n", captured_output);
+}
+
+void test_cmd_version_invalid_usage(void) {
+  send_cmd("version extra\r\n");
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid usage: version\r\n"));
+}
+
 void test_cmd_error_invalid_usage(void) {
   send_cmd("name foo bar\r\n");
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid usage: name [string]\r\n"));
@@ -864,6 +874,8 @@ int main(void) {
   RUN_TEST(test_cmd_reset_invalid_usage);
   RUN_TEST(test_cmd_dfu_success);
   RUN_TEST(test_cmd_dfu_invalid_usage);
+  RUN_TEST(test_cmd_version_success);
+  RUN_TEST(test_cmd_version_invalid_usage);
   RUN_TEST(test_cmd_error_invalid_usage);
   RUN_TEST(test_cmd_error_invalid_value);
   RUN_TEST(test_cmd_error_unknown_command);

@@ -12,15 +12,16 @@ import (
 )
 
 type DeviceInfo struct {
-	Port         string
-	VID          string
-	PID          string
-	SerialNumber string
-	Product      string
-	LogicalName  string
-	IsDfu        bool
-	IsEmulator   bool
-	IsStLink     bool
+	Port            string
+	VID             string
+	PID             string
+	SerialNumber    string
+	Product         string
+	LogicalName     string
+	FirmwareVersion string
+	IsDfu           bool
+	IsEmulator      bool
+	IsStLink        bool
 }
 
 // FindStepperUsbDevices scans USB devices directly via go-usb to find any devices
@@ -69,29 +70,31 @@ func FindStepperUsbDevices(verbose bool) ([]*DeviceInfo, error) {
 	return found, nil
 }
 
-// ProbeSerialDeviceName opens a serial port and issues the 'name' command.
-// If the device responds with 'name <NAME>', it returns the verified name.
-func ProbeSerialDeviceName(portName string, timeout time.Duration) (string, error) {
+// ProbeSerialDevice opens a serial port and issues 'name' and 'version' commands.
+// It returns the logical name and firmware version if reported by the device.
+func ProbeSerialDevice(portName string, timeout time.Duration) (string, string, error) {
 	mode := &serial.Mode{
 		BaudRate: 115200,
 	}
 	port, err := serial.Open(portName, mode)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer port.Close()
 
 	if err := port.SetReadTimeout(timeout); err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	_, err = port.Write([]byte("name\r\n"))
+	_, err = port.Write([]byte("\r\nname\r\nversion\r\n"))
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	reader := bufio.NewReader(port)
 	deadline := time.Now().Add(timeout)
+	name := ""
+	version := ""
 
 	for time.Now().Before(deadline) {
 		line, err := reader.ReadString('\n')
@@ -100,11 +103,20 @@ func ProbeSerialDeviceName(portName string, timeout time.Duration) (string, erro
 		}
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "name ") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "name ")), nil
+			name = strings.TrimSpace(strings.TrimPrefix(line, "name "))
+		} else if strings.HasPrefix(line, "version ") {
+			version = strings.TrimSpace(strings.TrimPrefix(line, "version "))
+		}
+		if name != "" && version != "" {
+			break
 		}
 	}
 
-	return "", fmt.Errorf("no 'name' response received")
+	if name == "" && version == "" {
+		return "", "", fmt.Errorf("no response received")
+	}
+
+	return name, version, nil
 }
 
 // FindStepperSerialPorts scans available serial ports cross-platform using go.bug.st/serial.
@@ -152,12 +164,13 @@ func FindStepperSerialPorts(probeHandshake bool, verbose bool) ([]*DeviceInfo, e
 		}
 
 		if isMatch && probeHandshake {
-			logicalName, err := ProbeSerialDeviceName(p.Name, 150*time.Millisecond)
+			name, ver, err := ProbeSerialDevice(p.Name, 250*time.Millisecond)
 			if err == nil {
-				info.LogicalName = logicalName
+				info.LogicalName = name
+				info.FirmwareVersion = ver
 				info.IsEmulator = true
 				if verbose {
-					fmt.Printf("  Verified StepperDriverEmulator on %s (Name: '%s')\n", p.Name, logicalName)
+					fmt.Printf("  Verified StepperDriverEmulator on %s (Name: '%s', Version: '%s')\n", p.Name, name, ver)
 				}
 			}
 		}

@@ -4,7 +4,7 @@ A high-performance hardware emulator that simulates a stepper motor with an atta
 
 It monitors standard stepper controller signals (**Step/PUL**, **Direction/DIR**, and **Enable/ENA**), tracks motor position, simulates physical motor dynamics (torque curves, external load tension, rotor stall, slip, and fault disengagement), and outputs clean, phase-deterministic quadrature encoder signals (**EA** and **EB**).
 
-> **Developer & Architecture Reference:** For hardware pinout, internal firmware architecture, fixed-point design rationale, real-time interrupt cycle budgets, unit tests, and presubmit checks, see [ARCHITECTURE.md](ARCHITECTURE.md).
+> **Developer & Architecture Reference:** For hardware pinout, internal firmware architecture, fixed-point design rationale, real-time interrupt cycle budgets, unit tests, presubmit checks, and the release process, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ---
 
@@ -337,6 +337,7 @@ Commands are sent via the USB Virtual COM Port (terminated with `\r` or `\n`).
 | `save` | `save` | Save configuration to non-volatile flash | `save` | `save ok\r\n` |
 | `reset` | `reset` | Reset runtime state, clear stall fault, stop encoder outputs, and reload saved config from flash (keeps USB serial active) | `reset` | `reset ok\r\n` |
 | `dfu` | `dfu` | Jump to built-in USB DFU ROM bootloader for firmware updates | `dfu` | `dfu ok\r\n` |
+| `version` | `version` | Query firmware version string | `version` | `version v1.0.0\r\n` |
 | `r` | `r` | Dump full configuration and runtime status | `r` | Multi-line report (see below) |
 | `help` | `help` | Print command usage list | `help` | Usage list (see below) |
 

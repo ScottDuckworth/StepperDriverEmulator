@@ -6,6 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef FIRMWARE_VERSION
+#define FIRMWARE_VERSION "v0.0.0-dev"
+#endif
+
 #define MAX_ARGC 36
 static int argc;
 static char* argv[MAX_ARGC];
@@ -287,6 +291,13 @@ static void Cmd_dfu(const Command_t* self) {
   EnterDfuBootloader();
 }
 
+static void Cmd_version(const Command_t* self) {
+  if (argc != 1) { InvalidUsage(self->usage); return; }
+  WriteString("version ");
+  WriteString(FIRMWARE_VERSION);
+  WriteString("\r\n");
+}
+
 static void Cmd_help(const Command_t* self);
 
 static const Command_t commands[] = {
@@ -311,6 +322,7 @@ static const Command_t commands[] = {
     {"reset", "reset", Cmd_reset},
     {"dfu", "dfu", Cmd_dfu},
     {"r", "r", Cmd_r},
+    {"version", "version", Cmd_version},
     {"help", "help", Cmd_help},
 };
 

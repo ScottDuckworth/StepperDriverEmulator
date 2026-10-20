@@ -1,6 +1,6 @@
 # Stepper Driver Emulator — Architecture & Internals
 
-This document details the hardware pinout, internal firmware architecture, fixed-point precision strategy, real-time interrupt cycle budgets, memory footprint, and verification pipelines of the **Stepper Driver Emulator**.
+This document details the hardware pinout, internal firmware architecture, fixed-point precision strategy, real-time interrupt cycle budgets, memory footprint, verification pipelines, and release process of the **Stepper Driver Emulator**.
 
 > For end-user documentation, physical dynamics modeling, CLI commands, and firmware flashing instructions, see [README.md](README.md).
 
@@ -125,7 +125,7 @@ Memory footprint of the Release build (`build/Release/StepperDriverEmulator.elf`
 
 | Memory Region | Used Bytes | Total Bytes | Utilization | Free Space |
 | :--- | :--- | :--- | :--- | :--- |
-| **Flash** (`.text` + `.rodata` + `.data`) | **30,580 B** | 31,744 B | **96.33%** | 1,164 B free |
+| **Flash** (`.text` + `.rodata` + `.data`) | **30,688 B** | 31,744 B | **96.67%** | 1,056 B free |
 | **RAM** (`.data` + `.bss` + stack) | **5,972 B** | 6,144 B | **97.20%** | 172 B free |
 
 * **Flash Savings:** Complete elimination of soft-float runtime helpers (`__aeabi_fmul`, `__aeabi_fadd`, `__aeabi_fsub`, `__aeabi_fdiv`, `__aeabi_f2iz`, `__aeabi_i2f`, etc.) reclaimed **3,972 bytes** of Flash memory.
@@ -191,3 +191,32 @@ python scripts/check_firmware_size.py build/Release/StepperDriverEmulator.elf
 # Estimate interrupt execution cycle counts, silicon wait states, and CPU utilization
 python scripts/estimate_isr_cycles.py --chunk-size 16
 ```
+
+---
+
+## Release Process & Versioning
+
+Releases follow [Semantic Versioning](https://semver.org) (`vX.Y.Z`). Firmware embeds the exact version string queried via `git describe --tags --always --dirty` at compile time and reports it via the `version` CLI command.
+
+### Creating a Release (`scripts/release.py`)
+
+A release helper script validates all presubmit checks, tags the commit, and pushes to GitHub:
+
+```powershell
+# Bump semantic version component (patch, minor, or major):
+python scripts/release.py --bump patch
+
+# Or specify explicit version tag:
+python scripts/release.py v1.0.0
+
+# Dry-run mode (runs all checks without tagging or pushing):
+python scripts/release.py --bump patch --dry-run
+```
+
+### Automated GitHub Releases
+
+Pushing a `v*` tag triggers the automated `.github/workflows/release.yml` workflow, which:
+1. Validates documentation, runs host unit tests, and verifies memory sizing and disallowed symbols.
+2. Compiles ARM Cortex-M0 Release firmware (`.bin`, `.hex`, `.elf`).
+3. Cross-compiles standalone Go flasher binaries for Windows (`x86_64`), Linux (`x86_64`), and macOS (`x86_64` / `arm64`).
+4. Generates a GitHub Release with auto-generated release notes and attaches all binary assets.
