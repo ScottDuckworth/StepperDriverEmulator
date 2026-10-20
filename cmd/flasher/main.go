@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	usb "github.com/kevmo314/go-usb"
+	usb "github.com/tridentsx/go-usb"
 )
 
 func resolveBinaryPath(specifiedPath string) (string, error) {

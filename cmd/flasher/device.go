@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	usb "github.com/kevmo314/go-usb"
+	usb "github.com/tridentsx/go-usb"
 	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
 )
@@ -160,19 +160,26 @@ func FindStepperSerialPorts(probeHandshake bool, verbose bool) ([]*DeviceInfo, e
 			PID:          pid,
 			SerialNumber: sn,
 			Product:      prod,
-			IsEmulator:   isMatch,
+			IsEmulator:   false,
 		}
 
-		if isMatch && probeHandshake {
-			name, ver, err := ProbeSerialDevice(p.Name, 250*time.Millisecond)
-			if err == nil {
-				info.LogicalName = name
-				info.FirmwareVersion = ver
-				info.IsEmulator = true
-				if verbose {
-					fmt.Printf("  Verified StepperDriverEmulator on %s (Name: '%s', Version: '%s')\n", p.Name, name, ver)
+		if probeHandshake {
+			// Require active handshake verification if candidate or if VID/PID are unpopulated
+			if isMatch || (vid == "" && pid == "") {
+				name, ver, err := ProbeSerialDevice(p.Name, 250*time.Millisecond)
+				if err == nil {
+					info.LogicalName = name
+					info.FirmwareVersion = ver
+					info.IsEmulator = true
+					if verbose {
+						fmt.Printf("  Verified StepperDriverEmulator on %s (Name: '%s', Version: '%s')\n", p.Name, name, ver)
+					}
+				} else if verbose {
+					fmt.Printf("  Serial probe handshake failed on %s (not StepperDriverEmulator): %v\n", p.Name, err)
 				}
 			}
+		} else {
+			info.IsEmulator = isMatch
 		}
 
 		if info.IsEmulator {
@@ -233,4 +240,3 @@ func SendDfuCommand(portName string, verbose bool) error {
 
 	return nil
 }
-

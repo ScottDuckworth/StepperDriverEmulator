@@ -420,7 +420,7 @@ The firmware supports end-to-end updates over USB without requiring an external 
 
 #### 1. Automated Go Flasher (`cmd/flasher`)
 
-A cross-platform firmware update utility is implemented in Go under `cmd/flasher`. It relies exclusively on Go packages (`github.com/kevmo314/go-usb` and `go.bug.st/serial`), does not invoke external `dfu-util` or CLI subprocesses, and automatically identifies and flashes all attached devices matching `USBD_PRODUCT_STRING_FS` (`StepperDriverEmulator`):
+A cross-platform firmware update utility is implemented in Go under `cmd/flasher`. It relies exclusively on Go packages (`github.com/tridentsx/go-usb` and `go.bug.st/serial`), does not invoke external `dfu-util` or CLI subprocesses, and automatically identifies and flashes all attached devices matching `USBD_PRODUCT_STRING_FS` (`StepperDriverEmulator`):
 
 ```powershell
 # Flash default Release binary across all connected StepperDriverEmulator devices:

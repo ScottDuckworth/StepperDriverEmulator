@@ -6,11 +6,9 @@ on:
       - 'v*'
 
 jobs:
-  build-and-release:
-    name: Build & Publish Release Assets
+  build-ubuntu:
+    name: Build Firmware & Linux/Windows Assets
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout repository with full history
@@ -63,24 +61,74 @@ jobs:
         run: python scripts/check_disallowed_symbols.py build/Release/StepperDriverEmulator.elf
 
       - name: Prepare release assets directory
-        run: mkdir -p release_assets
+        run: mkdir -p assets
 
       - name: Copy firmware binaries
         run: |
-          cp build/Release/StepperDriverEmulator.bin release_assets/
-          cp build/Release/StepperDriverEmulator.hex release_assets/
-          cp build/Release/StepperDriverEmulator.elf release_assets/
+          cp build/Release/StepperDriverEmulator.bin assets/
+          cp build/Release/StepperDriverEmulator.hex assets/
+          cp build/Release/StepperDriverEmulator.elf assets/
 
-      - name: Cross-compile Go flasher executables
+      - name: Cross-compile Go flasher executables (Windows & Linux)
         run: |
-          GOOS=windows GOARCH=amd64 go build -o release_assets/flasher-windows-amd64.exe ./cmd/flasher
-          GOOS=windows GOARCH=arm64 go build -o release_assets/flasher-windows-arm64.exe ./cmd/flasher
-          GOOS=linux GOARCH=amd64 go build -o release_assets/flasher-linux-amd64 ./cmd/flasher
-          GOOS=linux GOARCH=arm64 go build -o release_assets/flasher-linux-arm64 ./cmd/flasher
+          GOOS=windows GOARCH=amd64 go build -o assets/flasher-windows-amd64.exe ./cmd/flasher
+          GOOS=linux GOARCH=amd64 go build -o assets/flasher-linux-amd64 ./cmd/flasher
+
+      - name: Upload Ubuntu build assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: assets-ubuntu
+          path: assets/*
+
+  build-macos:
+    name: Build macOS Flasher Assets
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Build macOS flasher executables
+        run: |
+          mkdir -p assets
+          # Native Apple Silicon (ARM64)
+          CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o assets/flasher-darwin-arm64 ./cmd/flasher
+
+          # Intel Mac (x86_64) via Apple Clang cross-target flag
+          CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 CC="clang -target x86_64-apple-macos10.13" go build -o assets/flasher-darwin-amd64 ./cmd/flasher
+
+          chmod +x assets/flasher-darwin-*
+
+      - name: Upload macOS build assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: assets-macos
+          path: assets/*
+
+  publish-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-ubuntu, build-macos]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all release assets
+        uses: actions/download-artifact@v4
+        with:
+          path: release_assets
+          merge-multiple: true
+
+      - name: List collected release assets
+        run: ls -la release_assets/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: release_assets/*
           generate_release_notes: true
-
