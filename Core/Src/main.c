@@ -505,7 +505,7 @@ q12_t GetStepBlanking(void) {
   return step_blank_us;
 }
 
-void SetStepBlanking(q12_t blank_us) {
+static void ApplyStepBlanking(q12_t blank_us) {
   if (blank_us.raw < Q12_RAW_RATIO(1, 2)) blank_us.raw = Q12_RAW_RATIO(1, 2);       // 0.5 us min
   if (blank_us.raw > Q12_RAW_INT(1000)) blank_us.raw = Q12_RAW_INT(1000);           // 1000.0 us max
   step_blank_us = blank_us;
@@ -529,6 +529,10 @@ void SetStepBlanking(q12_t blank_us) {
                 | (0b1111 << TIM_CCMR1_IC1F_Pos)  // 21.33 us filter (fDTS/32, N=8, CKD=4)
                 | (0b1111 << TIM_CCMR1_IC2F_Pos);
   }
+}
+
+void SetStepBlanking(q12_t blank_us) {
+  ApplyStepBlanking(blank_us);
   ReportStepBlanking();
 }
 
@@ -1016,6 +1020,42 @@ void InitMotion(void) {
   TIM2->DIER = TIM_DIER_CC1DE | TIM_DIER_CC1IE;
 }
 
+void ResetEmulator(void) {
+  __disable_irq();
+  TIM3->CR1 &= ~TIM_CR1_CEN;
+  DMA1_Channel3->CCR &= ~DMA_CCR_EN;
+  motion_active = false;
+  current_motion_velocity = 0;
+
+  ConfigStore_Load(ConfigStore_GetStm32FlashDriver(), CONFIG_FLASH_PAGE_ADDR, &config);
+  ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
+  if (config.persistent.name[0] == '\0') {
+    GetDefaultHardwareName(config.persistent.name, sizeof(config.persistent.name));
+  }
+
+  stall_tripped = false;
+  load_tension = 0;
+  blink_mode = false;
+  last_step_time = 0;
+  HAL_GPIO_WritePin(LIM1_GPIO_Port, LIM1_Pin, false);
+  HAL_GPIO_WritePin(LIM2_GPIO_Port, LIM2_Pin, false);
+  ApplyStepBlanking(Q12_RATIO(7, 2));
+
+  uint16_t head = (STEP_BUF_SIZE - (uint16_t) DMA1_Channel5->CNDTR) & (STEP_BUF_SIZE - 1);
+  step_buf_tail = head;
+  blanking_accum = min_blanking_ticks;
+  Position_RealignCounters(&position, 0, &config, head);
+  position.step_reverse = READ_BIT(DIR_GPIO_Port->IDR, DIR_Pin) == 0;
+  if (GetStepEnabled()) {
+    TIM2->CR1 |= TIM_CR1_CEN;
+  } else {
+    TIM2->CR1 &= ~TIM_CR1_CEN;
+  }
+  InitMotion();
+  __enable_irq();
+  UpdateLEDs();
+}
+
 void UpdateTick(void) {
   ++now;
   UpdateLEDs();
@@ -1262,20 +1302,9 @@ int main(void)
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
 
-  ConfigStore_Load(ConfigStore_GetStm32FlashDriver(), CONFIG_FLASH_PAGE_ADDR, &config);
-  ConfigStore_ComputeCachedValues(&config.persistent, &config.cached);
-  if (config.persistent.name[0] == '\0') {
-    GetDefaultHardwareName(config.persistent.name, sizeof(config.persistent.name));
-  }
-
-  UpdatePositionCounters();
-  position.commanded_pos = 0;
-  position.encoder_pos = 0;
-  position.step_rem = 0;
-  UpdateStepDirection();
-  UpdateStepEnabled();
-  InitMotion();
-
+  ResetEmulator();
+  ReportStepReverse();
+  ReportStepEnabled();
   /* USER CODE END 2 */
 
   /* Infinite loop */

@@ -275,6 +275,12 @@ static void Cmd_save(const Command_t* self) {
   }
 }
 
+static void Cmd_reset(const Command_t* self) {
+  if (argc != 1) { InvalidUsage(self->usage); return; }
+  ResetEmulator();
+  WriteString("reset ok\r\n");
+}
+
 static void Cmd_dfu(const Command_t* self) {
   if (argc != 1) { InvalidUsage(self->usage); return; }
   WriteString("dfu ok\r\n");
@@ -302,6 +308,7 @@ static const Command_t commands[] = {
     {"kp", "kp [float]", Cmd_kp},
     {"kff", "kff [float]", Cmd_kff},
     {"save", "save", Cmd_save},
+    {"reset", "reset", Cmd_reset},
     {"dfu", "dfu", Cmd_dfu},
     {"r", "r", Cmd_r},
     {"help", "help", Cmd_help},

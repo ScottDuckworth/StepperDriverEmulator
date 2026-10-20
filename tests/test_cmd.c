@@ -254,6 +254,23 @@ bool SaveConfig(void) {
   return mock_save_success;
 }
 
+static bool mock_reset_called;
+
+void ResetEmulator(void) {
+  mock_reset_called = true;
+  mock_config = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
+  mock_tension = 0;
+  mock_pos = 0;
+  mock_velocity = 0;
+  mock_motor_torque = 1000;
+  mock_net_torque = 1000;
+  mock_lim1 = false;
+  mock_lim2 = false;
+  mock_blink = false;
+  mock_stall_trip = false;
+  mock_blank = Q12_RATIO(7, 2);
+}
+
 int64_t GetMinStop(void) { return mock_config.persistent.minstop; }
 bool SetMinStop(int64_t min_stop) {
   if (min_stop > mock_config.persistent.maxstop) return false;
@@ -623,7 +640,39 @@ void test_cmd_help(void) {
   TEST_ASSERT_NULL(strstr(captured_output, "zero"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "ratio [spr] [epr]"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "save"));
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "reset"));
   TEST_ASSERT_NOT_NULL(strstr(captured_output, "dfu"));
+}
+
+void test_cmd_reset_success(void) {
+  mock_reset_called = false;
+  mock_stall_trip = true;
+  mock_tension = -1200;
+  mock_pos = 54321;
+  mock_lim1 = true;
+  mock_lim2 = true;
+  mock_blink = true;
+  mock_blank = Q12_INT(10);
+  mock_config.persistent.stall_threshold = 9999;
+
+  send_cmd("reset\r\n");
+  TEST_ASSERT_TRUE(mock_reset_called);
+  TEST_ASSERT_FALSE(mock_stall_trip);
+  TEST_ASSERT_EQUAL_INT32(0, mock_tension);
+  TEST_ASSERT_EQUAL_INT64(0, mock_pos);
+  TEST_ASSERT_FALSE(mock_lim1);
+  TEST_ASSERT_FALSE(mock_lim2);
+  TEST_ASSERT_FALSE(mock_blink);
+  TEST_ASSERT_EQUAL_INT32(Q12_RAW_RATIO(7, 2), mock_blank.raw);
+  TEST_ASSERT_EQUAL_UINT32(4000, mock_config.persistent.stall_threshold);
+  TEST_ASSERT_EQUAL_STRING("reset ok\r\n", captured_output);
+}
+
+void test_cmd_reset_invalid_usage(void) {
+  mock_reset_called = false;
+  send_cmd("reset extra\r\n");
+  TEST_ASSERT_FALSE(mock_reset_called);
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid usage: reset\r\n"));
 }
 
 void test_cmd_save_success(void) {
@@ -811,6 +860,8 @@ int main(void) {
   RUN_TEST(test_cmd_save_success);
   RUN_TEST(test_cmd_save_failure);
   RUN_TEST(test_cmd_save_invalid_usage);
+  RUN_TEST(test_cmd_reset_success);
+  RUN_TEST(test_cmd_reset_invalid_usage);
   RUN_TEST(test_cmd_dfu_success);
   RUN_TEST(test_cmd_dfu_invalid_usage);
   RUN_TEST(test_cmd_error_invalid_usage);
