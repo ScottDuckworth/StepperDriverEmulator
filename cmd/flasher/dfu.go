@@ -183,16 +183,28 @@ func (c *DfuClient) Leave(jumpAddr uint32) error {
 	return nil
 }
 
-func FindDfuDevice() (*usb.Device, error) {
+func FindDfuDevices() ([]*usb.Device, error) {
 	devices, err := usb.DeviceList()
 	if err != nil {
 		return nil, fmt.Errorf("usb.DeviceList failed: %w", err)
 	}
 
+	var found []*usb.Device
 	for _, dev := range devices {
 		if dev.Descriptor.VendorID == STM32_VID && dev.Descriptor.ProductID == STM32_DFU_PID {
-			return dev, nil
+			found = append(found, dev)
 		}
+	}
+	return found, nil
+}
+
+func FindDfuDevice() (*usb.Device, error) {
+	devs, err := FindDfuDevices()
+	if err != nil {
+		return nil, err
+	}
+	if len(devs) > 0 {
+		return devs[0], nil
 	}
 	return nil, nil
 }
@@ -207,6 +219,18 @@ func WaitForDfuDevice(timeout time.Duration, verbose bool) (*usb.Device, error) 
 		time.Sleep(250 * time.Millisecond)
 	}
 	return nil, fmt.Errorf("timed out waiting for STM32 DFU device (0483:DF11) to enumerate")
+}
+
+func WaitForDfuDeviceDisconnect(timeout time.Duration, verbose bool) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		dev, _ := FindDfuDevice()
+		if dev == nil {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("timed out waiting for STM32 DFU device to disconnect")
 }
 
 func FlashFirmware(client *DfuClient, binData []byte, fullErase bool, reboot bool, verbose bool) error {

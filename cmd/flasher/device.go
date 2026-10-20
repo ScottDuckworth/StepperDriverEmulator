@@ -179,7 +179,15 @@ func SendDfuCommand(portName string, verbose bool) error {
 	mode := &serial.Mode{
 		BaudRate: 115200,
 	}
-	port, err := serial.Open(portName, mode)
+	var port serial.Port
+	var err error
+	for attempt := 0; attempt < 10; attempt++ {
+		port, err = serial.Open(portName, mode)
+		if err == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	if err != nil {
 		return fmt.Errorf("could not open serial port %s: %w", portName, err)
 	}
@@ -187,16 +195,27 @@ func SendDfuCommand(portName string, verbose bool) error {
 
 	_ = port.SetReadTimeout(500 * time.Millisecond)
 
-	_, err = port.Write([]byte("dfu\r\n"))
+	// Send \r\n first to clear any stale buffer in cmd.c, then send dfu\r\n
+	_, err = port.Write([]byte("\r\ndfu\r\n"))
 	if err != nil {
 		return fmt.Errorf("failed to write 'dfu' command to %s: %w", portName, err)
 	}
 
-	// Read ack if returned
-	buf := make([]byte, 128)
-	n, _ := port.Read(buf)
-	if verbose && n > 0 {
-		fmt.Printf("Response from device: %s\n", strings.TrimSpace(string(buf[:n])))
+	// Drain responses looking for "dfu ok"
+	reader := bufio.NewReader(port)
+	deadline := time.Now().Add(1 * time.Second)
+	for time.Now().Before(deadline) {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			break
+		}
+		trimmed := strings.TrimSpace(line)
+		if verbose && trimmed != "" {
+			fmt.Printf("Response from %s: %s\n", portName, trimmed)
+		}
+		if strings.Contains(trimmed, "dfu ok") {
+			break
+		}
 	}
 
 	return nil

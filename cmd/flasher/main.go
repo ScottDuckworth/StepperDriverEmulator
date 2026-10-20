@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	usb "github.com/kevmo314/go-usb"
 )
 
 func resolveBinaryPath(specifiedPath string) (string, error) {
@@ -30,6 +32,51 @@ func resolveBinaryPath(specifiedPath string) (string, error) {
 	}
 
 	return "", fmt.Errorf("firmware binary not found in standard build locations. Please specify with -bin <path>")
+}
+
+func formatDeviceInfo(emu *DeviceInfo) (string, string) {
+	nameStr := ""
+	if emu.LogicalName != "" {
+		nameStr = fmt.Sprintf(" (Name: '%s')", emu.LogicalName)
+	}
+	snStr := ""
+	if emu.SerialNumber != "" {
+		snStr = fmt.Sprintf(" [S/N: %s]", emu.SerialNumber)
+	}
+	return nameStr, snStr
+}
+
+func flashDfuDevice(dev *usb.Device, binData []byte, fullErase bool, reboot bool, verbose bool) error {
+	client, err := OpenDfuDevice(dev)
+	if err != nil {
+		return fmt.Errorf("failed to open DFU device: %w", err)
+	}
+	defer client.Close()
+
+	if err := FlashFirmware(client, binData, fullErase, reboot, verbose); err != nil {
+		return err
+	}
+
+	if reboot {
+		_ = WaitForDfuDeviceDisconnect(3*time.Second, verbose)
+	}
+	return nil
+}
+
+func flashCdcPort(portName string, binData []byte, fullErase bool, reboot bool, verbose bool) error {
+	fmt.Printf("Sending 'dfu' command to %s...\n", portName)
+	if err := SendDfuCommand(portName, verbose); err != nil {
+		return fmt.Errorf("failed to send 'dfu' command to %s: %w", portName, err)
+	}
+
+	fmt.Println("Waiting for STM32 DFU Bootloader enumeration...")
+	dfuDev, err := WaitForDfuDevice(8*time.Second, verbose)
+	if err != nil {
+		return fmt.Errorf("%w\nCheck hardware connection", err)
+	}
+	fmt.Println("STM32 DFU Bootloader connected.")
+
+	return flashDfuDevice(dfuDev, binData, fullErase, reboot, verbose)
 }
 
 func main() {
@@ -87,101 +134,102 @@ func main() {
 
 	reboot := !noRebootFlag
 
-	// 2. Check if device is already in DFU mode
-	dfuDev, err := FindDfuDevice()
+	// 2. Determine target device(s)
+	if portFlag != "" {
+		fmt.Printf("Targeting specified serial port: %s\n", portFlag)
+		if err := flashCdcPort(portFlag, binData, fullEraseFlag, reboot, verboseFlag); err != nil {
+			fmt.Fprintf(os.Stderr, "\n[ERROR] Flashing failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("\nFirmware update completed successfully!")
+		return
+	}
+
+	// Auto-detect mode: scan for DFU devices and CDC serial ports
+	dfuDevs, err := FindDfuDevices()
 	if err != nil && verboseFlag {
-		fmt.Printf("Note during DFU check: %v\n", err)
+		fmt.Printf("Note during DFU search: %v\n", err)
 	}
 
-	if dfuDev != nil {
-		fmt.Println("STM32 DFU Bootloader (0483:DF11) detected.")
-	} else {
-		// 3. Select serial port and issue 'dfu' reset command
-		targetPort := portFlag
+	if verboseFlag {
+		fmt.Println("Scanning for attached StepperDriverEmulator devices...")
+	}
 
-		if targetPort == "" {
-			if verboseFlag {
-				fmt.Println("Scanning for attached StepperDriverEmulator devices...")
-			}
+	emulators, err := FindStepperSerialPorts(true, verboseFlag)
+	if err != nil && verboseFlag {
+		fmt.Printf("Note during port search: %v\n", err)
+	}
 
-			emulators, err := FindStepperSerialPorts(true, verboseFlag)
-			if err != nil && verboseFlag {
-				fmt.Printf("Note during port search: %v\n", err)
-			}
-
-			if len(emulators) == 1 {
-				targetPort = emulators[0].Port
-				nameStr := ""
-				if emulators[0].LogicalName != "" {
-					nameStr = fmt.Sprintf(" (Name: '%s')", emulators[0].LogicalName)
-				}
-				snStr := ""
-				if emulators[0].SerialNumber != "" {
-					snStr = fmt.Sprintf(" [S/N: %s]", emulators[0].SerialNumber)
-				}
-				fmt.Printf("Auto-selected StepperDriverEmulator: %s%s%s\n", targetPort, nameStr, snStr)
-			} else if len(emulators) > 1 {
-				fmt.Printf("Found %d StepperDriverEmulator devices:\n", len(emulators))
-				for _, emu := range emulators {
-					nameStr := ""
-					if emu.LogicalName != "" {
-						nameStr = fmt.Sprintf(" Name: '%s'", emu.LogicalName)
-					}
-					snStr := ""
-					if emu.SerialNumber != "" {
-						snStr = fmt.Sprintf(" S/N: %s", emu.SerialNumber)
-					}
-					fmt.Printf("  - %s%s%s\n", emu.Port, nameStr, snStr)
-				}
-				fmt.Fprintf(os.Stderr, "\nPlease specify which device to flash using -port <PORT>.\n")
-				os.Exit(1)
-			} else {
-				// No emulator CDC port detected, check if already in DFU mode or check raw USB
-				usbDevs, _ := FindStepperUsbDevices(verboseFlag)
-				if len(usbDevs) > 0 {
-					fmt.Printf("Found StepperDriverEmulator on USB (%s), but no active COM port responded.\n", usbDevs[0].Product)
-				}
-
-				fmt.Println("No active emulator CDC port found. Checking if board is already in DFU mode...")
-				dfuDev, _ = WaitForDfuDevice(2*time.Second, verboseFlag)
-				if dfuDev == nil {
-					fmt.Fprintf(os.Stderr, "[ERROR] No StepperDriverEmulator device found and no STM32 DFU device detected.\n"+
-						"Please plug in the device.\n")
-					os.Exit(1)
-				}
-			}
+	if len(dfuDevs) == 0 && len(emulators) == 0 {
+		usbDevs, _ := FindStepperUsbDevices(verboseFlag)
+		if len(usbDevs) > 0 {
+			fmt.Printf("Found StepperDriverEmulator on USB (%s), but no active COM port responded.\n", usbDevs[0].Product)
 		}
 
+		fmt.Println("No active emulator CDC port found. Checking if board is already in DFU mode...")
+		dfuDev, _ := WaitForDfuDevice(2*time.Second, verboseFlag)
 		if dfuDev == nil {
-			fmt.Printf("Sending 'dfu' command to %s...\n", targetPort)
-			if err := SendDfuCommand(targetPort, verboseFlag); err != nil && verboseFlag {
-				fmt.Printf("Note: %v\n", err)
-			}
+			fmt.Fprintf(os.Stderr, "[ERROR] No StepperDriverEmulator device found and no STM32 DFU device detected.\n"+
+				"Please plug in the device.\n")
+			os.Exit(1)
+		}
+		dfuDevs = append(dfuDevs, dfuDev)
+	}
 
-			fmt.Println("Waiting for STM32 DFU Bootloader enumeration...")
-			dfuDev, err = WaitForDfuDevice(8*time.Second, verboseFlag)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "[ERROR] %v\nCheck hardware connection.\n", err)
+	totalTargets := len(dfuDevs) + len(emulators)
+
+	if totalTargets == 1 {
+		if len(dfuDevs) == 1 {
+			fmt.Println("Found 1 StepperDriverEmulator device in DFU mode (0483:DF11).")
+			if err := flashDfuDevice(dfuDevs[0], binData, fullEraseFlag, reboot, verboseFlag); err != nil {
+				fmt.Fprintf(os.Stderr, "\n[ERROR] Flashing failed: %v\n", err)
 				os.Exit(1)
 			}
-			fmt.Println("STM32 DFU Bootloader connected.")
+		} else {
+			emu := emulators[0]
+			nameStr, snStr := formatDeviceInfo(emu)
+			fmt.Printf("Auto-selected StepperDriverEmulator: %s%s%s\n", emu.Port, nameStr, snStr)
+			if err := flashCdcPort(emu.Port, binData, fullEraseFlag, reboot, verboseFlag); err != nil {
+				fmt.Fprintf(os.Stderr, "\n[ERROR] Flashing failed: %v\n", err)
+				os.Exit(1)
+			}
 		}
+		fmt.Println("\nFirmware update completed successfully!")
+		return
 	}
 
-	// 4. Connect to DFU device and program firmware
-	fmt.Println("Initiating firmware programming...")
-	client, err := OpenDfuDevice(dfuDev)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[ERROR] Failed to open DFU device: %v\n", err)
-		os.Exit(1)
+	// Multiple devices detected: flash all sequentially
+	fmt.Printf("Found %d StepperDriverEmulator devices:\n", totalTargets)
+	for range dfuDevs {
+		fmt.Println("  - [DFU Bootloader] (0483:DF11)")
 	}
-	defer client.Close()
-
-	if err := FlashFirmware(client, binData, fullEraseFlag, reboot, verboseFlag); err != nil {
-		fmt.Fprintf(os.Stderr, "\n[ERROR] Flashing failed: %v\n", err)
-		os.Exit(1)
+	for _, emu := range emulators {
+		nameStr, snStr := formatDeviceInfo(emu)
+		fmt.Printf("  - %s%s%s\n", emu.Port, nameStr, snStr)
 	}
 
-	fmt.Println("\nFirmware update completed successfully!")
+	targetIndex := 1
+	for _, dev := range dfuDevs {
+		fmt.Printf("\n[%d/%d] Flashing STM32 DFU Bootloader device...\n", targetIndex, totalTargets)
+		if err := flashDfuDevice(dev, binData, fullEraseFlag, reboot, verboseFlag); err != nil {
+			fmt.Fprintf(os.Stderr, "\n[ERROR] Flashing failed on device %d: %v\n", targetIndex, err)
+			os.Exit(1)
+		}
+		targetIndex++
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	for _, emu := range emulators {
+		nameStr, snStr := formatDeviceInfo(emu)
+		fmt.Printf("\n[%d/%d] Flashing %s%s%s...\n", targetIndex, totalTargets, emu.Port, nameStr, snStr)
+		if err := flashCdcPort(emu.Port, binData, fullEraseFlag, reboot, verboseFlag); err != nil {
+			fmt.Fprintf(os.Stderr, "\n[ERROR] Flashing failed on device %d (%s): %v\n", targetIndex, emu.Port, err)
+			os.Exit(1)
+		}
+		targetIndex++
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	fmt.Printf("\nAll %d devices updated successfully!\n", totalTargets)
 }
 
