@@ -625,54 +625,25 @@ void ReportEncoderPosition(void) {
   ReportI64("pos", GetEncoderPosition());
 }
 
-void GetInstantaneousMotionState(int32_t* out_velocity_hz, int32_t* out_motor_torque, int32_t* out_net_torque) {
+int32_t GetInstantaneousVelocity(void) {
   __disable_irq();
-  bool active = motion_active;
-  int32_t vel = active ? current_motion_velocity : 0;
-  bool is_free = stall_tripped || !GetStepEnabled();
-  int32_t tension = load_tension;
-  int64_t enc_pos = position.encoder_pos;
-  int64_t cmd_pos = position.commanded_pos;
+  int32_t vel = motion_active ? current_motion_velocity : 0;
   __enable_irq();
-
-  int32_t t_motor;
-  if (is_free) {
-    t_motor = 0;
-  } else if (!active) {
-    t_motor = config.persistent.tcurve_table[0];
-  } else {
-    int32_t speed = MathUtil_AbsI32(vel);
-    t_motor = Motion_CalcMotorTorque(&config, speed);
-  }
-
-  int dir = (vel > 0) ? 1 : ((vel < 0) ? -1 : 0);
-  int32_t t_net = Motion_CalcNetTorque(t_motor, dir, tension);
-
-  if (config.persistent.maxstop != INT64_MAX && enc_pos >= config.persistent.maxstop) {
-    if (cmd_pos > enc_pos || vel > 0 || (is_free && tension > 0)) {
-      t_net = 0;
-    }
-  } else if (config.persistent.minstop != INT64_MIN && enc_pos <= config.persistent.minstop) {
-    if (cmd_pos < enc_pos || vel < 0 || (is_free && tension < 0)) {
-      t_net = 0;
-    }
-  }
-
-  if (out_velocity_hz) *out_velocity_hz = vel;
-  if (out_motor_torque) *out_motor_torque = t_motor;
-  if (out_net_torque) *out_net_torque = t_net;
+  return vel;
 }
 
 void ReportPvt(void) {
-  int64_t pos = GetEncoderPosition();
-  int32_t vel = 0, t_motor = 0, t_net = 0;
-  GetInstantaneousMotionState(&vel, &t_motor, &t_net);
+  __disable_irq();
+  int64_t pos = position.encoder_pos;
+  int32_t vel = motion_active ? current_motion_velocity : 0;
+  uint32_t timestamp = now;
+  __enable_irq();
 
   char pos_str[24];
   MathUtil_FormatI64(pos_str, sizeof(pos_str), pos);
 
-  char tail[48];
-  snprintf(tail, sizeof(tail), " %ld %ld %ld\r\n", (long) vel, (long) t_motor, (long) t_net);
+  char tail[32];
+  snprintf(tail, sizeof(tail), " %ld %lu\r\n", (long) vel, (unsigned long) timestamp);
 
   WriteString("pvt ");
   WriteString(pos_str);

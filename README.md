@@ -36,7 +36,7 @@ It monitors standard stepper controller signals (**Step/PUL**, **Direction/DIR**
   * **Blink Green (4 Hz):** Enabled and actively receiving step pulses (< 200 ms).
   * **Solid Green:** Enabled and idle (≥ 200 ms).
 * **USB CDC Virtual COM Port & DFU Updates:**
-  * Interactive serial CLI supporting live configuration, position/velocity/torque telemetry (`pvt`), and non-volatile Flash storage (`save`).
+  * Interactive serial CLI supporting live configuration, position/velocity/time telemetry (`pvt`), and non-volatile Flash storage (`save`).
   * Built-in software-triggered USB DFU firmware updates (`dfu`) via a cross-platform Go flasher utility.
 
 ---
@@ -327,7 +327,7 @@ Commands are sent via the USB Virtual COM Port (terminated with `\r` or `\n`).
 | `blank` | `blank [float]` | Query or set step blanking / hold-off window in µs (e.g. `3.5` for 200 kHz) | `blank 3.5` | `blank 3.5000\r\n` |
 | `blink` | `blink [0\|1]` | Query or toggle yellow identify blink | `blink 1` | `blink 1\r\n` |
 | `pos` | `pos [int64]` | Query or set encoder position (int64) | `pos 0` | `pos 0\r\n` |
-| `pvt` | `pvt` | Query instantaneous position, velocity, and torque | `pvt` | `pvt 0 0 1000 1000\r\n` |
+| `pvt` | `pvt` | Query instantaneous position, velocity, and millisecond timestamp | `pvt` | `pvt 0 0 1000\r\n` |
 | `odr` | `odr [uint16]` | Periodic position report rate in ms (`0` = off) | `odr 500` | `odr 500\r\n` |
 | `ratio` | `ratio [spr] [epr]` | Query or set canonical gear ratio (steps/rev and encoder counts/rev) | `ratio 1000 4000` | `ratio 1 4\r\n` |
 | `kp` | `kp [float]` | Query or set proportional position restoring gain in 1/ms (default: `0.1000`) | `kp 0.1` | `kp 0.1000\r\n` |
@@ -367,7 +367,7 @@ blink 0
 rev 0
 ena 1
 pos 0
-pvt 0 0 1000 1000
+pvt 0 0 1000
 ```
 
 ### Error Responses
@@ -386,7 +386,7 @@ The emulator transmits asynchronous notifications over the Virtual COM Port as p
 * `stall_trip <0|1>\r\n`: Emitted when entering (`1`) or leaving (`0`) the stall trip fault state.
 * `ena <0|1>\r\n`: Emitted when the `ENA` input transitions (`1` = enabled, `0` = disabled).
 * `rev <0|1>\r\n`: Emitted when the `DIR` input transitions (`1` = reverse, `0` = forward).
-* `pvt <int64> <int32> <int32> <int32>\r\n`: Emitted periodically at the configured `odr` interval (e.g. `pvt 4000 20000 850 350\r\n`), reporting instantaneous position, output step velocity in Hz, motor torque, and net torque.
+* `pvt <int64> <int32> <uint32>\r\n`: Emitted periodically at the configured `odr` interval (e.g. `pvt 4000 20000 15234\r\n`), reporting instantaneous position, output step velocity in Hz, and monotonic hardware millisecond timestamp.
 
 ---
 
