@@ -1048,7 +1048,7 @@ void DMA_TransferComplete_Handler(void) {
 }
 
 void InitMotion(void) {
-  current_quad_state = 0;
+  current_quad_state = (uint8_t)(position.encoder_pos & 3);
   half_0_delta = 0;
   half_1_delta = 0;
   motion_active = false;
@@ -1058,10 +1058,10 @@ void InitMotion(void) {
   planned_encoder_pos = position.encoder_pos;
 
   for (int i = 0; i < TOTAL_BUFFER_SIZE; i++) {
-    quad_buffer[i] = Quadrature_GetBsrrValue(0);
+    quad_buffer[i] = Quadrature_GetBsrrValue(current_quad_state);
   }
 
-  GPIOB->BSRR = Quadrature_GetBsrrValue(0);
+  GPIOB->BSRR = Quadrature_GetBsrrValue(current_quad_state);
 
   TIM3->CR1 &= ~TIM_CR1_CEN;
   DMA1_Channel3->CCR &= ~DMA_CCR_EN;
@@ -1070,7 +1070,19 @@ void InitMotion(void) {
   TIM2->DIER = TIM_DIER_CC1DE | TIM_DIER_CC1IE;
 }
 
-void ResetEmulator(void) {
+bool ValidateResetPosition(int64_t pos) {
+  EmulatorConfig_t saved_config = DEFAULT_EMULATOR_CONFIG;
+  ConfigStore_Load(ConfigStore_GetStm32FlashDriver(), CONFIG_FLASH_PAGE_ADDR, &saved_config);
+  if (saved_config.persistent.minstop != INT64_MIN && pos < saved_config.persistent.minstop) {
+    return false;
+  }
+  if (saved_config.persistent.maxstop != INT64_MAX && pos > saved_config.persistent.maxstop) {
+    return false;
+  }
+  return true;
+}
+
+void ResetEmulator(int64_t initial_pos) {
   __disable_irq();
   TIM3->CR1 &= ~TIM_CR1_CEN;
   DMA1_Channel3->CCR &= ~DMA_CCR_EN;
@@ -1094,7 +1106,7 @@ void ResetEmulator(void) {
   uint16_t head = (STEP_BUF_SIZE - (uint16_t) DMA1_Channel5->CNDTR) & (STEP_BUF_SIZE - 1);
   step_buf_tail = head;
   blanking_accum = min_blanking_ticks;
-  Position_RealignCounters(&position, 0, &config, head);
+  Position_RealignCounters(&position, initial_pos, &config, head);
   position.step_reverse = READ_BIT(DIR_GPIO_Port->IDR, DIR_Pin) == 0;
   if (GetStepEnabled()) {
     TIM2->CR1 |= TIM_CR1_CEN;
@@ -1342,7 +1354,7 @@ int main(void)
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
 
-  ResetEmulator();
+  ResetEmulator(0);
   ReportStepReverse();
   ReportStepEnabled();
   /* USER CODE END 2 */

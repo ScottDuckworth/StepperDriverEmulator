@@ -160,7 +160,8 @@ bool GetStallTrip(void);
 void ReportStallTrip(void);
 
 bool SaveConfig(void);
-void ResetEmulator(void);
+bool ValidateResetPosition(int64_t pos);
+void ResetEmulator(int64_t initial_pos);
 
 uint16_t WriteData(const uint8_t* data, uint16_t size);
 uint16_t WriteString(const char* text);

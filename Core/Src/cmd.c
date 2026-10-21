@@ -280,8 +280,21 @@ static void Cmd_save(const Command_t* self) {
 }
 
 static void Cmd_reset(const Command_t* self) {
-  if (argc != 1) { InvalidUsage(self->usage); return; }
-  ResetEmulator();
+  int64_t initial_pos = 0;
+  if (argc == 2) {
+    if (!MathUtil_ParseI64(argv[1], &initial_pos)) {
+      InvalidValue("int64", argv[1]);
+      return;
+    }
+    if (!ValidateResetPosition(initial_pos)) {
+      WriteString("error: position out of range\r\n");
+      return;
+    }
+  } else if (argc != 1) {
+    InvalidUsage(self->usage);
+    return;
+  }
+  ResetEmulator(initial_pos);
   WriteString("reset ok\r\n");
 }
 
@@ -319,7 +332,7 @@ static const Command_t commands[] = {
     {"kp", "kp [float]", Cmd_kp},
     {"kff", "kff [float]", Cmd_kff},
     {"save", "save", Cmd_save},
-    {"reset", "reset", Cmd_reset},
+    {"reset", "reset [int64]", Cmd_reset},
     {"dfu", "dfu", Cmd_dfu},
     {"r", "r", Cmd_r},
     {"version", "version", Cmd_version},

@@ -256,11 +256,21 @@ bool SaveConfig(void) {
 
 static bool mock_reset_called;
 
-void ResetEmulator(void) {
+bool ValidateResetPosition(int64_t pos) {
+  if (mock_config.persistent.minstop != INT64_MIN && pos < mock_config.persistent.minstop) {
+    return false;
+  }
+  if (mock_config.persistent.maxstop != INT64_MAX && pos > mock_config.persistent.maxstop) {
+    return false;
+  }
+  return true;
+}
+
+void ResetEmulator(int64_t initial_pos) {
   mock_reset_called = true;
   mock_config = (EmulatorConfig_t) DEFAULT_EMULATOR_CONFIG;
   mock_tension = 0;
-  mock_pos = 0;
+  mock_pos = initial_pos;
   mock_velocity = 0;
   mock_motor_torque = 1000;
   mock_net_torque = 1000;
@@ -670,9 +680,53 @@ void test_cmd_reset_success(void) {
 
 void test_cmd_reset_invalid_usage(void) {
   mock_reset_called = false;
-  send_cmd("reset extra\r\n");
+  send_cmd("reset 10 20\r\n");
   TEST_ASSERT_FALSE(mock_reset_called);
-  TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid usage: reset\r\n"));
+  TEST_ASSERT_NOT_NULL(strstr(captured_output, "error: invalid usage: reset [int64]\r\n"));
+}
+
+void test_cmd_reset_with_position_success(void) {
+  mock_reset_called = false;
+  mock_pos = 0;
+  send_cmd("reset 12345\r\n");
+  TEST_ASSERT_TRUE(mock_reset_called);
+  TEST_ASSERT_EQUAL_INT64(12345, mock_pos);
+  TEST_ASSERT_EQUAL_STRING("reset ok\r\n", captured_output);
+}
+
+void test_cmd_reset_negative_position_success(void) {
+  mock_reset_called = false;
+  mock_pos = 0;
+  send_cmd("reset -9876543210\r\n");
+  TEST_ASSERT_TRUE(mock_reset_called);
+  TEST_ASSERT_EQUAL_INT64(-9876543210LL, mock_pos);
+  TEST_ASSERT_EQUAL_STRING("reset ok\r\n", captured_output);
+}
+
+void test_cmd_reset_position_out_of_range(void) {
+  mock_reset_called = false;
+  mock_config.persistent.minstop = -100;
+  mock_config.persistent.maxstop = 1000;
+
+  send_cmd("reset 1001\r\n");
+  TEST_ASSERT_FALSE(mock_reset_called);
+  TEST_ASSERT_EQUAL_STRING("error: position out of range\r\n", captured_output);
+
+  send_cmd("reset -101\r\n");
+  TEST_ASSERT_FALSE(mock_reset_called);
+  TEST_ASSERT_EQUAL_STRING("error: position out of range\r\n", captured_output);
+
+  send_cmd("reset\r\n");
+  TEST_ASSERT_TRUE(mock_reset_called);
+  TEST_ASSERT_EQUAL_INT64(0, mock_pos);
+  TEST_ASSERT_EQUAL_STRING("reset ok\r\n", captured_output);
+}
+
+void test_cmd_reset_invalid_value(void) {
+  mock_reset_called = false;
+  send_cmd("reset notanumber\r\n");
+  TEST_ASSERT_FALSE(mock_reset_called);
+  TEST_ASSERT_EQUAL_STRING("error: invalid int64: notanumber\r\n", captured_output);
 }
 
 void test_cmd_save_success(void) {
@@ -871,6 +925,10 @@ int main(void) {
   RUN_TEST(test_cmd_save_failure);
   RUN_TEST(test_cmd_save_invalid_usage);
   RUN_TEST(test_cmd_reset_success);
+  RUN_TEST(test_cmd_reset_with_position_success);
+  RUN_TEST(test_cmd_reset_negative_position_success);
+  RUN_TEST(test_cmd_reset_position_out_of_range);
+  RUN_TEST(test_cmd_reset_invalid_value);
   RUN_TEST(test_cmd_reset_invalid_usage);
   RUN_TEST(test_cmd_dfu_success);
   RUN_TEST(test_cmd_dfu_invalid_usage);

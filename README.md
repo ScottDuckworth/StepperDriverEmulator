@@ -335,7 +335,7 @@ Commands are sent via the USB Virtual COM Port (terminated with `\r` or `\n`).
 | `lim1` | `lim1 <0\|1>` | Drive simulated limit switch 1 pin | `lim1 1` | `lim1 1\r\n` |
 | `lim2` | `lim2 <0\|1>` | Drive simulated limit switch 2 pin | `lim2 0` | `lim2 0\r\n` |
 | `save` | `save` | Save configuration to non-volatile flash | `save` | `save ok\r\n` |
-| `reset` | `reset` | Reset runtime state, clear stall fault, stop encoder outputs, and reload saved config from flash (keeps USB serial active) | `reset` | `reset ok\r\n` |
+| `reset` | `reset [int64]` | Reset runtime state, clear stall fault, stop encoder outputs, optionally set initial encoder position (defaults to 0), and reload saved config from flash (keeps USB serial active) | `reset 1000` | `reset ok\r\n` |
 | `dfu` | `dfu` | Jump to built-in USB DFU ROM bootloader for firmware updates | `dfu` | `dfu ok\r\n` |
 | `version` | `version` | Query firmware version string | `version` | `version v1.0.0\r\n` |
 | `r` | `r` | Dump full configuration and runtime status | `r` | Multi-line report (see below) |
